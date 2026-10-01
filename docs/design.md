@@ -67,6 +67,8 @@ The module declares its own `Depends(require_session)` and `require_same_origin`
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
 http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
+A signed URL is a bearer URL to a file, so the session store keeps it and it ends with its session, however the
+session ends (logout, expiry, a refresh that ends it, a new login replacing it).
 
 **K8. An application factory.** `create_app(...)` builds the app from settings and owns its HTTP client through
 the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.

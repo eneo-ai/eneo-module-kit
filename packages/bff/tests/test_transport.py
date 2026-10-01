@@ -18,6 +18,7 @@ from eneo_module_bff.transport import (
 )
 
 SIGNED = "https://eneo.example.test/api/v1/files/file-1/download/?token=abc"
+MINT_PATH = "flows/flow-1/runs/run-1/input-files/file-1/signed-url/"
 ORIGIN = {"Origin": "https://module.example.test"}
 
 
@@ -98,7 +99,16 @@ class TransportFixture:
             )
 
         self.client = TestClient(self.app)
-        self.client.cookies.set(SESSION_COOKIE, self.app.state.module_auth.sessions.create(module_session()))
+        self.session_id = self.store.create(module_session())
+        self.client.cookies.set(SESSION_COOKIE, self.session_id)
+
+    @property
+    def store(self):
+        return self.app.state.module_auth.sessions
+
+    def cached(self) -> dict:
+        """Every signed URL the store holds, by session: they live and die with the sessions."""
+        return self.store._signed_urls
 
     def upload_file(self, flow_id: str = "flow", **kwargs):
         return self.client.post(
@@ -540,13 +550,14 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
 
     def test_a_rejected_signed_url_is_dropped_and_the_next_request_mints_a_new_one(self) -> None:
         self.client.get(AUDIO)
-        self.assertEqual(len(self.app.state.signed_urls), 1)
+        self.assertIsNotNone(self.store.signed_url(self.session_id, MINT_PATH))
 
         self.fake.stream_status = 403
         rejected = self.client.get(AUDIO)
 
         self.assertEqual(rejected.status_code, 403)
-        self.assertEqual(self.app.state.signed_urls, {})
+        self.assertIsNone(self.store.signed_url(self.session_id, MINT_PATH))
+        self.assertEqual(self.cached(), {})
         self.assertTrue(self.fake.stream_responses[-1].closed)
 
         self.fake.stream_status = 200
@@ -577,7 +588,7 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
         other.get(AUDIO)
 
         self.assertEqual(len(self.fake.signed_url_calls), 2)
-        self.assertEqual(len(self.app.state.signed_urls), 2)
+        self.assertEqual(len(self.cached()), 2, "one entry per session")
 
     def test_a_malformed_signed_url_answer_is_a_502_never_a_500(self) -> None:
         secret = {"secret": "SECRET-BODY-TOKEN"}
@@ -616,7 +627,7 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
                 # The log says which mint path, and never what was in the answer.
                 self.assertIn("flows/flow-1/runs/run-1/input-files/file-1/signed-url/", logs.output[0])
                 self.assertNotIn("SECRET-BODY-TOKEN", "\n".join(logs.output))
-        self.assertEqual(self.app.state.signed_urls, {})
+        self.assertEqual(self.cached(), {})
 
     def test_a_usable_signed_url_answer_is_still_taken_in_every_form_it_can_have(self) -> None:
         soon = int(time.time()) + 900
@@ -629,10 +640,39 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
             ("https", {"url": SIGNED.replace("https", "http"), "expires_at": soon}),
         ):
             with self.subTest(label):
-                self.app.state.signed_urls.clear()
+                self.store.forget_signed_url(self.session_id, MINT_PATH)
                 self.fake.mint_payload = payload
 
                 self.assertEqual(self.client.get(AUDIO).status_code, 200)
+
+    def test_logging_out_drops_the_signed_urls_of_that_session_and_only_that_one(self) -> None:
+        self.client.get(AUDIO)
+        other = TestClient(self.app)
+        other_id = self.store.create(module_session())
+        other.cookies.set(SESSION_COOKIE, other_id)
+        other.get(AUDIO)
+        self.assertEqual(set(self.cached()), {self.session_id, other_id})
+
+        logout = self.client.post("/api/auth/logout", headers=ORIGIN)
+
+        self.assertEqual(logout.status_code, 200)
+        self.assertEqual(set(self.cached()), {other_id}, "a bearer URL to a file must not outlive the login that minted it")
+        self.assertIsNone(self.store.signed_url(self.session_id, MINT_PATH))
+        self.assertIsNotNone(self.store.signed_url(other_id, MINT_PATH))
+
+    def test_a_session_that_ends_while_a_url_is_being_minted_leaves_no_entry(self) -> None:
+        original_post = self.fake.post
+
+        async def post_then_log_out(url, **kwargs):
+            response = await original_post(url, **kwargs)
+            self.store.delete(self.session_id)  # the logout arrives while Eneo is answering
+            return response
+
+        self.fake.post = post_then_log_out
+
+        self.client.get(AUDIO)
+
+        self.assertEqual(self.cached(), {})
 
     def test_eneo_refusing_the_file_passes_through_without_a_stream(self) -> None:
         self.fake.mint_status = 410
@@ -641,7 +681,7 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
 
         self.assertEqual(response.status_code, 410)
         self.assertEqual(self.fake.stream_requests, [])
-        self.assertEqual(self.app.state.signed_urls, {})
+        self.assertEqual(self.cached(), {})
 
     def test_eneo_not_answering_is_a_502_when_minting_and_when_streaming(self) -> None:
         self.fake.mint_error = httpx2.ConnectError("unreachable")

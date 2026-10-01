@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import httpx2
@@ -132,16 +132,28 @@ def module_path(value: str | None, home_path: str) -> str:
     return home_path
 
 
+class SignedUrl(NamedTuple):
+    """A signed URL Eneo minted for one file of one session, until ``expires_at``."""
+
+    url: str
+    expires_at: float
+
+
 class ModuleSessionStore:
     """Process-local opaque sessions for the single-process module image.
 
     The browser receives only a random identifier. Any Eneo user token remains
     in backend memory and logout removes the session immediately. A shared
     store is required before running more than one backend replica.
+
+    The signed URLs minted for a session's files are kept here too, by session
+    and mint path: each is a bearer URL to a file, so it must not outlive the
+    session, however the session ends.
     """
 
     def __init__(self) -> None:
         self._sessions: dict[str, ModuleSession] = {}
+        self._signed_urls: dict[str, dict[str, SignedUrl]] = {}
         self._lock = threading.Lock()
 
     def create(self, session: ModuleSession) -> str:
@@ -174,10 +186,36 @@ class ModuleSessionStore:
             return
         with self._lock:
             self._sessions.pop(session_id, None)
+            self._signed_urls.pop(session_id, None)
 
     def clear(self) -> None:
         with self._lock:
             self._sessions.clear()
+            self._signed_urls.clear()
+
+    def signed_url(self, session_id: str, mint_path: str) -> SignedUrl | None:
+        with self._lock:
+            return self._signed_urls.get(session_id, {}).get(mint_path)
+
+    def remember_signed_url(self, session_id: str, mint_path: str, entry: SignedUrl) -> None:
+        # Only for a live session: a logout can arrive while Eneo is still answering, and the entry would be
+        # one that nothing removes.
+        with self._lock:
+            if session_id not in self._sessions:
+                return
+            urls = self._signed_urls.setdefault(session_id, {})
+            now = time.time()
+            for path in [path for path, known in urls.items() if known.expires_at <= now]:
+                del urls[path]
+            urls[mint_path] = entry
+
+    def forget_signed_url(self, session_id: str, mint_path: str) -> None:
+        with self._lock:
+            urls = self._signed_urls.get(session_id)
+            if urls is not None:
+                urls.pop(mint_path, None)
+                if not urls:
+                    del self._signed_urls[session_id]
 
     def _delete_expired_locked(self, now: float) -> None:
         expired = [
@@ -187,6 +225,7 @@ class ModuleSessionStore:
         ]
         for session_id in expired:
             del self._sessions[session_id]
+            self._signed_urls.pop(session_id, None)
 
 
 def eneo_is_unavailable(status_code: int) -> bool:

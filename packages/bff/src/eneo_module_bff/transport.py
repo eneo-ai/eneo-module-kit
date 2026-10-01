@@ -4,7 +4,6 @@ import logging
 import math
 import time
 from collections.abc import Iterable, Sequence
-from typing import NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
@@ -12,7 +11,7 @@ from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from .auth import SESSION_COOKIE
+from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect
 from .settings import Settings
@@ -157,13 +156,8 @@ def _attachment(disposition: str | None) -> str:
     return f"attachment; {parameters}" if parameters else "attachment"
 
 
-class _SignedUrl(NamedTuple):
-    url: str
-    expires_at: float
-
-
-# The cache is request.app.state.signed_urls, made by create_app.
-# Keyed by session and the Eneo path that mints the URL: one URL per file.
+# The signed URLs are kept by the session store (ModuleSessionStore.signed_url and friends), by session and
+# mint path, one URL per file, so each ends with its session.
 
 
 def _rebase_signed_url(signed_url: str, base_url: str) -> str:
@@ -202,22 +196,15 @@ def _read_mint_answer(upstream: httpx2.Response, base_url: str, now: float) -> t
     return _rebase_signed_url(url, base_url), expires_at
 
 
-def _prune_signed_urls(signed_urls: dict[tuple[str, str], _SignedUrl], now: float) -> None:
-    for key, entry in list(signed_urls.items()):
-        if entry.expires_at <= now:
-            signed_urls.pop(key, None)
-
-
-async def _signed_url(request: Request, key: tuple[str, str], unavailable: str) -> str:
+async def _signed_url(request: Request, session_id: str, mint_path: str, unavailable: str) -> str:
     settings = request.app.state.settings
     http_client = request.app.state.http
-    signed_urls = request.app.state.signed_urls
+    sessions = request.app.state.module_auth.sessions
     now = time.time()
-    cached = signed_urls.get(key)
+    cached = sessions.signed_url(session_id, mint_path)
     if cached and cached.expires_at - _SIGNED_URL_REFRESH_MARGIN_SECONDS > now:
         return cached.url
 
-    mint_path = key[1]
     try:
         upstream = await http_client.post(
             f"{settings.eneo_backend_url}/api/v1/{mint_path}",
@@ -242,8 +229,7 @@ async def _signed_url(request: Request, key: tuple[str, str], unavailable: str) 
     except _InvalidMintAnswer:
         logger.error("Signed URL answer is not usable: path=%s", mint_path)
         raise
-    _prune_signed_urls(signed_urls, now)
-    signed_urls[key] = _SignedUrl(url=url, expires_at=expires_at)
+    sessions.remember_signed_url(session_id, mint_path, SignedUrl(url=url, expires_at=expires_at))
     return url
 
 
@@ -260,13 +246,13 @@ async def stream_signed(
     an attachment unless its media type is in ``INLINE_MEDIA_TYPES`` or ``inline_types``.
     """
     http_client = request.app.state.http
-    signed_urls = request.app.state.signed_urls
+    sessions = request.app.state.module_auth.sessions
     if any(leaves_route(part) for part in resource):
         raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
 
-    key = (request.cookies.get(SESSION_COOKIE) or "", mint_path)
+    session_id = request.cookies.get(SESSION_COOKIE) or ""
     try:
-        url = await _signed_url(request, key, unavailable)
+        url = await _signed_url(request, session_id, mint_path, unavailable)
     except _InvalidMintAnswer:
         return JSONResponse(
             status_code=502,
@@ -290,14 +276,14 @@ async def stream_signed(
 
     if upstream.status_code in REDIRECT_STATUSES:
         # Not a file: the URL is not worth keeping either, and the stream is closed unread.
-        signed_urls.pop(key, None)
+        sessions.forget_signed_url(session_id, mint_path)
         await upstream.aclose()
         logger.error("File stream was answered with a redirect: path=%s status=%s", mint_path, upstream.status_code)
         return upstream_redirect()
 
     if upstream.status_code >= 400:
         # A rejected token is not worth keeping around; the next request mints anew.
-        signed_urls.pop(key, None)
+        sessions.forget_signed_url(session_id, mint_path)
         try:
             body = await upstream.aread()
         finally:

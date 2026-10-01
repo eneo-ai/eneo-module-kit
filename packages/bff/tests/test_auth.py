@@ -17,8 +17,10 @@ from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import (
     ModuleAuth,
     ModuleSession,
+    ModuleSessionStore,
     ModuleUser,
     SESSION_COOKIE,
+    SignedUrl,
     STATE_COOKIE,
     with_query,
 )
@@ -493,6 +495,102 @@ class ModuleAuthTests(unittest.TestCase):
         )
 
 
+class ModuleSessionStoreTests(unittest.TestCase):
+    """The signed URLs minted for a session are kept by the store, for the life of that session."""
+
+    def session(self, lasts: int = 3600) -> ModuleSession:
+        now = int(time.time())
+        return ModuleSession(
+            access_token="token", expires_at=now + lasts, refresh_at=now + lasts // 2, session_expires_at=now + lasts,
+            module_key="m", tenant_id="t", user=ModuleUser(id="u", email="u@example.test"),
+        )
+
+    def url(self, lasts: int = 900) -> SignedUrl:
+        return SignedUrl(url="http://eneo/file?token=x", expires_at=time.time() + lasts)
+
+    def test_a_signed_url_is_kept_for_a_live_session(self) -> None:
+        store = ModuleSessionStore()
+        session_id = store.create(self.session())
+
+        store.remember_signed_url(session_id, "files/a/", self.url())
+
+        self.assertEqual(store.signed_url(session_id, "files/a/").url, "http://eneo/file?token=x")
+        self.assertIsNone(store.signed_url(session_id, "files/b/"))
+        self.assertIsNone(store.signed_url("someone-else", "files/a/"))
+
+    def test_deleting_a_session_deletes_its_signed_urls(self) -> None:
+        store = ModuleSessionStore()
+        first, second = store.create(self.session()), store.create(self.session())
+        store.remember_signed_url(first, "files/a/", self.url())
+        store.remember_signed_url(second, "files/a/", self.url())
+
+        store.delete(first)
+
+        self.assertIsNone(store.signed_url(first, "files/a/"))
+        self.assertIsNotNone(store.signed_url(second, "files/a/"))
+        self.assertEqual(set(store._signed_urls), {second})
+
+    def test_an_expired_session_takes_its_signed_urls_with_it(self) -> None:
+        store = ModuleSessionStore()
+        short, long = store.create(self.session(lasts=60)), store.create(self.session(lasts=3600))
+        store.remember_signed_url(short, "files/a/", self.url())
+        store.remember_signed_url(long, "files/a/", self.url())
+
+        with patch("eneo_module_bff.auth.time.time", return_value=time.time() + 120):
+            self.assertIsNotNone(store.get(long))  # any use of the store notices the other session has expired
+
+        self.assertEqual(set(store._signed_urls), {long})
+
+    def test_an_expired_session_asked_for_directly_drops_its_signed_urls(self) -> None:
+        store = ModuleSessionStore()
+        session_id = store.create(self.session(lasts=60))
+        store.remember_signed_url(session_id, "files/a/", self.url())
+
+        with patch("eneo_module_bff.auth.time.time", return_value=time.time() + 120):
+            self.assertIsNone(store.get(session_id))
+
+        self.assertEqual(store._signed_urls, {})
+
+    def test_clearing_the_store_clears_the_signed_urls(self) -> None:
+        store = ModuleSessionStore()
+        session_id = store.create(self.session())
+        store.remember_signed_url(session_id, "files/a/", self.url())
+
+        store.clear()
+
+        self.assertEqual(store._signed_urls, {})
+
+    def test_a_signed_url_is_not_kept_for_a_session_that_is_gone(self) -> None:
+        # A logout can arrive while Eneo is still answering the mint request.
+        store = ModuleSessionStore()
+        session_id = store.create(self.session())
+        store.delete(session_id)
+
+        store.remember_signed_url(session_id, "files/a/", self.url())
+
+        self.assertEqual(store._signed_urls, {})
+
+    def test_a_signed_url_that_has_expired_is_pruned_when_another_is_kept(self) -> None:
+        store = ModuleSessionStore()
+        session_id = store.create(self.session())
+        store.remember_signed_url(session_id, "files/old/", SignedUrl("http://eneo/old", time.time() - 1))
+
+        store.remember_signed_url(session_id, "files/new/", self.url())
+
+        self.assertEqual(set(store._signed_urls[session_id]), {"files/new/"})
+
+    def test_a_forgotten_signed_url_is_gone_and_leaves_no_empty_entry(self) -> None:
+        store = ModuleSessionStore()
+        session_id = store.create(self.session())
+        store.remember_signed_url(session_id, "files/a/", self.url())
+
+        store.forget_signed_url(session_id, "files/a/")
+        store.forget_signed_url(session_id, "files/never/")
+        store.forget_signed_url("someone-else", "files/a/")
+
+        self.assertEqual(store._signed_urls, {})
+
+
 class FakeEneo:
     """Eneo's token refresh route plus any proxied resource call."""
 
@@ -651,6 +749,16 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
         self.assertEqual(self.client.get("/resource").status_code, 200)
         self.assertEqual(len(eneo.refresh_calls), 1)
         self.assertEqual(self.auth._refreshes, {})
+
+    def test_a_refresh_that_ends_the_session_drops_its_signed_urls(self) -> None:
+        session_id = self.sign_in_with_due_token()
+        self.auth.sessions.remember_signed_url(session_id, "files/a/", SignedUrl("http://eneo/f", time.time() + 900))
+        self.use_eneo(httpx2.Response(401))
+
+        self.assertEqual(self.client.get("/resource").status_code, 401)
+
+        self.assertIsNone(self.auth.sessions.get(session_id))
+        self.assertEqual(self.auth.sessions._signed_urls, {})
 
     def test_status_check_refreshes_an_idle_session(self) -> None:
         # The browser polls the status while it records, which sends no other request.
