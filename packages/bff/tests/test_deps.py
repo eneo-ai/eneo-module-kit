@@ -13,12 +13,12 @@ from eneo_module_bff.settings import Settings
 MODULE_ORIGIN = "https://module.example.test"
 
 
-def build_app() -> tuple[FastAPI, ModuleAuth]:
+def build_app(module_public_url: str = MODULE_ORIGIN) -> tuple[FastAPI, ModuleAuth]:
     """An app whose routes hold no ModuleAuth: the dependencies find it on app.state."""
     settings = Settings(
         eneo_backend_url="https://eneo.example.test",
         eneo_public_url="https://eneo.example.test",
-        module_public_url=MODULE_ORIGIN,
+        module_public_url=module_public_url,
         module_key="test-module",
         eneo_api_key="test-key",
         session_secret="x" * 48,
@@ -53,6 +53,10 @@ class DependencyTests(unittest.TestCase):
         app, self.auth = build_app()
         self.client = TestClient(app)
 
+    def build(self, module_public_url: str) -> None:
+        app, self.auth = build_app(module_public_url)
+        self.client = TestClient(app)
+
     def sign_in(self) -> None:
         now = int(time.time())
         session_id = self.auth.sessions.create(
@@ -81,6 +85,24 @@ class DependencyTests(unittest.TestCase):
             with self.subTest(origin=origin):
                 headers = {"Origin": origin} if origin else {}
                 self.assertEqual(self.client.post("/write", headers=headers).status_code, 403)
+
+    def test_the_origin_is_compared_in_canonical_form(self) -> None:
+        # The configured URL may be written any way; a browser sends scheme and host in lower case and no default port.
+        for configured in ("https://Module.Example.TEST", "https://module.example.test:443", "HTTPS://MODULE.example.test:443/"):
+            self.build(configured)
+            self.sign_in()
+            with self.subTest(configured=configured):
+                self.assertEqual(self.client.post("/write", headers={"Origin": MODULE_ORIGIN}).status_code, 200)
+                self.assertEqual(self.client.post("/write", headers={"Origin": "https://MODULE.example.test"}).status_code, 200)
+                for other in (
+                    "https://module.example.test:8443",
+                    "http://module.example.test",
+                    "https://module.example.test/evil",
+                    "https://evil.example.test",
+                    "https://module.example.test.evil.example",
+                    "null",
+                ):
+                    self.assertEqual(self.client.post("/write", headers={"Origin": other}).status_code, 403, other)
 
     def test_a_session_and_the_modules_origin_is_let_through(self) -> None:
         self.sign_in()

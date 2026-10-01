@@ -57,8 +57,38 @@ class Settings(BaseModel):
 
     @property
     def module_origin(self) -> str:
-        parsed = urlsplit(self.module_public_url)
-        return f"{parsed.scheme}://{parsed.netloc}"
+        """The module's origin in canonical form, the one an ``Origin`` header is compared with."""
+        origin = canonical_origin(self.module_public_url)
+        if origin is None:
+            raise ValueError("module_public_url must be an absolute http(s) URL")
+        return origin
+
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def canonical_origin(url: str, *, origin_only: bool = False) -> str | None:
+    """``scheme://host[:port]`` of an absolute http(s) URL, or None if ``url`` is not one.
+
+    Scheme and host are lower case and a default port is left out, which is how a browser writes an ``Origin``,
+    so ``https://Mod.Example.SE:443/prefix`` and ``https://mod.example.se`` are the same origin. With
+    ``origin_only`` anything but an origin (a path, a query, a fragment, a user) is None: that is what an
+    ``Origin`` header holds, and nothing else is one.
+    """
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return None
+    host = parsed.hostname
+    if parsed.scheme.lower() not in _DEFAULT_PORTS or not host:
+        return None
+    if origin_only and (parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password):
+        return None
+    scheme = parsed.scheme.lower()
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{scheme}://{host}" + ("" if port in (None, _DEFAULT_PORTS[scheme]) else f":{port}")
 
 
 def _parse_bool(raw: str | None, *, default: bool, name: str) -> bool:
@@ -128,7 +158,8 @@ def _required_url(name: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise RuntimeError(f"{name} must be an absolute http(s) URL")
-    if parsed.query or parsed.fragment:
+    # urlsplit reads a bare ? or # as an empty query or fragment, which is still one.
+    if parsed.query or parsed.fragment or "?" in value or "#" in value:
         raise RuntimeError(f"{name} must not contain a query string or fragment")
     return value
 

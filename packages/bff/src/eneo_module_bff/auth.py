@@ -6,7 +6,7 @@ import math
 import secrets
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
@@ -24,9 +24,9 @@ from fastapi import (
 from fastapi.requests import HTTPConnection
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
-from .settings import Settings
+from .settings import Settings, canonical_origin
 
 logger = logging.getLogger("eneo_module_auth")
 
@@ -58,6 +58,12 @@ class ModuleTokenResponse(BaseModel):
     module_key: str
     tenant_id: str
     user: ModuleUser
+
+    @field_validator("session_expires_at")
+    @classmethod
+    def _utc_when_naive(cls, value: datetime) -> datetime:
+        # Without a time zone it is UTC; read as local time it would end the session hours early or late.
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class ModuleResourceSessionResponse(BaseModel):
@@ -560,7 +566,8 @@ class ModuleAuth:
         safe_methods = {"GET", "HEAD", "OPTIONS"}
         if isinstance(connection, Request) and connection.method in safe_methods:
             return
-        if connection.headers.get("origin") != self.settings.module_origin:
+        origin = canonical_origin(connection.headers.get("origin") or "", origin_only=True)
+        if origin != self.settings.module_origin:
             raise _refusal(
                 connection, HTTPException(status_code=403, detail="Invalid request origin")
             )

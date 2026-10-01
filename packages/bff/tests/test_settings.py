@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from eneo_module_bff.settings import Organization, load_settings
+from eneo_module_bff.settings import Organization, canonical_origin, load_settings
 
 SUNDSVALL = Organization(name="Sundsvalls kommun", logo="default")
 PNG =bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c6360000200000500017a5eab3f0000000049454e44ae426082")  # a real 1x1 PNG
@@ -102,6 +102,42 @@ class SettingsTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True):
             with self.assertRaisesRegex(RuntimeError, "query string or fragment"):
                 load_settings()
+
+    def test_a_bare_question_mark_or_hash_is_a_query_or_fragment_too(self) -> None:
+        for name in ("MODULE_PUBLIC_URL", "ENEO_BACKEND_URL", "ENEO_PUBLIC_URL"):
+            for suffix in ("?", "#", "/?", "/#"):
+                environment = valid_environment()
+                environment[name] = environment[name] + suffix
+                with self.subTest(name=name, suffix=suffix), patch.dict(os.environ, environment, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, "query string or fragment"):
+                        load_settings()
+
+    def test_the_modules_origin_is_in_canonical_form(self) -> None:
+        for public_url, origin in (
+            ("https://module.example.test", "https://module.example.test"),
+            ("https://Mod.Example.SE", "https://mod.example.se"),
+            ("HTTPS://MOD.example.se:443/", "https://mod.example.se"),
+            ("http://mod.example.se:80", "http://mod.example.se"),
+            ("https://mod.example.se:8443/prefix", "https://mod.example.se:8443"),
+            ("http://[::1]:3001", "http://[::1]:3001"),
+            ("http://LOCALHOST:3001", "http://localhost:3001"),
+        ):
+            environment = valid_environment() | {"MODULE_PUBLIC_URL": public_url}
+            with self.subTest(public_url=public_url), patch.dict(os.environ, environment, clear=True):
+                self.assertEqual(load_settings().module_origin, origin)
+
+    def test_canonical_origin_of_what_a_browser_sends(self) -> None:
+        for sent, origin in (
+            ("https://mod.example.se", "https://mod.example.se"),
+            ("https://MOD.example.se:443", "https://mod.example.se"),
+            ("https://mod.example.se:8443", "https://mod.example.se:8443"),
+        ):
+            with self.subTest(sent=sent):
+                self.assertEqual(canonical_origin(sent, origin_only=True), origin)
+        for sent in ("", "null", "mod.example.se", "ftp://mod.example.se", "https://", "https://x:notaport",
+                     "https://mod.example.se/", "https://mod.example.se/evil", "https://mod.example.se?x", "https://u:p@mod.example.se"):
+            with self.subTest(sent=sent):
+                self.assertIsNone(canonical_origin(sent, origin_only=True))
 
     def test_rejects_ambiguous_cookie_secure_value(self) -> None:
         environment = valid_environment()

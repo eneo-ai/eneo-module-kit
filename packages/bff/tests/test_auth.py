@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import os
 import re
 import secrets
 import time
@@ -59,9 +60,12 @@ def token_payload(
     *,
     expires_in: int = 900,
     user_id: str = "user-id",
+    naive: bool = False,
 ) -> dict[str, object]:
     """Eneo's ModuleTokenResponse, as the ticket exchange and refresh return it."""
     ceiling = datetime.fromtimestamp(time.time() + ENEO_SESSION_SECONDS, tz=timezone.utc)
+    if naive:  # the same moment, written without a time zone
+        ceiling = ceiling.replace(tzinfo=None)
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -78,12 +82,13 @@ def token_payload(
 
 
 class FakeResponse:
-    def __init__(self, status_code: int = 200, *, user_id: str = "user-id") -> None:
+    def __init__(self, status_code: int = 200, *, user_id: str = "user-id", naive: bool = False) -> None:
         self.status_code = status_code
         self.user_id = user_id
+        self.naive = naive
 
     def json(self):
-        return token_payload(user_id=self.user_id)
+        return token_payload(user_id=self.user_id, naive=self.naive)
 
 
 class FakeExchangeClient:
@@ -236,6 +241,29 @@ class ModuleAuthTests(unittest.TestCase):
         self.assertEqual(first.headers["location"], "/flows")
         self.assertEqual(second.headers["location"], "/?auth_error=invalid_state")
         self.assertEqual(len(self.exchange_client.calls), 2)
+
+    def test_a_session_end_without_a_time_zone_is_read_as_utc(self) -> None:
+        # Read as local time, Europe/Stockholm would end every session two hours early (one in winter).
+        original = os.environ.get("TZ")
+        self.addCleanup(self.restore_time_zone, original)
+        os.environ["TZ"] = "Europe/Stockholm"
+        time.tzset()
+        self.exchange_client.response = FakeResponse(naive=True)
+        self.exchange_client.validation_response = FakeResponse(naive=True)
+        state, _ = self.start_login()
+
+        self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+        body = self.client.get("/api/auth/status").json()
+        self.assertTrue(ENEO_SESSION_SECONDS - 5 <= body["session_ends_in"] <= ENEO_SESSION_SECONDS, body)
+
+    @staticmethod
+    def restore_time_zone(original: str | None) -> None:
+        if original is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = original
+        time.tzset()
 
     def test_a_state_that_is_not_ascii_is_refused_not_a_500(self) -> None:
         self.start_login()

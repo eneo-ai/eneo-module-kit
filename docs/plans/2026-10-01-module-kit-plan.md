@@ -226,7 +226,8 @@ Changes from the source, and only these:
 - Removed: `AuthMode`, `auth_mode`, `app_access_code`, `demo_space_id`, `FlowListScope`, `flow_list_scope`, and every branch on them. `ENEO_PUBLIC_URL` is always required.
 - `DEFAULT_ORGANIZATION` (Sundsvall) becomes the `default_organization` argument; the kit's default is no organisation.
 - New: `home_path`. It replaces the literal `"/flows"` in `module_path` (Task 1.2).
-- Everything else, including the validation messages, `_parse_bool`, `_read_logo`, `_organization` and `_required_url`, is copied unchanged.
+- `module_origin` is the canonical origin of `MODULE_PUBLIC_URL` (lower-case scheme and host, a default port dropped), and the `Origin` header is compared with it in the same form, so `https://Mod.Example.SE:443` does not turn every write into a 403. `_required_url` also refuses a bare `?` or `#`.
+- Everything else, including the validation messages, `_parse_bool`, `_read_logo` and `_organization`, is copied unchanged.
 
 - [ ] **Step 1:** Carry over `test_config.py` as `test_settings.py`. Delete the cases that test `AUTH_MODE`, `APP_ACCESS_CODE`, `DEMO_SPACE_ID` and the flow-list scope. Change `from app.config import …` to `from eneo_module_bff.settings import …`. In cases that expect Sundsvall by default, pass `default_organization=Organization(name="Sundsvalls kommun", logo="default")`, and add one case: with no organisation variables and no default, `settings.organization is None`.
 - [ ] **Step 2:** Run. Expected: `ModuleNotFoundError: eneo_module_bff.settings`.
@@ -268,6 +269,7 @@ Changes from the source, and only these:
 - `EneoSsoSession` is renamed `ModuleSession`; `ModuleSession = EneoSsoSession | AccessCodeSession` goes away; `isinstance(session, EneoSsoSession)` branches become unconditional.
 - `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`, and falls back to it for a `next` above 512 characters (the state cookie carries it, and browsers drop a cookie of 8 KB); `PendingLogin.next` has no default and is always set. `with_query` puts the query before a `#` fragment, so `/page#top` becomes `/page?fel=...#top`, which the page can read.
 - `status` returns `{"authenticated": bool, "user": {...} | None, "session_ends_in": int, "refresh_in": int}` (the last two only when authenticated, `refresh_in` only when a refresh is still possible).
+- A token's `session_expires_at` without a time zone is UTC (read as local time it ends a session hours early).
 - The Swedish query values `fel=utgangen` and `fel=annan-anvandare` stay as they are: the UI package reads them.
 
 - [ ] **Step 1:** Carry over `test_module_auth.py` as `test_auth.py`. Remove the access-code cases. Replace `from app import main` and its use of `main.app` / `main.module_auth` with a small helper at the top of the file that builds a `FastAPI()` app, a `ModuleAuth(settings=…, http_client=…)` and includes `auth.router` under `/api/auth` (Task 1.4 replaces the helper with `create_app`). Remove the `os.environ.setdefault` block: build `Settings(...)` directly in the helper.
