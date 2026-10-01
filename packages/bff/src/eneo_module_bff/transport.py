@@ -7,12 +7,14 @@ from collections.abc import Iterable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
-from fastapi import HTTPException, Request, Response, UploadFile
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
+from starlette.datastructures import UploadFile
 
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
+from .limits import allow_upload, declared_length, too_large
 from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect
 from .settings import Settings
 
@@ -47,22 +49,55 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
     return value if value > 0 else None
 
 
+def _has_control_character(value: str | None) -> bool:
+    return value is not None and any(character < " " or character == "\x7f" for character in value)
+
+
 # Uploads bypass the catch-all proxy because forwarding
 # the browser's raw multipart bytes triggers ReadError from Eneo's load balancer.
 # We re-parse and rebuild the multipart with httpx2 instead.
-async def forward_upload(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
-    """Re-post one multipart file to {ENEO_BACKEND_URL}/api/v1/{upstream_path} with both credentials.
+async def forward_upload(request: Request, upstream_path: str) -> Response:
+    """Re-post the one file of the request's multipart body to {ENEO_BACKEND_URL}/api/v1/{upstream_path}.
+
+    Call it from a route that has no ``File(...)`` parameter: FastAPI reads a body before it runs a route's
+    dependencies, and this reads it itself, so ``Depends(require_session)`` has run before a byte of it is read.
+    The body must declare its Content-Length (411), at most ``settings.max_upload_bytes`` (413), and hold one file
+    part named ``upload_file`` and no other part (400) whose file name and content type have no control character
+    (400: a line break in either would be written into the part headers sent to Eneo). Nothing is left behind if
+    the upload is cut off or refused.
 
     The time budget is settings.upload_proxy_timeout_seconds, lowered (never below 60 s) by the request's
     X-Upload-Timeout-Seconds header. 504 on timeout, 502 when Eneo cannot be reached, 403 for a path that
     leaves its route.
     """
     settings = request.app.state.settings
-    http_client = request.app.state.http
     # Upstream URLs are built from decoded path params; a "." / ".." segment or
     # a "?" would resolve to a different Eneo route than the upload endpoints exposed.
     if leaves_route(upstream_path):
         raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
+    declared = declared_length(request.headers)
+    if declared is None:
+        raise HTTPException(status_code=411, detail="Content-Length required")
+    if declared > settings.max_upload_bytes:
+        raise too_large("Upload too large")
+    # Only now, after the route's dependencies and these checks, is the body allowed to be as big as an upload; the
+    # limit counts the bytes that arrive, so a Content-Length that lies gets no further than max_upload_bytes.
+    allow_upload(request, settings.max_upload_bytes)
+    # max_fields=0: no text field beside the file. The files are closed when the block ends, and by Starlette
+    # if the parse fails.
+    async with request.form(max_files=1, max_fields=0) as form:
+        parts = form.multi_items()
+        if len(parts) != 1 or parts[0][0] != "upload_file" or not isinstance(parts[0][1], UploadFile):
+            raise HTTPException(status_code=400, detail="Exactly one file, named upload_file, is required")
+        upload_file = parts[0][1]
+        if _has_control_character(upload_file.filename) or _has_control_character(upload_file.content_type):
+            raise HTTPException(status_code=400, detail="The file name and content type must not contain control characters")
+        return await _post_file(request, upstream_path, upload_file)
+
+
+async def _post_file(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
+    settings = request.app.state.settings
+    http_client = request.app.state.http
     upstream_url = f"{settings.eneo_backend_url}/api/v1/{upstream_path}"
     await upload_file.seek(0)
     try:

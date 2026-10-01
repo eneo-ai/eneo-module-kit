@@ -158,7 +158,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         }
         fwd_headers.update(upstream_auth_headers(request))
 
-        body = await request.body()
+        body = await request.body()  # at most Settings.max_body_bytes: the body limit counts it as it arrives
 
         try:
             upstream = await http_client.request(

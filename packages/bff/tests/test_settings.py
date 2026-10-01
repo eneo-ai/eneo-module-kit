@@ -41,6 +41,28 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "ENEO_PUBLIC_URL"):
                 load_settings()
 
+    def test_the_body_limits_default_to_10_mib_and_1_gib(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            settings = load_settings()
+
+        self.assertEqual((settings.max_body_bytes, settings.max_upload_bytes), (10 * 1024 * 1024, 1024 * 1024 * 1024))
+
+    def test_the_body_limits_are_configurable(self) -> None:
+        environment = valid_environment() | {"MAX_BODY_BYTES": "2048", "MAX_UPLOAD_BYTES": "5000000"}
+
+        with patch.dict(os.environ, environment, clear=True):
+            settings = load_settings()
+
+        self.assertEqual((settings.max_body_bytes, settings.max_upload_bytes), (2048, 5_000_000))
+
+    def test_rejects_an_invalid_body_limit(self) -> None:
+        for name in ("MAX_BODY_BYTES", "MAX_UPLOAD_BYTES"):
+            for raw in ("0", "-5", "ten", "1.5", ""):
+                environment = valid_environment() | {name: raw}
+                with self.subTest(name=name, raw=raw), patch.dict(os.environ, environment, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, f"{name} must be an integer greater than zero"):
+                        load_settings()
+
     def test_home_path_is_where_the_callback_lands_without_a_next(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             self.assertEqual(load_settings().home_path, "/")

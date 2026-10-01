@@ -44,6 +44,11 @@ class Settings(BaseModel):
     session_secret: str
     cookie_secure: bool = True
     upload_proxy_timeout_seconds: float = 1800.0
+    # The most of any request body the module reads (limits.py), whatever the content type, but an upload that
+    # forward_upload reads.
+    max_body_bytes: int = 10 * 1024 * 1024
+    # The most one upload may declare (forward_upload).
+    max_upload_bytes: int = 1024 * 1024 * 1024
     # Övre gräns för modulsessionen. Den slutar senast vid
     # Eneos sessionstak (module_auth_max_session_hours); modultoken förnyas
     # via Eneo fram till dess.
@@ -164,6 +169,19 @@ def _required_url(name: str) -> str:
     return value
 
 
+def _positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value <= 0:
+        raise RuntimeError(f"{name} must be an integer greater than zero")
+    return value
+
+
 def load_settings(*, default_organization: Organization | None = None, home_path: str = "/") -> Settings:
     required = [
         "ENEO_BACKEND_URL",
@@ -215,6 +233,8 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         session_secret=session_secret,
         cookie_secure=_parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE"),
         upload_proxy_timeout_seconds=upload_timeout,
+        max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
+        max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
         session_max_age_seconds=session_minutes * 60,
         home_path=home_path,
         organization=organization,

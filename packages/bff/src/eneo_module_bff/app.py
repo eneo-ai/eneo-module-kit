@@ -9,6 +9,7 @@ from fastapi import APIRouter, FastAPI
 
 from . import branding
 from .auth import ModuleAuth
+from .limits import BodyLimitMiddleware
 from .proxy import ProxyRule, proxy_router
 from .settings import Settings, load_settings
 from .web import add_security_headers, serve_web
@@ -57,6 +58,8 @@ def create_app(
     app.state.settings = settings
     app.state.http = http_client
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
+    # Added before the security headers, so that the 413 it answers carries them.
+    app.add_middleware(BodyLimitMiddleware, max_body_bytes=settings.max_body_bytes, max_upload_bytes=settings.max_upload_bytes)
     add_security_headers(app, security_headers)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
 

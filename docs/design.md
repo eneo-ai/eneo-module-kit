@@ -64,6 +64,18 @@ The module declares those routes on an `APIRouter` and hands it to `create_app(r
 registration order: the kit's own routes, then the module's, then the proxy, then the static app. A module's route
 therefore wins over the proxy and the page (including under `/api/eneo/`), and cannot replace a route of the kit.
 The module declares its own `Depends(require_session)` and `require_same_origin` on each route.
+An upload route has no `File(...)` parameter: FastAPI reads a route's body before it runs the route's dependencies,
+so `forward_upload(request, path)` reads the multipart itself, after them. It requires the Content-Length (411),
+at most `max_upload_bytes` (413, default 1 GiB), one file part named `upload_file` and no other field (400), and no
+control character in the file name or content type (400).
+No body is read before auth or past a limit. A pure-ASGI cap, `max_body_bytes` (default 10 MiB), covers every
+request body of every route, including a module's deliberately public ones, because it looks at no session (a 401
+gate would break them): 413 at once when the declared length is above it, else as soon as the stream passes it.
+No content type is exempt: FastAPI reads a body whatever the content type says, so a client that claims multipart
+would otherwise buy an unbounded read. Only `forward_upload` lifts the limit, to `max_upload_bytes`, for its own
+request, after the route's dependencies and its own checks; the bytes that arrive are counted, so a Content-Length
+that lies, or a chunked body, gets no further. What this does not do: an unauthenticated request can still make the
+BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run.
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
 http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.

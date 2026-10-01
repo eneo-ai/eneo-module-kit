@@ -2,7 +2,7 @@ import time
 import unittest
 
 import httpx2
-from fastapi import Depends, File, Request, Response, UploadFile
+from fastapi import Depends, Request, Response
 from fastapi.testclient import TestClient
 
 from eneo_module_bff.app import create_app
@@ -51,23 +51,14 @@ class TransportFixture:
 
     def build(self, http_client) -> None:
         self.app = create_app(make_settings(), http_client=http_client)
-        self.uploads: list[UploadFile] = []
 
         @self.app.post(
             "/upload/{flow_id}",
             dependencies=[Depends(require_session), Depends(require_same_origin)],
         )
-        async def upload(flow_id: str, request: Request, upload_file: UploadFile = File(...)) -> Response:
-            self.uploads.append(upload_file)
-            # Leave the stream at its end, and make reading it a failure: forward_upload must rewind it
-            # and pass the stream on, not its bytes.
-            await upload_file.read()
-
-            async def read(*_: object) -> bytes:
-                raise AssertionError("forward_upload must pass the upload stream")
-
-            upload_file.read = read  # type: ignore[method-assign]
-            return await forward_upload(request, f"flows/{flow_id}/files/", upload_file)
+        async def upload(flow_id: str, request: Request) -> Response:
+            # No File(...) here: forward_upload reads the body, after the dependencies above have run.
+            return await forward_upload(request, f"flows/{flow_id}/files/")
 
         @self.app.get(
             "/audio/{flow_id}/{run_id}/{file_id}",
@@ -192,7 +183,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         assert client.files is not None
         filename, file_obj, content_type = client.files["upload_file"]
         self.assertEqual(filename, "meeting.webm")
-        self.assertIs(file_obj, self.uploads[0].file)
+        self.assertFalse(isinstance(file_obj, bytes), "the file is passed on as a stream, not as its bytes")
         self.assertEqual(client.body, b"audio", "rewound to the start")
         self.assertEqual(content_type, "audio/webm")
         self.assertEqual(client.headers["X-API-Key"], "test-key")
