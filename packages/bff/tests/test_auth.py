@@ -11,6 +11,7 @@ import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
+from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import (
     ModuleAuth,
     ModuleSession,
@@ -18,6 +19,7 @@ from eneo_module_bff.auth import (
     SESSION_COOKIE,
     STATE_COOKIE,
 )
+from eneo_module_bff.deps import require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
 
 # Eneo's session ceiling in these tests; shorter than the module's 8-hour default.
@@ -25,10 +27,7 @@ ENEO_SESSION_SECONDS = 4 * 60 * 60
 
 
 def build_auth(http_client) -> tuple[FastAPI, ModuleAuth]:
-    """The app under test: the auth router under /api/auth and one session-protected route that calls Eneo.
-
-    Task 1.4's create_app replaces this helper.
-    """
+    """The app under test: create_app, plus one session-protected route that calls Eneo."""
     settings = Settings(
         eneo_backend_url="https://eneo.example.test",
         eneo_public_url="https://eneo.example.test",
@@ -39,20 +38,18 @@ def build_auth(http_client) -> tuple[FastAPI, ModuleAuth]:
         cookie_secure=False,
         home_path="/flows",
     )
-    auth = ModuleAuth(settings=settings, http_client=http_client)
-    app = FastAPI()
-    app.include_router(auth.router, prefix="/api/auth")
+    app = create_app(settings, http_client=http_client)
 
-    @app.get("/resource", dependencies=[Depends(auth.require_session)])
+    @app.get("/resource", dependencies=[Depends(require_session)])
     async def resource(request: Request) -> dict[str, bool]:
-        await auth.http_client.request(
+        await request.app.state.http.request(
             method="GET",
             url="https://eneo.example.test/api/v1/flows/",
-            headers=auth.upstream_auth_headers(request),
+            headers=upstream_auth_headers(request),
         )
         return {"ok": True}
 
-    return app, auth
+    return app, app.state.module_auth
 
 
 def token_payload(
@@ -423,8 +420,8 @@ class TokenRefreshFixture:
     """Sessions whose module token is due for renewal, and a fake Eneo."""
 
     def setUp(self) -> None:
-        # The fake Eneo comes with use_eneo, before the first request.
-        self.app, self.auth = build_auth(None)
+        # The fake Eneo that answers comes with use_eneo, before the first request.
+        self.app, self.auth = build_auth(FakeEneo(None))
         self.client = TestClient(self.app)
 
     def sign_in_with_due_token(
@@ -449,6 +446,7 @@ class TokenRefreshFixture:
     def use_eneo(self, refresh) -> FakeEneo:
         eneo = FakeEneo(refresh)
         self.auth.http_client = eneo
+        self.app.state.http = eneo
         return eneo
 
 
