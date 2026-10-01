@@ -14,6 +14,28 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("eneo_config")
 
+# The headers that carry credentials or frame a request. A module cannot add one to the request headers the proxy
+# forwards (proxy.py), and none can be the name of the service key's header: the module sets Authorization from the
+# session after the key, and the others are the HTTP client's to write.
+CREDENTIAL_AND_FRAMING_HEADERS = frozenset(
+    {
+        "authorization",
+        "cookie",
+        "origin",
+        "referer",
+        "x-api-key",
+        "proxy-authorization",
+        "host",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "te",
+        "trailer",
+        "upgrade",
+    }
+)
+
 
 class Organization(BaseModel):
     """The organisation shown beside the product name: its name, and its logo.
@@ -232,6 +254,9 @@ def load_settings(*, default_organization: Organization | None = None, home_path
     api_key_header_name = os.environ.get("ENEO_API_KEY_HEADER_NAME", "X-API-Key")
     if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", api_key_header_name) is None:
         raise RuntimeError("ENEO_API_KEY_HEADER_NAME must be a valid HTTP header name")
+    # X-API-Key is the default name, so it is the one entry of the set that is allowed.
+    if api_key_header_name.lower() in CREDENTIAL_AND_FRAMING_HEADERS - {"x-api-key"}:
+        raise RuntimeError(f"ENEO_API_KEY_HEADER_NAME cannot be a credential or framing header ({api_key_header_name})")
 
     raw_session_minutes = os.environ.get("SESSION_MAX_AGE_MINUTES", "480")
     try:

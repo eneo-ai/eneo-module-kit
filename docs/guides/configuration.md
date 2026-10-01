@@ -16,7 +16,7 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `MODULE_KEY` | required | lowercase kebab-case | The module's name as registered in Eneo. |
 | `ENEO_API_KEY` | required | not empty | The module's service key. |
 | `SESSION_SECRET` | required | at least 32 characters | Signs the login-state cookie. The session cookie is a random id and does not use it. |
-| `ENEO_API_KEY_HEADER_NAME` | `X-API-Key` | a valid HTTP header name | The header that carries the service key to Eneo. |
+| `ENEO_API_KEY_HEADER_NAME` | `X-API-Key` | a valid HTTP header name that is not a credential or framing header (`Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, ...) | The header that carries the service key to Eneo. The module sets `Authorization` from the session after it, so a key sent under that name would never arrive: it is refused at start. |
 | `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off` | `false` only for local development over http. |
 | `SESSION_MAX_AGE_MINUTES` | `480` | integer above zero | The most a login lasts. The session also ends at Eneo's own ceiling, whichever comes first. |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | number above zero | The read and write budget of one upload to Eneo. A request's `X-Upload-Timeout-Seconds` header can lower it, never below 60 s. |

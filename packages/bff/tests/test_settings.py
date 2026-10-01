@@ -117,6 +117,18 @@ class SettingsTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "UPLOAD_PROXY_TIMEOUT_SECONDS must be a number greater than zero"):
                     load_settings()
 
+    def test_rejects_a_service_key_header_the_module_would_overwrite_or_that_frames_the_request(self) -> None:
+        # The bearer token is set as Authorization after the key, so a key sent under that name would never arrive.
+        for name in ("Authorization", "authorization", "Proxy-Authorization", "Cookie", "Host", "Content-Length", "Transfer-Encoding", "Connection", "TE"):
+            with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {"ENEO_API_KEY_HEADER_NAME": name}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "ENEO_API_KEY_HEADER_NAME .*credential or framing"):
+                    load_settings()
+
+    def test_the_default_and_a_custom_service_key_header_are_accepted(self) -> None:
+        for name in ("X-API-Key", "x-api-key", "X-Eneo-Module-Key"):
+            with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {"ENEO_API_KEY_HEADER_NAME": name}, clear=True):
+                self.assertEqual(load_settings().eneo_api_key_header_name, name)
+
     def test_loads_custom_api_key_header_name(self) -> None:
         environment = valid_environment()
         environment["ENEO_API_KEY_HEADER_NAME"] = "X-Eneo-Module-Key"

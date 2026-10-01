@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from .deps import require_same_origin, require_session, upstream_auth_headers
+from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -21,27 +22,6 @@ logger = logging.getLogger("eneo_proxy")
 # ``create_app(forward_request_headers=...)``.
 FORWARDED_REQUEST_HEADERS = frozenset(
     {"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"}
-)
-
-# Not even a module may add these: the credentials (the module checks the browser's origin itself, and Eneo
-# refuses any origin it does not list) and the headers that frame the request.
-_NEVER_FORWARDED_REQUEST_HEADERS = frozenset(
-    {
-        "authorization",
-        "cookie",
-        "origin",
-        "referer",
-        "x-api-key",
-        "proxy-authorization",
-        "host",
-        "content-length",
-        "transfer-encoding",
-        "connection",
-        "keep-alive",
-        "te",
-        "trailer",
-        "upgrade",
-    }
 )
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
@@ -148,7 +128,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
     """
     rules = tuple(rules)
     added = {name.lower() for name in forward_request_headers}
-    if refused := sorted(added & _NEVER_FORWARDED_REQUEST_HEADERS):
+    if refused := sorted(added & CREDENTIAL_AND_FRAMING_HEADERS):
         raise ValueError(f"forward_request_headers cannot include credential or framing headers: {', '.join(refused)}")
     forwarded_headers = FORWARDED_REQUEST_HEADERS | added
     router = APIRouter()
