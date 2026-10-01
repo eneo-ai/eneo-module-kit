@@ -1,11 +1,14 @@
 # eneo-module-kit: design
 
-Design record, 2026-10-01. Status: proposed, nothing built. The plan that carries it out is
-`docs/plans/2026-10-01-module-kit-plan.md`.
+Purpose: the long-form design record: the module contract with Eneo, the decisions K1 to K12, the BFF's HTTP surface, its limits and the open questions.
+Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
+Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
+
+Design record, 2026-10-01. Status: the BFF described here is built (`packages/bff`); the UI package and the template are planned. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
-`docs/plans/2026-10-01-module-platform-design.md`.
+`docs/plans/2026-10-01-module-platform-design.md` (a file that repository removes when its port ends).
 
 ## 1. Goal
 
@@ -166,3 +169,7 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
 | Does `eneo-ai` own the `@eneo-ai` scope on npm? | To be checked before the first release. |
 | Licence for this repository? | None yet; the module repositories have none either. |
 | Router for the template? | `react-router`, library mode. The UI package does not depend on it. |
+
+## Build scaffolding (temporary)
+
+The plan that carries this design out is `docs/plans/2026-10-01-module-kit-plan.md`. It and the Beads board exist only while the kit is built.

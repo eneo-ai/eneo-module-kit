@@ -1,0 +1,25 @@
+# K14. Body limits and a cap on streaming files
+
+Purpose: record the decision why no request body is read before auth or past a limit, and why at most 64 files stream at once.
+Read this when: you change `MAX_BODY_BYTES`, `MAX_UPLOAD_BYTES` or `MAX_CONCURRENT_STREAMS`, add a route that takes a body, or touch the middleware order.
+Related: [decisions](README.md), [K7](k07-primitives-for-uploads-and-files.md), [configuration](../guides/configuration.md), [architecture](../architecture.md#uploads), [design.md](../design.md) section 3 (K7).
+
+Status: Accepted, 2026-10-01. Built: `packages/bff/src/eneo_module_bff/limits.py`, `transport.py`, `app.py`.
+
+## Context
+
+FastAPI reads a body before it runs a route's dependencies and whatever the content type says, so an unauthenticated client could make the BFF read an unbounded body by claiming `multipart/form-data`. A file that streams holds one of the shared client's 100 connections for as long as it runs; with a 60 s wait for a free connection a busy pool made every API call a 502 after a minute.
+
+## Decision
+
+- A pure-ASGI middleware caps every request body of every route at `MAX_BODY_BYTES` (default 10 MiB): 413 at once when the declared length is above it, otherwise as soon as the stream passes it. It looks at no session, so it holds for a module's deliberately public routes too. No content type is exempt.
+- Only `forward_upload` lifts the limit, to `MAX_UPLOAD_BYTES` (default 1 GiB), for its own request, after the route's dependencies and its own checks. The bytes that arrive are counted, so a `Content-Length` that lies, or a chunked body, gets no further.
+- At most `MAX_CONCURRENT_STREAMS` (default 64) files stream at once; the next is a 503 with `Retry-After` at once, so the API keeps its connections.
+- The shared client waits at most 5 s for a free connection (`pool=5`), so a busy pool is a quick 502.
+- The security-headers middleware is added after the body limit, so the 413 carries the headers.
+
+## Consequences
+
+- An unauthenticated request can still make the BFF buffer up to `MAX_BODY_BYTES` of a body, once per request, before a route's dependencies run (on a route that declares a body parameter).
+- A module may not read a body past the cap except through `forward_upload`.
+- `serve()` stops within 8 s of SIGTERM with files still streaming, because Docker kills the container after 10 s.
