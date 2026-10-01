@@ -13,7 +13,7 @@ from starlette.background import BackgroundTask
 
 from .auth import SESSION_COOKIE
 from .deps import upstream_auth_headers
-from .proxy import leaves_route
+from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect
 from .settings import Settings
 
 logger = logging.getLogger("eneo_proxy")
@@ -96,6 +96,10 @@ async def forward_upload(request: Request, upstream_path: str, upload_file: Uplo
                 "detail": "Eneo could not be reached.",
             },
         )
+
+    if upstream.status_code in REDIRECT_STATUSES:
+        logger.error("Upload was answered with a redirect: url=%s status=%s", upstream_url, upstream.status_code)
+        return upstream_redirect()
 
     return Response(
         content=upstream.content,
@@ -250,6 +254,13 @@ async def stream_signed(
             status_code=502,
             content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
         )
+
+    if upstream.status_code in REDIRECT_STATUSES:
+        # Not a file: the URL is not worth keeping either, and the stream is closed unread.
+        signed_urls.pop(key, None)
+        await upstream.aclose()
+        logger.error("File stream was answered with a redirect: path=%s status=%s", mint_path, upstream.status_code)
+        return upstream_redirect()
 
     if upstream.status_code >= 400:
         # A rejected token is not worth keeping around; the next request mints anew.

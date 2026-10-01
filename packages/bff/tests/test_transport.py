@@ -136,7 +136,8 @@ class UploadTimeoutTests(unittest.TestCase):
 
 
 class FakeHttpClient:
-    def __init__(self) -> None:
+    def __init__(self, status_code: int = 200) -> None:
+        self.status_code = status_code
         self.url = None
         self.files = None
         self.headers = None
@@ -152,9 +153,9 @@ class FakeHttpClient:
 
         class FakeResponse:
             content = b'{"id":"file"}'
-            status_code = 200
-            headers = {"content-type": "application/json"}
+            headers = {"content-type": "application/json", "location": "http://eneo.internal/elsewhere/"}
 
+        FakeResponse.status_code = self.status_code
         return FakeResponse()
 
 
@@ -190,6 +191,15 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
             "Bearer module-user-token",
         )
         self.assertEqual(client.timeout.read, 120.0)
+
+    def test_a_redirect_from_eneo_is_a_502_for_an_upload_too(self) -> None:
+        self.build(FakeHttpClient(status_code=302))
+
+        response = self.upload_file()
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["error"], "upstream_redirect")
+        self.assertNotIn("location", response.headers)
 
     def test_proxy_upload_maps_upstream_timeout_to_504(self) -> None:
         self.build(RaisingHttpClient(httpx2.TimeoutException("stalled")))
@@ -297,6 +307,12 @@ class FakeAudioClient:
         return response
 
     def respond(self, request) -> FakeStreamResponse:
+        if 300 <= self.stream_status < 400:
+            return FakeStreamResponse(
+                self.stream_status,
+                {"location": "http://eneo.internal/elsewhere/", "content-type": "text/html"},
+                b"",
+            )
         if self.stream_status >= 400:
             return FakeStreamResponse(
                 self.stream_status,
@@ -529,6 +545,20 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
 
         self.assertEqual(again.status_code, 200)
         self.assertEqual(len(self.fake.signed_url_calls), 2)
+
+    def test_a_redirect_from_the_signed_url_is_a_502_and_the_url_is_not_kept(self) -> None:
+        self.fake.stream_status = 302
+
+        with self.assertLogs("eneo_proxy", level="ERROR"):
+            response = self.client.get(AUDIO)
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["error"], "upstream_redirect")
+        self.assertNotIn("location", response.headers)
+        self.assertTrue(self.fake.stream_responses[-1].closed)
+        self.fake.stream_status = 200
+        self.assertEqual(self.client.get(AUDIO).status_code, 200)
+        self.assertEqual(len(self.fake.signed_url_calls), 2, "the next request mints a new URL")
 
     def test_each_session_has_its_own_signed_url(self) -> None:
         self.client.get(AUDIO)

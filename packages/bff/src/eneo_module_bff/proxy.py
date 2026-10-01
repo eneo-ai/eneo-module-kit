@@ -45,7 +45,8 @@ _NEVER_FORWARDED_REQUEST_HEADERS = frozenset(
 )
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
-# several would be merged into one line, and one named like the module's session would replace it.
+# several would be merged into one line, and one named like the module's session would replace it. Its Location
+# names Eneo's own host, which the browser cannot reach and which says how the network is laid out.
 _UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
@@ -53,7 +54,22 @@ _UNFORWARDED_RESPONSE_HEADERS = {
     "keep-alive",
     "content-length",
     "set-cookie",
+    "location",
 }
+
+# The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
+# error, not an answer for the browser. (304 is not one: If-None-Match is forwarded, and a conditional read gets it.)
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+def upstream_redirect() -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "upstream_redirect",
+            "detail": "Eneo answered with a redirect, which the module does not follow.",
+        },
+    )
 
 FORWARDED_REQUEST_HEADERS = frozenset({"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"})
 RESOURCE_ID = r"[^/]+"
@@ -165,6 +181,15 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
                     "detail": "Eneo could not be reached.",
                 },
             )
+
+        if upstream.status_code in REDIRECT_STATUSES:
+            logger.error(
+                "Eneo answered with a redirect: method=%s url=%s status=%s",
+                request.method,
+                upstream_url,
+                upstream.status_code,
+            )
+            return upstream_redirect()
 
         resp_headers = {
             k: v

@@ -28,12 +28,15 @@ class FakeProxyClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
         self.response_headers = None
+        self.response_status = None
 
     async def request(self, **kwargs):
         self.calls.append(kwargs)
         response = FakeResponse()
         if self.response_headers is not None:
             response.headers = self.response_headers
+        if self.response_status is not None:
+            response.status_code = self.response_status
         return response
 
 
@@ -218,6 +221,37 @@ class EneoProxyAuthTests(unittest.TestCase):
         self.assertNotIn("set-cookie", response.headers)
         self.assertEqual(self.client.cookies.get(SESSION_COOKIE), session)
         self.assertIsNone(self.client.cookies.get("other"))
+
+    def test_eneos_location_header_never_reaches_the_browser(self) -> None:
+        # It names Eneo's own host (ENEO_BACKEND_URL), which the browser cannot reach and which says how the network is laid out.
+        self.proxy_client.response_status = 201
+        self.proxy_client.response_headers = {"content-type": "application/json", "Location": "http://eneo.internal:8000/api/v1/things/1/"}
+
+        response = self.client.get("/api/eneo/flows/")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn("location", response.headers)
+
+    def test_a_redirect_from_eneo_is_a_502_and_never_an_answer_for_the_browser(self) -> None:
+        # The module does not follow redirects and no route of a module is expected to redirect.
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                self.proxy_client.response_status = status
+                self.proxy_client.response_headers = {"Location": "http://eneo.internal:8000/elsewhere/"}
+
+                with self.assertLogs("eneo_proxy", level="ERROR") as logs:
+                    response = self.client.get("/api/eneo/flows/")
+
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(response.json(), {"error": "upstream_redirect", "detail": "Eneo answered with a redirect, which the module does not follow."})
+                self.assertNotIn("location", response.headers)
+                self.assertIn(str(status), logs.output[0])
+
+    def test_not_modified_is_an_answer_not_a_redirect(self) -> None:
+        # If-None-Match is forwarded, so a 304 is what a conditional read gets.
+        self.proxy_client.response_status = 304
+
+        self.assertEqual(self.client.get("/api/eneo/flows/", headers={"If-None-Match": '"v1"'}).status_code, 304)
 
     def test_a_proxied_response_is_not_cached_unless_eneo_says_how(self) -> None:
         self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "private, no-store")
