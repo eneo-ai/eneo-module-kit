@@ -31,6 +31,7 @@ flowchart TB
     transport["transport.py: forward_upload, stream_signed"]
     proxy["proxy.py: rule, proxy_router"]
     limits["limits.py: body limit"]
+    upstream["upstream.py: make_client"]
     auth["auth.py: login, session store, refresh"]
     web["web.py: security headers, built UI"]
     branding["branding.py: /api/branding"]
@@ -48,6 +49,8 @@ flowchart TB
   app --> web
   app --> branding
   app --> settings
+  app --> upstream
+  upstream --> settings
   proxy --> deps
   transport --> deps
   transport --> proxy
@@ -265,6 +268,8 @@ flowchart LR
 | Proxy, allowlist, `leaves_route` | `proxy.py` | `test_proxy.py` |
 | Uploads and signed files | `transport.py` | `test_transport.py` |
 | Body limit | `limits.py` | `test_limits.py` |
+| The client to Eneo (no cookies, bounded answers), the paths and headers sent to it | `upstream.py`, `proxy.py` | `test_upstream_client.py`, `test_upstream_answers.py`, `test_upstream_paths.py`, `test_mint_answers.py` |
+| Where login returns | `auth.py` | `test_login_redirect.py` |
 | Security headers, built UI | `web.py` | `test_web.py` |
 | Branding routes | `branding.py` | `test_branding.py` |
 | App factory | `app.py` | `test_app.py` |
