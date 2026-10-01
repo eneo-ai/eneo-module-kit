@@ -104,6 +104,19 @@ class SettingsTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "SESSION_MAX_AGE_MINUTES"):
                         load_settings()
 
+    def test_the_upload_timeout_defaults_to_30_minutes_and_is_configurable(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertEqual(load_settings().upload_proxy_timeout_seconds, 1800.0)
+        with patch.dict(os.environ, valid_environment() | {"UPLOAD_PROXY_TIMEOUT_SECONDS": "90.5"}, clear=True):
+            self.assertEqual(load_settings().upload_proxy_timeout_seconds, 90.5)
+
+    def test_rejects_an_upload_timeout_that_is_not_a_number_above_zero(self) -> None:
+        # Not a ValueError from float(): like every other setting, a RuntimeError that names the variable.
+        for raw in ("abc", "", "1m", "0", "-5", "nan", "inf", "-inf"):
+            with self.subTest(raw=raw), patch.dict(os.environ, valid_environment() | {"UPLOAD_PROXY_TIMEOUT_SECONDS": raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "UPLOAD_PROXY_TIMEOUT_SECONDS must be a number greater than zero"):
+                    load_settings()
+
     def test_loads_custom_api_key_header_name(self) -> None:
         environment = valid_environment()
         environment["ENEO_API_KEY_HEADER_NAME"] = "X-Eneo-Module-Key"

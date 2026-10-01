@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from pathlib import Path
@@ -185,6 +186,20 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
+def _positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.0
+    # nan compares false with everything and inf is no budget: neither is a number of seconds.
+    if not (math.isfinite(value) and value > 0):
+        raise RuntimeError(f"{name} must be a number greater than zero")
+    return value
+
+
 def load_settings(*, default_organization: Organization | None = None, home_path: str = "/") -> Settings:
     required = [
         "ENEO_BACKEND_URL",
@@ -212,10 +227,6 @@ def load_settings(*, default_organization: Organization | None = None, home_path
     if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", api_key_header_name) is None:
         raise RuntimeError("ENEO_API_KEY_HEADER_NAME must be a valid HTTP header name")
 
-    upload_timeout = float(os.environ.get("UPLOAD_PROXY_TIMEOUT_SECONDS", "1800"))
-    if upload_timeout <= 0:
-        raise RuntimeError("UPLOAD_PROXY_TIMEOUT_SECONDS must be greater than zero")
-
     raw_session_minutes = os.environ.get("SESSION_MAX_AGE_MINUTES", "480")
     try:
         session_minutes = int(raw_session_minutes)
@@ -235,7 +246,7 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         eneo_api_key_header_name=api_key_header_name,
         session_secret=session_secret,
         cookie_secure=_parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE"),
-        upload_proxy_timeout_seconds=upload_timeout,
+        upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
         max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
