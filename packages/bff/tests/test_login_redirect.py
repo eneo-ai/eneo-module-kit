@@ -4,7 +4,9 @@ import re
 import unittest
 from urllib.parse import urlsplit
 
-from eneo_module_bff.auth import module_path
+import httpx2
+
+from eneo_module_bff.auth import STATE_COOKIE, module_path
 
 from .fake_eneo import FakeEneo, Module
 
@@ -57,6 +59,33 @@ class LoginRedirectTests(unittest.IsolatedAsyncioTestCase):
         for value in ("/", "/a/b", "/a?b=c", "/a%09b", "/%09/review.example", "/ångest"):
             with self.subTest(value=value):
                 self.assertEqual(module_path(value, "/home"), value)
+
+
+class CallbackStateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_state_that_is_not_ascii_is_invalid_and_nothing_is_asked_of_eneo(self) -> None:
+        # secrets.compare_digest raises TypeError for a str that is not ASCII; the callback compares encoded bytes.
+        eneo = FakeEneo()
+        browser = Module(self, eneo).browser(signed_in=False)
+
+        async def start_login() -> str:
+            # A failed callback deletes the pending-login cookie, so each attempt starts a login of its own.
+            login = await browser.get("/api/auth/login")
+            self.assertIn(STATE_COOKIE, browser.cookies)
+            return httpx2.URL(login.headers["location"]).params["state"]
+
+        for state in ("%C3%A9", "%E2%82%AC%E2%82%AC", "%00", "a" * 3000):
+            with self.subTest(state=state[:20]):
+                await start_login()
+
+                response = await browser.get(f"/api/auth/callback?ticket=t&state={state}")
+
+                self.assertEqual((response.status_code, response.headers["location"]), (303, "/?auth_error=invalid_state"))
+        self.assertEqual(eneo.seen, [])
+        # With the cookie present, the real state gets past the check and on to Eneo (which answers nothing usable).
+        real_state = await start_login()
+        response = await browser.get(f"/api/auth/callback?ticket=t&state={real_state}")
+        self.assertEqual(response.headers["location"], "/?auth_error=exchange_invalid")
+        self.assertEqual(len(eneo.seen), 1)
 
 
 if __name__ == "__main__":
