@@ -203,6 +203,15 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
             self.assertEqual(response.json(), {"detail": "Eneo resource is not exposed"})
         self.assertEqual(client.calls, 0)
 
+    def test_a_control_character_or_a_backslash_in_an_upload_id_is_refused_before_eneo_is_called(self) -> None:
+        client = RaisingHttpClient(httpx.ConnectError("must not be called"))
+        self.build(client)
+
+        for flow_id in ("a%00b", "a%0Db", "a%0Ab", "a%7Fb", "a%5Cb"):
+            response = self.upload_file(flow_id)
+            self.assertEqual(response.status_code, 403, flow_id)
+        self.assertEqual(client.calls, 0)
+
     def test_an_upload_needs_a_session_and_the_modules_origin(self) -> None:
         client = RaisingHttpClient(httpx.ConnectError("must not be called"))
         self.build(client)
@@ -367,6 +376,12 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
 
     def test_an_id_cannot_carry_a_query_or_fragment_into_the_mint_path(self) -> None:
         for run_id in ("run%3F1", "run%231"):
+            response = self.client.get(f"/audio/flow-1/{run_id}/file-1")
+            self.assertEqual(response.status_code, 403, run_id)
+        self.assertEqual(self.fake.signed_url_calls, [])
+
+    def test_a_control_character_or_a_backslash_in_an_id_is_refused_before_a_url_is_minted(self) -> None:
+        for run_id in ("run%001", "run%0D1", "run%0A1", "run%7F1", "run%5C1"):
             response = self.client.get(f"/audio/flow-1/{run_id}/file-1")
             self.assertEqual(response.status_code, 403, run_id)
         self.assertEqual(self.fake.signed_url_calls, [])

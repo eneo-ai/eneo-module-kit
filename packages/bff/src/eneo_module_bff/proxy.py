@@ -78,6 +78,10 @@ def _proxy_route_is_allowed(rules: Sequence[ProxyRule], method: str, path: str) 
     )
 
 
+def _is_unsafe_character(character: str) -> bool:
+    return character < " " or character == "\x7f" or character == "\\"
+
+
 def leaves_route(path: str) -> bool:
     """True if ``path`` could reach another upstream route than the one authorized.
 
@@ -85,12 +89,17 @@ def leaves_route(path: str) -> bool:
     segment such as ``%2E%2E`` still satisfies ``[^/]+`` and would let httpx
     resolve ``a/../b/`` to a different upstream path, and a decoded
     ``?`` or ``#`` would move the rest of the path into a query or fragment.
+    A control character (``%00``, ``%0D``) makes httpx raise InvalidURL, which is
+    not a request error and would answer 500, and a backslash would go upstream
+    literally; both are refused, in the path as decoded and in what a URL parser
+    would decode from it once more.
     Reject these before matching so the allowlist keeps meaning exactly the
     routes it spells out.
     """
     return (
         "?" in path
         or "#" in path
+        or any(_is_unsafe_character(character) for character in path + unquote(path))
         or any(unquote(segment) in {".", ".."} for segment in path.split("/"))
     )
 

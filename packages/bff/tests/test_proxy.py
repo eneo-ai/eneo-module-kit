@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import ModuleSession, ModuleUser, SESSION_COOKIE
 from eneo_module_bff.deps import require_same_origin, require_session
-from eneo_module_bff.proxy import FORWARDED_REQUEST_HEADERS, RESOURCE_ID, rule
+from eneo_module_bff.proxy import FORWARDED_REQUEST_HEADERS, RESOURCE_ID, leaves_route, rule
 from eneo_module_bff.settings import Settings
 
 # The kit ships no rules; these are what the test module allows.
@@ -165,6 +165,37 @@ class EneoProxyAuthTests(unittest.TestCase):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 403, path)
         self.assertEqual(self.proxy_client.calls, [])
+
+    def test_a_control_character_or_a_backslash_in_a_segment_is_refused_not_a_500(self) -> None:
+        # %00 and %0D make httpx raise InvalidURL, which is not a RequestError; a backslash would go upstream
+        # literally. %250D decodes to the text %0D, which a URL parser would decode once more.
+        for segment in ("a%00b", "a%0Db", "a%09b", "a%1Fb", "a%7Fb", "a%5Cb", "..%5C", "a%250Db"):
+            with self.subTest(segment=segment):
+                response = self.client.get(f"/api/eneo/flows/{segment}/runs/")
+
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json(), {"detail": "Eneo resource is not exposed"})
+        self.assertEqual(self.proxy_client.calls, [])
+
+    def test_a_newline_in_a_segment_never_reaches_eneo(self) -> None:
+        # The router's own pattern for the rest of the path does not match a newline, so it is a 404 there.
+        for segment in ("a%0Ab", "a%250Ab"):
+            with self.subTest(segment=segment):
+                self.assertEqual(self.client.get(f"/api/eneo/flows/{segment}/runs/").status_code, 404)
+        self.assertEqual(self.proxy_client.calls, [])
+
+    def test_ordinary_ids_still_pass(self) -> None:
+        for segment in ("abc-1_2.3~", "a%20b", "%C3%A5ngest", "0b6f9c1e-8d1f-4a52-9f0e-3f5b1c2d4e6a"):
+            with self.subTest(segment=segment):
+                self.assertEqual(self.client.get(f"/api/eneo/flows/{segment}/runs/").status_code, 200)
+
+    def test_leaves_route_names_what_it_refuses(self) -> None:
+        for path in ("a\x00b", "a\rb", "a\nb", "a\tb", "a\x1fb", "a\x7fb", "a\\b", "a/..\\b", "a%0Ab", "a/%2e%2E/b", "a?b", "a#b"):
+            with self.subTest(path=path):
+                self.assertTrue(leaves_route(path))
+        for path in ("flows/", "flows/a b/runs/", "flows/\u00e5ngest/runs/", "flows/abc-1_2.3~/runs/", "flows/a%20b/"):
+            with self.subTest(path=path):
+                self.assertFalse(leaves_route(path))
 
     def test_with_no_rules_every_path_is_refused_and_eneo_is_never_called(self) -> None:
         self.build(rules=())

@@ -354,7 +354,7 @@ class ProxyRule(NamedTuple):
 
 RESOURCE_ID = r"[^/]+"
 def rule(methods: str | Iterable[str], pattern: str) -> ProxyRule: ...   # rule("GET", r"flows/$")
-def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, unchanged
+def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, and a control character or backslash
 def proxy_router(rules: Sequence[ProxyRule]) -> APIRouter: ...             # GET|POST|PATCH /api/eneo/{path:path}
 ```
 
