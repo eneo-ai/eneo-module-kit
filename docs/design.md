@@ -168,6 +168,9 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   about 21 MiB (`request.body()`) or 42 MiB (a JSON model), and 50 at once raise it by 13 to 16 MiB or 17 to 26 MiB
   each. A module multiplies that by the requests it expects in flight; the cap bounds a request, not their sum, and
   no global byte budget is built.
+- The client the kit builds (`upstream.make_client`) keeps no cookies: one client serves every user, so a cookie Eneo
+  sets on one user's call would otherwise be sent with the next user's. Every call to Eneo is authorised by its
+  headers alone. A module that passes its own `http_client` to `create_app` owns that policy.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

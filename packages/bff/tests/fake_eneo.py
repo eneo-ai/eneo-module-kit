@@ -16,6 +16,7 @@ from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleSession, ModuleUser
 from eneo_module_bff.proxy import ProxyRule
 from eneo_module_bff.settings import Settings
+from eneo_module_bff.upstream import make_client
 
 ORIGIN = "http://module.example.test"
 
@@ -88,7 +89,7 @@ class Module:
             eneo_backend_url="http://eneo.test", eneo_public_url="http://eneo.example", module_public_url=ORIGIN,
             module_key="fake", eneo_api_key="service-key", session_secret="x" * 48, cookie_secure=False, **overrides,
         )
-        self.upstream = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=eneo), follow_redirects=False)
+        self.upstream = make_client(transport=httpx2.ASGITransport(app=eneo))
         test.addAsyncCleanup(self.upstream.aclose)
         self.app = create_app(self.settings, routers=routers, proxy_rules=proxy_rules, http_client=self.upstream)
 
