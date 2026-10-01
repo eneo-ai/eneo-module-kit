@@ -20,7 +20,7 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off` | `false` only for local development over http. |
 | `SESSION_MAX_AGE_MINUTES` | `480` | integer above zero | The most a login lasts. The session also ends at Eneo's own ceiling, whichever comes first. |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | number above zero | The read and write budget of one upload to Eneo. A request's `X-Upload-Timeout-Seconds` header can lower it, never below 60 s. |
-| `MAX_BODY_BYTES` | `10485760` (10 MiB) | integer above zero | The most of any request body, but an upload that `forward_upload` reads. A body of this size costs 13 to 26 MiB while it is read, per request in flight: a module that is public to the internet sets it for its own largest JSON body. |
+| `MAX_BODY_BYTES` | `10485760` (10 MiB) | integer above zero | The most of any request body, but an upload that `forward_upload` reads. A body of this size costs 21 MiB (42 MiB as a JSON model) for one request, and 13 to 16 MiB (17 to 26) each when 50 arrive at once: a module that is public to the internet sets it for its own largest JSON body. |
 | `MAX_UPLOAD_BYTES` | `1073741824` (1 GiB) | integer above zero | The most one upload may declare. |
 | `MAX_CONCURRENT_STREAMS` | `64` | integer above zero | How many files may stream at once through `stream_signed`. |
 | `SHOW_ORGANIZATION` | `true` | boolean, as `COOKIE_SECURE` | `false` shows no organisation at all. |

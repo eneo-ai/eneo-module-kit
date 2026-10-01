@@ -129,6 +129,7 @@ The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multi
 | Request | Answer |
 |---|---|
 | No `Content-Length` | 411 |
+| A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more) | 400 |
 | Above `MAX_UPLOAD_BYTES` | 413 |
 | Not exactly one file named `upload_file`, or a control character (C0, DEL, C1) or a line or paragraph separator in its file name or content type | 400 |
 | The path leaves its route | 403 |
