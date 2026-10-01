@@ -20,6 +20,7 @@ def create_app(
     title: str = "Eneo module",
     routers: Sequence[APIRouter] = (),  # the module's own routes
     proxy_rules: Sequence[ProxyRule] = (),  # the routes under /api/eneo; none by default
+    forward_request_headers: Sequence[str] = (),  # added to the request headers the proxy forwards
     static_dir: Path | None = None,  # the built UI, served last
     security_headers: dict[str, str] | None = None,  # replaces defaults, e.g. Permissions-Policy microphone=(self)
     http_client: httpx.AsyncClient | None = None,  # tests inject one; otherwise the lifespan owns one
@@ -69,7 +70,7 @@ def create_app(
     app.include_router(branding.router)
     for router in routers:
         app.include_router(router)
-    app.include_router(proxy_router(proxy_rules))
+    app.include_router(proxy_router(proxy_rules, forward_request_headers))
     if static_dir is not None:
         serve_web(app, static_dir)
     return app

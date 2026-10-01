@@ -34,7 +34,9 @@ app = create_app(
 ```
 
 The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the
-path after `/api/eneo/`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind
+path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS`
+(`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo;
+`create_app(forward_request_headers=[...])` adds more, never a credential or framing header. `forward_upload` and `stream_signed` are functions for a module's own routes, behind
 `Depends(require_session)` (and `require_same_origin` for a write).
 
 A module's own routes go in `routers=`. They are registered after the kit's own routes (`/health`, `/api/auth/*`,

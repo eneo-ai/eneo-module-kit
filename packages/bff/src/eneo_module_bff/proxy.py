@@ -14,25 +14,35 @@ from .deps import require_same_origin, require_session, upstream_auth_headers
 
 logger = logging.getLogger("eneo_proxy")
 
-# Headers we should not forward from incoming request to upstream.
-# The header that carries the service key is added per request, from the app's settings.
-_HOP_BY_HOP_REQUEST_HEADERS = {
-    "host",
-    "connection",
-    "content-length",
-    "accept-encoding",
-    "authorization",
-    "cookie",
-    "x-api-key",
-    # Intern routing-header — Eneo ska inte se den.
-    "x-space-id",
-    # Intern proxy-budget för stora uploads.
-    "x-upload-timeout-seconds",
-    # The module checks the browser's origin itself; Eneo refuses any origin it does not list,
-    # so the module's own hostname passed on would fail every write in production.
-    "origin",
-    "referer",
-}
+# The request headers that reach Eneo; every other header of the browser's request is dropped (deny by default,
+# for headers as for paths). Eneo serves every user on one connection pool and every call carries the service key,
+# so a browser's Transfer-Encoding, Forwarded or X-Forwarded-For must not arrive. The credentials are set by the
+# module from the session, never taken from the browser. A module that needs more passes
+# ``create_app(forward_request_headers=...)``.
+FORWARDED_REQUEST_HEADERS = frozenset(
+    {"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"}
+)
+
+# Not even a module may add these: the credentials (the module checks the browser's origin itself, and Eneo
+# refuses any origin it does not list) and the headers that frame the request.
+_NEVER_FORWARDED_REQUEST_HEADERS = frozenset(
+    {
+        "authorization",
+        "cookie",
+        "origin",
+        "referer",
+        "x-api-key",
+        "proxy-authorization",
+        "host",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "te",
+        "trailer",
+        "upgrade",
+    }
+)
 
 # Headers we should not forward from upstream response back to client.
 _HOP_BY_HOP_RESPONSE_HEADERS = {
@@ -43,6 +53,7 @@ _HOP_BY_HOP_RESPONSE_HEADERS = {
     "content-length",
 }
 
+FORWARDED_REQUEST_HEADERS = frozenset({"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"})
 RESOURCE_ID = r"[^/]+"
 
 
@@ -84,9 +95,16 @@ def leaves_route(path: str) -> bool:
     )
 
 
-def proxy_router(rules: Sequence[ProxyRule]) -> APIRouter:
-    """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else."""
+def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
+    """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
+
+    Of the browser's request headers only ``FORWARDED_REQUEST_HEADERS`` and ``forward_request_headers`` reach Eneo.
+    """
     rules = tuple(rules)
+    added = {name.lower() for name in forward_request_headers}
+    if refused := sorted(added & _NEVER_FORWARDED_REQUEST_HEADERS):
+        raise ValueError(f"forward_request_headers cannot include credential or framing headers: {', '.join(refused)}")
+    forwarded_headers = FORWARDED_REQUEST_HEADERS | added
     router = APIRouter()
 
     @router.api_route(
@@ -103,14 +121,14 @@ def proxy_router(rules: Sequence[ProxyRule]) -> APIRouter:
         if leaves_route(path) or not _proxy_route_is_allowed(rules, request.method, path):
             raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
         upstream_url = f"{settings.eneo_backend_url}/api/v1/{path}"
-        # Forward request headers, but replace browser-controlled credentials with
-        # the credentials owned by the configured module-auth session.
-        skipped_headers = _HOP_BY_HOP_REQUEST_HEADERS | {settings.eneo_api_key_header_name.lower()}
-        fwd_headers: dict[str, str] = {}
-        for name, value in request.headers.items():
-            if name.lower() in skipped_headers:
-                continue
-            fwd_headers[name] = value
+        # Forward the allowlisted request headers, and set the credentials from the module-auth session. The
+        # header that carries the service key is configured, so it is excluded here, not by name above.
+        key_header = settings.eneo_api_key_header_name.lower()
+        fwd_headers = {
+            name: value
+            for name, value in request.headers.items()
+            if name.lower() in forwarded_headers and name.lower() != key_header
+        }
         fwd_headers.update(upstream_auth_headers(request))
 
         body = await request.body()

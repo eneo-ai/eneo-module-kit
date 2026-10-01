@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import ModuleSession, ModuleUser, SESSION_COOKIE
 from eneo_module_bff.deps import require_same_origin, require_session
-from eneo_module_bff.proxy import RESOURCE_ID, rule
+from eneo_module_bff.proxy import FORWARDED_REQUEST_HEADERS, RESOURCE_ID, rule
 from eneo_module_bff.settings import Settings
 
 # The kit ships no rules; these are what the test module allows.
@@ -34,7 +34,7 @@ class FakeProxyClient:
 
 
 class EneoProxyAuthTests(unittest.TestCase):
-    def build(self, rules=PROXY_RULES, routers=(), **overrides) -> None:
+    def build(self, rules=PROXY_RULES, routers=(), forward_request_headers=(), **overrides) -> None:
         settings = Settings(
             eneo_backend_url="https://eneo.example.test",
             eneo_public_url="https://eneo.example.test",
@@ -46,7 +46,13 @@ class EneoProxyAuthTests(unittest.TestCase):
             **overrides,
         )
         self.proxy_client = FakeProxyClient()
-        app = create_app(settings, proxy_rules=rules, routers=routers, http_client=self.proxy_client)
+        app = create_app(
+            settings,
+            proxy_rules=rules,
+            routers=routers,
+            forward_request_headers=forward_request_headers,
+            http_client=self.proxy_client,
+        )
         self.client = TestClient(app)
         session = ModuleSession(
             access_token="module-user-token",
@@ -213,6 +219,81 @@ class EneoProxyAuthTests(unittest.TestCase):
         self.assertEqual(forwarded["idempotency-key"], "flow-run:1")
         for name in ("cookie", "x-space-id", "x-upload-timeout-seconds", "host", "content-length"):
             self.assertNotIn(name, forwarded)
+
+    def test_only_an_allowlist_of_request_headers_reaches_eneo(self) -> None:
+        allowed = {
+            "Accept": "application/json",
+            "Accept-Language": "sv",
+            "Content-Type": "application/json",
+            "Idempotency-Key": "k-1",
+            "If-Match": '"v1"',
+            "If-None-Match": '"v2"',
+        }
+        # Eneo serves every user on one connection pool and every call carries the service key.
+        never = {
+            "Transfer-Encoding": "chunked",
+            "TE": "trailers",
+            "Upgrade": "websocket",
+            "Proxy-Authorization": "Basic Zm9vOmJhcg==",
+            "X-Forwarded-For": "6.6.6.6",
+            "X-Forwarded-Host": "evil.example",
+            "X-Forwarded-Proto": "http",
+            "Forwarded": "for=6.6.6.6",
+            "X-Real-IP": "6.6.6.6",
+            "X-Space-Id": "space-1",
+            "X-Anything-Else": "1",
+            "Authorization": "Bearer browser-controlled-token",
+            "X-API-Key": "browser-controlled-key",
+            "Origin": "https://module.example.test",
+            "Referer": "https://module.example.test/x",
+        }
+
+        self.client.cookies.set("tracking", "1")  # sent beside the session cookie, as a browser would
+
+        response = self.client.post("/api/eneo/flows/flow-1/runs/", headers={**allowed, **never}, json={})
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = {name.lower(): value for name, value in self.proxy_client.calls[0]["headers"].items()}
+        for name in allowed:
+            self.assertIn(name.lower(), forwarded, name)
+        self.assertNotIn("cookie", forwarded)
+        for name in never:
+            if name.lower() not in ("authorization", "x-api-key"):  # set by the module, from its session
+                self.assertNotIn(name.lower(), forwarded, name)
+        self.assertEqual(forwarded["authorization"], "Bearer module-user-token")
+        self.assertEqual(forwarded["x-api-key"], "test-key")
+        self.assertEqual(set(forwarded), set(FORWARDED_REQUEST_HEADERS) | {"authorization", "x-api-key"})
+
+    def test_the_allowlist_is_exactly_these_headers(self) -> None:
+        self.assertEqual(
+            FORWARDED_REQUEST_HEADERS,
+            {"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"},
+        )
+
+    def test_a_module_can_add_headers_to_the_allowlist(self) -> None:
+        self.build(forward_request_headers=["X-Request-Id", "x-tenant-hint"])
+
+        self.client.get(
+            "/api/eneo/flows/",
+            headers={"X-Request-Id": "r-1", "X-Tenant-Hint": "t", "X-Forwarded-For": "6.6.6.6"},
+        )
+
+        forwarded = {name.lower(): value for name, value in self.proxy_client.calls[0]["headers"].items()}
+        self.assertEqual((forwarded["x-request-id"], forwarded["x-tenant-hint"]), ("r-1", "t"))
+        self.assertNotIn("x-forwarded-for", forwarded)
+
+    def test_a_module_cannot_add_a_credential_or_a_framing_header(self) -> None:
+        for name in ("Cookie", "authorization", "ORIGIN", "Referer", "X-API-Key", "Host", "Content-Length", "Transfer-Encoding"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.build(forward_request_headers=[name])
+
+    def test_the_configured_api_key_header_stays_the_modules_even_if_a_module_lists_it(self) -> None:
+        self.build(forward_request_headers=["X-Eneo-Module-Key"], eneo_api_key_header_name="X-Eneo-Module-Key")
+
+        self.client.get("/api/eneo/flows/", headers={"X-Eneo-Module-Key": "browser-controlled-key"})
+
+        headers = self.proxy_client.calls[0]["headers"]
+        self.assertEqual([value for name, value in headers.items() if name.lower() == "x-eneo-module-key"], ["test-key"])
 
     def test_a_custom_api_key_header_is_set_by_the_module_never_by_the_browser(self) -> None:
         self.build(eneo_api_key_header_name="X-Eneo-Module-Key")

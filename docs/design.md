@@ -53,7 +53,8 @@ and an unknown `/api/*` path returned 404, not HTML.
 stub Eneo that implements the handoff.
 
 **K6. Deny by default.** The proxy exposes nothing until the module names a route. The kit ships the mechanism;
-each module ships its own allowlist.
+each module ships its own allowlist. Deny by default holds for paths and for headers: of the browser's request
+headers only a short allowlist reaches Eneo (a module may add to it), and the credentials are the module's.
 
 **K7. Primitives, not routes, for uploads and files.** Forwarding a multipart upload and streaming a signed file
 with Range are functions the module calls from its own routes. Which Eneo paths they point at is the module's.
