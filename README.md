@@ -62,6 +62,19 @@ The full contract is in Eneo's
 `main.py` that declares the module's own allowed Eneo routes, a sign-in page and one example page, Dockerfile,
 compose file, CI, devcontainer, agent instructions, an accessibility gate, and a stub Eneo for development.
 
+## Built for AI agents
+
+Every module made from the template starts with the same agent setup, so an agent produces the same kind of UI in
+each one without being corrected:
+
+- `AGENTS.md` with the module's rules, and a `CLAUDE.md` that imports it.
+- The Astryx CLI, pinned, behind an `astryx` npm script, and the block `astryx init --features agents` generates.
+- The UI package is an Astryx integration: it adds the Eneo page templates, a doc topic and the kit's own lines to
+  that block, and `astryx build` proposes the Eneo shell first.
+
+There is no custom MCP server and no skill. Astryx's hosted MCP server is optional for discovery; the pinned CLI is
+the source of truth.
+
 ## What stays in each module
 
 - **Its route allowlist.** The proxy denies by default; a module names the Eneo routes it exposes.
