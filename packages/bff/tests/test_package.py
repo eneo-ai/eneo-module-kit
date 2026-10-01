@@ -1,4 +1,5 @@
 import ast
+import re
 import unittest
 from collections import Counter
 from pathlib import Path
@@ -23,6 +24,12 @@ class PackageTests(unittest.TestCase):
             )
             with self.subTest(module=path.name):
                 self.assertEqual([name for name, count in names.items() if count > 1], [])
+
+    def test_the_package_names_no_organisation_and_no_product(self) -> None:
+        # The kit is generic: the organisation and the product are a module's and a deployment's.
+        for path in SOURCES:
+            with self.subTest(module=path.name):
+                self.assertEqual(re.findall(r"sundsvall|tal till text", path.read_text(), re.IGNORECASE), [])
 
 
 if __name__ == "__main__":

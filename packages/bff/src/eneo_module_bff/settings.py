@@ -15,11 +15,10 @@ logger = logging.getLogger("eneo_config")
 
 
 class Organization(BaseModel):
-    """The organisation beside "Tal till text": its name, and its logo.
+    """The organisation shown beside the product name: its name, and its logo.
 
-    ``logo`` is ``default`` for Sundsvall's bundled logo, ``custom`` for the
-    deployment's own (served by /api/branding/logo/{light,dark}), or None for
-    the name as text.
+    ``logo`` is ``default`` for the logo the module bundles in its own frontend (the kit serves no file for it),
+    ``custom`` for the deployment's own (served by /api/branding/logo/{light,dark}), or None for the name as text.
     """
 
     name: str
