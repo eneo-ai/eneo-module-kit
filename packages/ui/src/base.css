@@ -46,7 +46,7 @@ img[data-brand-logo] {
 /* The design system's top bar never shrinks the brand, so on the narrowest phones the mark is smaller to leave the account
    button room, also with the text spacing WCAG 1.4.12 lets a reader set. */
 @media (max-width: 359px) {
-  img[data-brand-logo] { block-size: var(--spacing-8); }
+  :root img[data-brand-logo] { block-size: var(--spacing-8); max-inline-size: 5rem; }
 }
 @media (min-width: 640px) {
   [data-brand-logo]:not([data-brand-logo="default"]) { max-inline-size: 10rem; }

@@ -1,0 +1,25 @@
+# The module and a stub Eneo, for trying it without Eneo: docker compose up --build, then http://localhost:3001.
+# Against a real Eneo, drop the stub and set the variables in .env to Eneo's.
+services:
+  module:
+    # Until the packages are released the image is built with the kit's `kit` build context and tagged as below
+    # (see README.md); after, `docker compose up --build` builds it.
+    image: eneo-module
+    build: .
+    env_file: .env
+    ports:
+      - "3001:3001"
+    depends_on:
+      - stub-eneo
+  stub-eneo:
+    image: python:3.12-slim
+    # A plain python as PID 1 ignores SIGTERM; an init stops it at once.
+    init: true
+    working_dir: /stub
+    volumes:
+      - ./stub-eneo/server.py:/stub/server.py:ro
+    environment:
+      STUB_HOST: 0.0.0.0
+    command: ["python", "server.py", "8411"]
+    ports:
+      - "8411:8411"

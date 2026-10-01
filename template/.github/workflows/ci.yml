@@ -1,0 +1,51 @@
+# A module's own CI. It lives in the module's repository root as .github/workflows/ci.yml: move this file there when you
+# copy the template into a repository of its own (`template/` is then the repository root).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r backend/requirements.txt
+      - run: python -m unittest discover -s backend/tests -t backend
+      - run: python -m unittest discover -s stub-eneo
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: pip install -r backend/requirements.txt
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps chromium webkit firefox
+        working-directory: web
+      # Builds the app, then runs it as the backend serves it, over the stub Eneo, in three browsers, and the
+      # accessibility gate.
+      - run: npm run test:e2e
+        working-directory: web
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t module .
+      - run: |
+          docker run -d --name module -p 3001:3001 --env-file .env.example module
+          for i in $(seq 1 20); do curl -fsS http://localhost:3001/health && exit 0; sleep 1; done
+          docker logs module
+          exit 1

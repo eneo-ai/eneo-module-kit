@@ -1,0 +1,3 @@
+# The kit's BFF. Until its first release it is pinned to a commit of the kit; replace <full sha> with the one you start from.
+# (The kit's own CI installs the workspace copy first: pip install -e packages/bff.)
+eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff

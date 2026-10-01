@@ -6,3 +6,4 @@ __pycache__/
 test-results/
 .env
 .DS_Store
+kit-context/

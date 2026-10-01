@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1.7
+#
+# One image, one process: the module's backend serves the built UI on port 3001. No Node and no supervisor at run time.
+#
+#   docker build -t my-module .          a module made from the template: the versions its package.json and
+#                                        requirements.txt pin
+#
+# Inside the kit's own repository the image is built against the workspace packages instead (CI does this, K1). Give the
+# build a context named `kit`: a folder with the packed UI package (npm pack -w packages/ui) and a copy of packages/bff.
+#   docker build --build-context kit=kit-context -t template template
+FROM scratch AS kit
+
+# ---- the UI, built to static files
+FROM node:22-slim AS web
+WORKDIR /app/web
+COPY web/ ./
+RUN --mount=from=kit,target=/kit \
+    set -e; \
+    pack="$(ls /kit/eneo-ai-module-kit-*.tgz 2>/dev/null | head -n 1 || true)"; \
+    if [ -n "$pack" ]; then npm pkg set "dependencies.@eneo-ai/module-kit=file:$pack"; fi; \
+    if [ -f package-lock.json ] && [ -z "$pack" ]; then npm ci; else npm install; fi; \
+    npm run build
+
+# ---- the backend's packages (git is only here: the kit's BFF is pinned to a commit until its first release)
+FROM python:3.12-slim AS python-packages
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+COPY backend/requirements.txt /requirements.txt
+RUN --mount=from=kit,target=/kit \
+    set -e; \
+    if [ -d /kit/bff ]; then \
+      cp -r /kit/bff /tmp/bff; \
+      grep -v '^eneo-module-bff' /requirements.txt > /others.txt || true; \
+      pip install --no-cache-dir --prefix=/install /tmp/bff -r /others.txt; \
+    else \
+      pip install --no-cache-dir --prefix=/install -r /requirements.txt; \
+    fi
+
+# ---- what runs
+FROM python:3.12-slim
+ENV PYTHONUNBUFFERED=1 STATIC_DIR=/app/web/dist
+RUN useradd --system --uid 10001 --no-create-home module
+WORKDIR /app
+COPY --from=python-packages /install /usr/local
+COPY backend/main.py backend/routes.py ./
+COPY --from=web /app/web/dist ./web/dist
+USER module
+EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3001/health', timeout=2)"
+CMD ["python", "-c", "from eneo_module_bff import serve; serve('main:build_app', factory=True)"]
