@@ -64,6 +64,9 @@ The module declares those routes on an `APIRouter` and hands it to `create_app(r
 registration order: the kit's own routes, then the module's, then the proxy, then the static app. A module's route
 therefore wins over the proxy and the page (including under `/api/eneo/`), and cannot replace a route of the kit.
 The module declares its own `Depends(require_session)` and `require_same_origin` on each route.
+An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
+http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
+never the body.
 
 **K8. An application factory.** `create_app(...)` builds the app from settings and owns its HTTP client through
 the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.

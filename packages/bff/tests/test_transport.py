@@ -250,13 +250,21 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(client.calls, 0)
 
 
+NOT_JSON = object()
+
+
 class FakeSignedUrlResponse:
-    def __init__(self, status_code: int = 200) -> None:
+    def __init__(self, status_code: int = 200, payload: object = None) -> None:
         self.status_code = status_code
+        self.payload = payload
 
     def json(self):
         if self.status_code != 200:
             return {"code": "file_unavailable"}
+        if self.payload is NOT_JSON:
+            raise ValueError("not JSON")
+        if self.payload is not None:
+            return self.payload
         return {"url": SIGNED, "expires_at": int(time.time()) + 900}
 
 
@@ -283,6 +291,7 @@ class FakeAudioClient:
         self.stream_requests: list[httpx2.Request] = []
         self.stream_responses: list[FakeStreamResponse] = []
         self.mint_status = 200
+        self.mint_payload: object = None
         self.stream_status = 200
         self.mint_error: Exception | None = None
         self.stream_error: Exception | None = None
@@ -293,7 +302,7 @@ class FakeAudioClient:
         self.signed_url_calls.append({"url": url, **kwargs})
         if self.mint_error is not None:
             raise self.mint_error
-        return FakeSignedUrlResponse(self.mint_status)
+        return FakeSignedUrlResponse(self.mint_status, self.mint_payload)
 
     def build_request(self, method, url, headers=None):
         return httpx2.Request(method, url, headers=headers)
@@ -569,6 +578,61 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
 
         self.assertEqual(len(self.fake.signed_url_calls), 2)
         self.assertEqual(len(self.app.state.signed_urls), 2)
+
+    def test_a_malformed_signed_url_answer_is_a_502_never_a_500(self) -> None:
+        secret = {"secret": "SECRET-BODY-TOKEN"}
+        for label, payload in (
+            ("no url", {**secret}),
+            ("url is null", {**secret, "url": None}),
+            ("url is a number", {**secret, "url": 123}),
+            ("url is a list", {**secret, "url": [SIGNED]}),
+            ("url is empty", {**secret, "url": ""}),
+            ("expires_at is words", {**secret, "url": SIGNED, "expires_at": "soon"}),
+            ("expires_at is a date", {**secret, "url": SIGNED, "expires_at": "2026-10-01T12:00:00Z"}),
+            ("expires_at is a list", {**secret, "url": SIGNED, "expires_at": [1]}),
+            ("expires_at is true", {**secret, "url": SIGNED, "expires_at": True}),
+            ("expires_at is NaN", {**secret, "url": SIGNED, "expires_at": float("nan")}),
+            ("expires_at is infinite", {**secret, "url": SIGNED, "expires_at": float("inf")}),
+            ("not JSON", NOT_JSON),
+            ("a list, not an object", [SIGNED]),
+            ("a string", "SECRET-BODY-TOKEN"),
+            ("ftp", {**secret, "url": "ftp://eneo.example.test/api/v1/files/f/"}),
+            ("file", {**secret, "url": "file:///etc/passwd"}),
+            ("javascript", {**secret, "url": "javascript:alert(1)"}),
+            ("relative", {**secret, "url": "/api/v1/files/f/download/?token=abc"}),
+            ("no host", {**secret, "url": "http:///api/v1/files/f/"}),
+        ):
+            with self.subTest(label), self.assertLogs("eneo_proxy", level="ERROR") as logs:
+                self.fake.mint_payload = payload
+
+                response = self.client.get(AUDIO)
+
+                self.assertEqual(response.status_code, 502)
+                self.assertEqual(
+                    response.json(),
+                    {"error": "upstream_invalid", "detail": "Eneo answered with something the module cannot use."},
+                )
+                self.assertEqual(self.fake.stream_requests, [])
+                # The log says which mint path, and never what was in the answer.
+                self.assertIn("flows/flow-1/runs/run-1/input-files/file-1/signed-url/", logs.output[0])
+                self.assertNotIn("SECRET-BODY-TOKEN", "\n".join(logs.output))
+        self.assertEqual(self.app.state.signed_urls, {})
+
+    def test_a_usable_signed_url_answer_is_still_taken_in_every_form_it_can_have(self) -> None:
+        soon = int(time.time()) + 900
+        for label, payload in (
+            ("no expires_at", {"url": SIGNED}),
+            ("null expires_at", {"url": SIGNED, "expires_at": None}),
+            ("integer", {"url": SIGNED, "expires_at": soon}),
+            ("float", {"url": SIGNED, "expires_at": float(soon)}),
+            ("a number as text", {"url": SIGNED, "expires_at": str(soon)}),
+            ("https", {"url": SIGNED.replace("https", "http"), "expires_at": soon}),
+        ):
+            with self.subTest(label):
+                self.app.state.signed_urls.clear()
+                self.fake.mint_payload = payload
+
+                self.assertEqual(self.client.get(AUDIO).status_code, 200)
 
     def test_eneo_refusing_the_file_passes_through_without_a_stream(self) -> None:
         self.fake.mint_status = 410
