@@ -1,0 +1,6 @@
+{
+  "name": "eneo-module-kit",
+  "private": true,
+  "workspaces": ["packages/ui", "template/web"],
+  "engines": { "node": ">=22.13.0" }
+}
