@@ -54,10 +54,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # The template pins the BFF to a commit until its first release; here the workspace copy stands in for it.
-      - run: pip install -e packages/bff
+      # What the template installs: its locked third-party packages, with hashes, and the BFF, which it pins to a commit
+      # until its first release; here the workspace copy stands in for that pin.
+      - run: pip install --require-hashes --no-deps -r template/backend/requirements.lock
+      - run: pip install --no-deps -e packages/bff
       - run: python -m unittest discover -s template/backend/tests -t template/backend
       - run: python -m unittest discover -s template/stub-eneo
+      # The lock is generated from the BFF's own requirements: a change to them without a new lock fails here. The
+      # index's state is fixed by the date the lock records, so the same command gives the same file.
+      - run: pip install uv
+      - run: |
+          date="$(grep -o 'exclude-newer [^ ]*' template/backend/requirements.lock | cut -d' ' -f2)"
+          uv pip compile packages/bff/pyproject.toml --python-version 3.12 --universal --generate-hashes \
+            --exclude-newer "$date" -o template/backend/requirements.lock
+          git diff --exit-code -- template/backend/requirements.lock
 
   template-web:
     name: template web (this commit's UI and BFF, three browsers, the accessibility gate)
@@ -71,7 +81,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: pip install -e packages/bff
+      - run: pip install --require-hashes --no-deps -r template/backend/requirements.lock
+      - run: pip install --no-deps -e packages/bff
       - run: npm ci
       - run: npm run -w packages/ui build
       - run: npx playwright install --with-deps chromium webkit firefox

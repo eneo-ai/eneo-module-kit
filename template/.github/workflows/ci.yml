@@ -15,7 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r backend/requirements.txt
+      - run: pip install --require-hashes --no-deps -r backend/requirements.lock
+      - run: pip install --no-deps -r backend/requirements.txt
       - run: python -m unittest discover -s backend/tests -t backend
       - run: python -m unittest discover -s stub-eneo
   web:
@@ -30,7 +31,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: pip install -r backend/requirements.txt
+      - run: pip install --require-hashes --no-deps -r backend/requirements.lock
+      - run: pip install --no-deps -r backend/requirements.txt
+      # Before the kit's first release the lock finds @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md): put the
+      # packed UI package there first. After the release `npm ci` needs nothing else.
       - run: npm ci
         working-directory: web
       - run: npx playwright install --with-deps chromium webkit firefox
