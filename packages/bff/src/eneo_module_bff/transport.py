@@ -221,12 +221,20 @@ def _read_mint_answer(upstream: httpx2.Response, base_url: str, now: float) -> t
         # Only the path and the signed query of the URL are used, on the host the module reaches Eneo on; but a URL
         # of another kind (ftp, file, javascript, a relative one) is not what Eneo's signed-URL route returns.
         parsed = urlsplit(url) if isinstance(url, str) else None
-    except (ValueError, TypeError, KeyError, AttributeError):
-        # Not JSON, not an object, no url, an expires_at that is not a number, or a URL that cannot be parsed.
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        # Not JSON, not an object, no url, an expires_at that is not a number (or too big for one), or a URL that
+        # cannot be parsed.
         raise _InvalidMintAnswer from None
     if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc or not math.isfinite(expires_at):
         raise _InvalidMintAnswer
-    return _rebase_signed_url(url, base_url), expires_at
+    rebased = _rebase_signed_url(url, base_url)
+    try:
+        # What the client will build the request from, before the URL is kept: one it refuses (a NUL, too long)
+        # would be cached, and every later request of the session would fail on it.
+        httpx2.URL(rebased)
+    except httpx2.InvalidURL:
+        raise _InvalidMintAnswer from None
+    return rebased, expires_at
 
 
 async def _signed_url(request: Request, session_id: str, mint_path: str, unavailable: str) -> str:
