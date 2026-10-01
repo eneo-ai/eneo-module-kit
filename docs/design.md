@@ -140,6 +140,11 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   within noise (11 runs each). The floor `>=2.12.0` is where its five advisories are all fixed. It pins `httpcore2`
   to its own version, and it uses the operating system's trust store (`truststore`) instead of `certifi`: a module that
   calls Eneo over HTTPS with a private CA installs that CA in its image.
+- A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
+  expired id by itself, so nothing depends on the sweep).
+- Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a
+  second login already ends the browser's old session), and no single-flight for signed URLs (20 concurrent cold Range
+  requests for one file mint 20 URLs: low value).
 - The session store is process-local: one replica. Scaling out needs sticky sessions or a shared store, decided
   when a module needs it.
 - Astryx is pre-1.0. Menus and pickers are not anchored to their trigger on Safari before 26 and Firefox before 147.

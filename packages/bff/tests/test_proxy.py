@@ -1,5 +1,8 @@
+import random
 import time
+import timeit
 import unittest
+from urllib.parse import unquote
 
 import httpx2
 from fastapi import APIRouter, Depends
@@ -16,6 +19,20 @@ PROXY_RULES = [
     rule("GET", r"flows/$"),
     rule({"GET", "POST"}, rf"flows/{RESOURCE_ID}/runs/$"),
 ]
+
+
+def reference_leaves_route(path: str) -> bool:
+    """leaves_route as it was before it was compiled: a Python loop over every character, and over every segment."""
+
+    def unsafe(character: str) -> bool:
+        return character < " " or character == "\x7f" or character == "\\"
+
+    return (
+        "?" in path
+        or "#" in path
+        or any(unsafe(character) for character in path + unquote(path))
+        or any(unquote(segment) in {".", ".."} for segment in path.split("/"))
+    )
 
 
 class FakeResponse:
@@ -259,6 +276,27 @@ class EneoProxyAuthTests(unittest.TestCase):
         self.proxy_client.response_headers = {"content-type": "application/json", "Cache-Control": "max-age=60"}
 
         self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "max-age=60")
+
+    def test_leaves_route_answers_as_it_did_before_it_was_compiled(self) -> None:
+        pieces = ["a", "b", "/", "/", ".", "..", "...", "%2e", "%2E", "%2f", "%5c", "\\", "\x00", "\n", "\r", "\x7f", "?", "#", "%00",
+                  "%0a", "%3F", "%23", " ", "\u00e5", "%C3%A5", "%25", "%252e", "%2", "e", "2", "~", "-", "_"]
+        chooser = random.Random(23)
+        for _ in range(30_000):
+            path = "".join(chooser.choice(pieces) for _ in range(chooser.randint(0, 9)))
+            self.assertEqual(leaves_route(path), reference_leaves_route(path), repr(path))
+
+    def test_a_long_path_costs_leaves_route_little(self) -> None:
+        # Measured before it was compiled: 1.9 ms for 16 KB, 7.5 ms for 64 KB, 12 ms for 64 KB of tiny segments, per request.
+        for label, path in {
+            "one long segment": "a" * 65_536,
+            "many tiny segments": "a/" * 32_768,
+            "percent-encoded": "%61" * 21_845,
+        }.items():
+            with self.subTest(label):
+                best = min(timeit.repeat(lambda: leaves_route(path), number=5, repeat=7)) / 5
+
+                self.assertLess(best, 2e-3, f"{label}: {best * 1e3:.2f} ms")
+                self.assertFalse(leaves_route(path))
 
     def test_with_no_rules_every_path_is_refused_and_eneo_is_never_called(self) -> None:
         self.build(rules=())

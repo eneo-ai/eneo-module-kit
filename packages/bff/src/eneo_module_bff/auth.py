@@ -132,6 +132,10 @@ def module_path(value: str | None, home_path: str) -> str:
     return home_path
 
 
+# Expired sessions are swept at most this often. get() refuses an expired id itself, so a sweep only frees the memory.
+PRUNE_INTERVAL_SECONDS = 30
+
+
 class SignedUrl(NamedTuple):
     """A signed URL Eneo minted for one file of one session, until ``expires_at``."""
 
@@ -154,12 +158,13 @@ class ModuleSessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, ModuleSession] = {}
         self._signed_urls: dict[str, dict[str, SignedUrl]] = {}
+        self._next_prune = 0.0  # on the monotonic clock
         self._lock = threading.Lock()
 
     def create(self, session: ModuleSession) -> str:
         session_id = secrets.token_urlsafe(32)
         with self._lock:
-            self._delete_expired_locked(time.time())
+            self._prune_locked()
             self._sessions[session_id] = session
         return session_id
 
@@ -167,11 +172,12 @@ class ModuleSessionStore:
         if session_id is None:
             return None
         with self._lock:
-            now = time.time()
-            self._delete_expired_locked(now)
+            self._prune_locked()
             session = self._sessions.get(session_id)
-            if session is None or session.expires_at <= now:
+            if session is None or session.expires_at <= time.time():
+                # An id that is not live: one session at most, found by key, never by a scan.
                 self._sessions.pop(session_id, None)
+                self._signed_urls.pop(session_id, None)
                 return None
             return session
 
@@ -217,7 +223,17 @@ class ModuleSessionStore:
                 if not urls:
                     del self._signed_urls[session_id]
 
-    def _delete_expired_locked(self, now: float) -> None:
+    def _prune_locked(self) -> None:
+        """Drop the expired sessions and their signed URLs, at most once per PRUNE_INTERVAL_SECONDS.
+
+        Each call used to scan every session on the event loop (340 us at 10 000), and a garbage cookie paid for it
+        too. Nothing depends on this sweep for correctness: get() refuses an expired session by itself.
+        """
+        monotonic = time.monotonic()
+        if monotonic < self._next_prune:
+            return
+        self._next_prune = monotonic + PRUNE_INTERVAL_SECONDS
+        now = time.time()
         expired = [
             session_id
             for session_id, session in self._sessions.items()

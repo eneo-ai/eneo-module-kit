@@ -269,6 +269,7 @@ Changes from the source, and only these:
 - `EneoSsoSession` is renamed `ModuleSession`; `ModuleSession = EneoSsoSession | AccessCodeSession` goes away; `isinstance(session, EneoSsoSession)` branches become unconditional.
 - `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`, and falls back to it for a `next` above 512 characters (the state cookie carries it, and browsers drop a cookie of 8 KB); `PendingLogin.next` has no default and is always set. `with_query` puts the query before a `#` fragment, so `/page#top` becomes `/page?fel=...#top`, which the page can read.
 - `status` returns `{"authenticated": bool, "user": {...} | None, "session_ends_in": int, "refresh_in": int}` (the last two only when authenticated, `refresh_in` only when a refresh is still possible).
+- `ModuleSessionStore` sweeps expired sessions at most every 30 s (a monotonic `_next_prune`), not on every `get` and `create`: `get` refuses an expired id by itself, so correctness does not depend on the sweep, and a lookup no longer scans every session (340 us at 10 000 sessions).
 - A token's `session_expires_at` without a time zone is UTC (read as local time it ends a session hours early).
 - The Swedish query values `fel=utgangen` and `fel=annan-anvandare` stay as they are: the UI package reads them.
 
@@ -356,7 +357,7 @@ class ProxyRule(NamedTuple):
 
 RESOURCE_ID = r"[^/]+"
 def rule(methods: str | Iterable[str], pattern: str) -> ProxyRule: ...   # rule("GET", r"flows/$")
-def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, and a control character or backslash
+def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, and a control character or backslash (compiled searches, not Python loops)
 def proxy_router(rules: Sequence[ProxyRule]) -> APIRouter: ...             # GET|POST|PATCH /api/eneo/{path:path}
 ```
 

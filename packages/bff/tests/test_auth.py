@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import time
+import timeit
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -495,6 +496,24 @@ class ModuleAuthTests(unittest.TestCase):
         )
 
 
+class Clock:
+    """Stands in for the time module inside eneo_module_bff.auth: wall time and the monotonic clock move together."""
+
+    def __init__(self) -> None:
+        self.now = time.time()
+        self.monotonic_now = 1000.0
+
+    def time(self) -> float:
+        return self.now
+
+    def monotonic(self) -> float:
+        return self.monotonic_now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+        self.monotonic_now += seconds
+
+
 class ModuleSessionStoreTests(unittest.TestCase):
     """The signed URLs minted for a session are kept by the store, for the life of that session."""
 
@@ -507,6 +526,67 @@ class ModuleSessionStoreTests(unittest.TestCase):
 
     def url(self, lasts: int = 900) -> SignedUrl:
         return SignedUrl(url="http://eneo/file?token=x", expires_at=time.time() + lasts)
+
+    def test_get_refuses_an_expired_session_itself_between_sweeps_and_drops_its_signed_urls(self) -> None:
+        clock = Clock()
+        with patch("eneo_module_bff.auth.time", clock):
+            store = ModuleSessionStore()
+            short, other_short, long = store.create(self.session(lasts=5)), store.create(self.session(lasts=5)), store.create(self.session(lasts=3600))
+            store.remember_signed_url(short, "files/a/", self.url())
+            clock.advance(10)  # both short sessions have expired, and the last sweep was 10 s ago: none is due
+
+            self.assertIsNone(store.get(short))
+
+            self.assertIsNone(store.signed_url(short, "files/a/"))
+            self.assertNotIn(short, store._signed_urls)
+            self.assertIn(other_short, store._sessions, "no sweep ran: get() did not scan the store to refuse one id")
+            self.assertIsNotNone(store.get(long))
+
+    def test_expired_sessions_and_their_tokens_are_swept_once_the_window_has_passed(self) -> None:
+        clock = Clock()
+        with patch("eneo_module_bff.auth.time", clock):
+            store = ModuleSessionStore()
+            expiring = [store.create(self.session(lasts=5)) for _ in range(50)]
+            long = store.create(self.session(lasts=3600))
+            store.remember_signed_url(expiring[0], "files/a/", self.url())
+            clock.advance(31)
+
+            store.get("not-a-session")  # any request notices the window has passed
+
+            self.assertEqual(set(store._sessions), {long}, "the tokens of the expired sessions are no longer held")
+            self.assertEqual(store._signed_urls, {})
+
+    def test_the_sweep_runs_once_per_window_not_once_per_call(self) -> None:
+        clock = Clock()
+        with patch("eneo_module_bff.auth.time", clock):
+            store = ModuleSessionStore()
+            first = store.create(self.session(lasts=3600))  # the first call sweeps, and the next sweep is 30 s away
+            clock.advance(1)
+            doomed = store.create(self.session(lasts=0))  # expires at once
+            for _ in range(5):
+                store.get(first)
+            self.assertIn(doomed, store._sessions, "swept inside the window")
+
+            clock.advance(30)  # 31 s after the last sweep
+            store.get(first)
+
+            self.assertNotIn(doomed, store._sessions)
+            clock.advance(1)
+            again = store.create(self.session(lasts=0))
+            store.get(first)
+            self.assertIn(again, store._sessions, "and the next window has started")
+
+    def test_a_get_and_a_create_do_not_scan_every_session(self) -> None:
+        # Measured at 10 000 sessions: 340 us per get, and 380 us per create, when each scanned all of them.
+        store = ModuleSessionStore()
+        for _ in range(10_000):
+            store.create(self.session())
+
+        get = min(timeit.repeat(lambda: store.get("not-a-session"), number=200, repeat=7)) / 200
+        create = min(timeit.repeat(lambda: store.create(self.session()), number=50, repeat=7)) / 50
+
+        self.assertLess(get, 100e-6, f"get took {get * 1e6:.0f} us")
+        self.assertLess(create, 100e-6, f"create took {create * 1e6:.0f} us")
 
     def test_a_signed_url_is_kept_for_a_live_session(self) -> None:
         store = ModuleSessionStore()
@@ -531,13 +611,15 @@ class ModuleSessionStoreTests(unittest.TestCase):
         self.assertEqual(set(store._signed_urls), {second})
 
     def test_an_expired_session_takes_its_signed_urls_with_it(self) -> None:
-        store = ModuleSessionStore()
-        short, long = store.create(self.session(lasts=60)), store.create(self.session(lasts=3600))
-        store.remember_signed_url(short, "files/a/", self.url())
-        store.remember_signed_url(long, "files/a/", self.url())
+        clock = Clock()
+        with patch("eneo_module_bff.auth.time", clock):
+            store = ModuleSessionStore()
+            short, long = store.create(self.session(lasts=60)), store.create(self.session(lasts=3600))
+            store.remember_signed_url(short, "files/a/", self.url())
+            store.remember_signed_url(long, "files/a/", self.url())
+            clock.advance(120)  # past the sweep window as well as past the short session
 
-        with patch("eneo_module_bff.auth.time.time", return_value=time.time() + 120):
-            self.assertIsNotNone(store.get(long))  # any use of the store notices the other session has expired
+            self.assertIsNotNone(store.get(long))  # a use of the store after the window sweeps the expired session
 
         self.assertEqual(set(store._signed_urls), {long})
 
@@ -620,6 +702,9 @@ class FakeClock:
         self.now = time.time()
 
     def time(self) -> float:
+        return self.now
+
+    def monotonic(self) -> float:
         return self.now
 
 
