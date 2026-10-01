@@ -8,10 +8,21 @@ It is the security boundary between a browser and Eneo, so it holds no module-sp
 # main.py
 from pathlib import Path
 
-from eneo_module_bff import RESOURCE_ID, create_app, rule
+from fastapi import APIRouter, Depends
+
+from eneo_module_bff import RESOURCE_ID, create_app, require_session, rule
+
+router = APIRouter()  # the module's own routes, declared before an app exists
+
+
+@router.get("/api/ping", dependencies=[Depends(require_session)])
+async def ping() -> dict[str, bool]:
+    return {"ok": True}
+
 
 app = create_app(
     title="My module",
+    routers=[router],
     proxy_rules=[
         rule("GET", r"flows/$"),
         rule({"GET", "POST"}, rf"flows/{RESOURCE_ID}/runs/$"),
@@ -25,6 +36,11 @@ app = create_app(
 The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the
 path after `/api/eneo/`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind
 `Depends(require_session)` (and `require_same_origin` for a write).
+
+A module's own routes go in `routers=`. They are registered after the kit's own routes (`/health`, `/api/auth/*`,
+`/api/branding*`) and before the proxy and the built UI, so they win over both, including under `/api/eneo/`, and
+cannot replace a kit route. The kit does not add `require_session` to them: each route declares its own. Routes added
+to the app after `create_app` returns come after the proxy and the page and are not reached; use `routers=`.
 
 ## Configuration
 

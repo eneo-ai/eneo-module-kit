@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 import httpx
-from fastapi import Response
+from fastapi import APIRouter, Response
 from fastapi.testclient import TestClient
 
 from eneo_module_bff.app import create_app
@@ -24,6 +24,21 @@ def make_settings() -> Settings:
         session_secret="x" * 48,
         cookie_secure=False,
     )
+
+
+def module_router() -> APIRouter:
+    """What a module declares before an app exists: one route under /api, one under /api/eneo."""
+    router = APIRouter()
+
+    @router.get("/api/mine")
+    async def mine() -> dict[str, str]:
+        return {"own": "mine"}
+
+    @router.post("/api/eneo/things/{thing_id}/files")
+    async def upload(thing_id: str) -> dict[str, str]:
+        return {"own": thing_id}
+
+    return router
 
 
 class WebTests(unittest.TestCase):
@@ -53,6 +68,24 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(response.text, INDEX)
                 self.assertTrue(response.headers["content-type"].startswith("text/html"))
                 self.assertEqual(response.headers["cache-control"], "no-cache")
+
+    def test_api_itself_and_every_unknown_api_path_is_404_json_never_the_page(self) -> None:
+        for path in ("/api", "/api/", "/api/nope", "/api/anything/unknown"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+
+                self.assertEqual(response.status_code, 404)
+                self.assertTrue(response.headers["content-type"].startswith("application/json"))
+                self.assertEqual(response.json(), {"detail": "Not Found"})
+
+    def test_a_modules_own_routes_win_over_the_page_fallback(self) -> None:
+        client = self.build(routers=[module_router()])
+
+        self.assertEqual(client.get("/api/mine").json(), {"own": "mine"})
+        self.assertEqual(client.post("/api/eneo/things/1/files").json(), {"own": "1"})
+        # The page and the unknown API paths are as before.
+        self.assertEqual(client.get("/flows/abc").text, INDEX)
+        self.assertEqual(client.get("/api/nope").status_code, 404)
 
     def test_files_that_exist_are_served_and_files_that_do_not_are_404_never_html(self) -> None:
         self.assertEqual(self.client.get("/assets/app.js").status_code, 200)

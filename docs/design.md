@@ -57,6 +57,10 @@ each module ships its own allowlist.
 
 **K7. Primitives, not routes, for uploads and files.** Forwarding a multipart upload and streaming a signed file
 with Range are functions the module calls from its own routes. Which Eneo paths they point at is the module's.
+The module declares those routes on an `APIRouter` and hands it to `create_app(routers=[...])`. Routes match in
+registration order: the kit's own routes, then the module's, then the proxy, then the static app. A module's route
+therefore wins over the proxy and the page (including under `/api/eneo/`), and cannot replace a route of the kit.
+The module declares its own `Depends(require_session)` and `require_same_origin` on each route.
 
 **K8. An application factory.** `create_app(...)` builds the app from settings and owns its HTTP client through
 the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.
@@ -96,8 +100,9 @@ Stable for the UI package and for any other frontend:
 | `POST /api/auth/logout` | End the session (same-origin) |
 | `GET /api/auth/status` | `{authenticated, user, session_ends_in, refresh_in}` |
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation |
+| the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The static app; unknown assets and unknown `/api/*` are 404 |
+| anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
 

@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import httpx
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from eneo_module_bff.app import create_app
@@ -22,6 +23,21 @@ def make_settings(**overrides: object) -> Settings:
         "cookie_secure": False,
     }
     return Settings(**(values | overrides))
+
+
+def module_router() -> APIRouter:
+    """What a module declares before an app exists: one route under /api, one under /api/eneo."""
+    router = APIRouter()
+
+    @router.get("/api/mine")
+    async def mine() -> dict[str, str]:
+        return {"own": "mine"}
+
+    @router.post("/api/eneo/things/{thing_id}/files")
+    async def upload(thing_id: str) -> dict[str, str]:
+        return {"own": thing_id}
+
+    return router
 
 
 class AppFactoryTests(unittest.TestCase):
@@ -90,6 +106,31 @@ class AppFactoryTests(unittest.TestCase):
             pass
 
         self.assertFalse(injected.is_closed)
+
+    def test_a_modules_routers_are_part_of_the_app(self) -> None:
+        client = TestClient(create_app(make_settings(), routers=[module_router()], http_client=self.injected_client()))
+
+        self.assertEqual(client.get("/api/mine").json(), {"own": "mine"})
+        self.assertEqual(client.post("/api/eneo/things/1/files").json(), {"own": "1"})
+
+    def test_a_router_cannot_replace_a_route_of_the_kit(self) -> None:
+        async def taken_over() -> dict[str, bool]:
+            return {"taken": True}
+
+        router = APIRouter()
+        for path in ("/health", "/api/healthz", "/api/auth/status", "/api/auth/callback", "/api/branding"):
+            router.add_api_route(path, taken_over, methods=["GET"])
+        client = TestClient(
+            create_app(make_settings(), routers=[router], http_client=self.injected_client()),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(client.get("/health").json(), {"ok": True})
+        self.assertEqual(client.get("/api/healthz").json(), {"ok": True})
+        self.assertEqual(client.get("/api/auth/status").json(), {"authenticated": False, "user": None})
+        self.assertEqual(client.get("/api/branding").json(), {"organization": None})
+        # Without a login state the callback refuses and redirects; the module's route would have answered 200.
+        self.assertEqual(client.get("/api/auth/callback").status_code, 303)
 
     def test_two_apps_share_no_state(self) -> None:
         first = create_app(make_settings(), http_client=self.injected_client())

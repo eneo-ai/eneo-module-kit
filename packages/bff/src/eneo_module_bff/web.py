@@ -43,14 +43,15 @@ def add_security_headers(app: FastAPI, overrides: dict[str, str] | None = None) 
 def serve_web(app: FastAPI, static_dir: Path) -> None:
     """The built UI: its assets, and its one HTML file for every page of the app.
 
-    Registered last. A path under /api, and a path that names a file that is not there, is a 404, never HTML.
+    Registered last. /api and a path under it, and a path that names a file that is not there, is a 404,
+    never HTML.
     """
     root = static_dir.resolve()
     app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     async def page(path: str) -> Response:
-        if path.startswith("api/"):
+        if path == "api" or path.startswith("api/"):
             raise HTTPException(status_code=404)
         if "." in path.rsplit("/", 1)[-1]:
             candidate = (root / path).resolve()

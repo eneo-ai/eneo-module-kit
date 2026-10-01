@@ -325,13 +325,14 @@ def create_app(
     settings: Settings | None = None,        # None: load_settings()
     *,
     title: str = "Eneo module",
+    routers: Sequence[APIRouter] = (),       # the module's own routes, Task 1.9
     proxy_rules: Sequence[ProxyRule] = (),   # Task 1.5
     static_dir: Path | None = None,          # Task 1.7
     http_client: httpx.AsyncClient | None = None,   # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI: ...
 ```
 
-The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. When no client is given, `create_app` creates `httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
+The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. Routes match in registration order: the kit's own, then `routers`, then the proxy, then the static app, so a module's route wins over the proxy and the page and cannot replace a route of the kit (Task 1.9). When no client is given, `create_app` creates `httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
 
 - [ ] **Step 1:** `test_app.py`: health on both paths; `app.state` holds the three objects; a client created by the lifespan is closed after shutdown (use `with TestClient(app):`); an injected client is not closed. `test_branding.py`: carry over from the source, building the app with `create_app(Settings(...), http_client=…)`.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Implement `branding.py` (the two routes, copied, reading `request.app.state.settings`) and `app.py`. **Step 4:** Replace the helper in `test_auth.py` with `create_app`. Run everything, `OK`.
@@ -556,7 +557,7 @@ export function ModuleShell({ label, heading, end, banner, children }: {
 | | |
 |---|---|
 | Result | `template/` is the smallest working module: sign in through a stub Eneo, see one page that lists flows through the proxy, sign out; one container, port 3001. |
-| Backend | `template/backend/main.py`: `app = create_app(title=…, proxy_rules=[rule("GET", r"flows/$")], static_dir=…)`, with a comment showing where a module adds routes and rules. `requirements.txt` pins `eneo-module-bff`. Until the first release it pins a commit: `eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff`; CI installs the workspace copy with `pip install -e packages/bff` first. |
+| Backend | `template/backend/main.py`: `app = create_app(title=…, routers=[router], proxy_rules=[rule("GET", r"flows/$")], static_dir=…)`, with a comment showing where a module adds routes (on `router`, an `APIRouter`) and rules. `requirements.txt` pins `eneo-module-bff`. Until the first release it pins a commit: `eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff`; CI installs the workspace copy with `pip install -e packages/bff` first. |
 | Backend test (Review Focus 5) | `template/backend/tests/test_routes.py` walks `app.routes`: every route under `/api/` except `/api/auth/*`, `/api/healthz` and `/api/branding*` must have `require_session` among its dependencies, and every route with a write method must also have `require_same_origin`. A module author who forgets one gets a failing test. |
 | Stub Eneo | `template/stub-eneo/server.py` (standard library or FastAPI): `/module-login` redirects to the callback with a ticket and the unchanged `state`; `POST /api/v1/module-auth/token/`, `GET …/session/`, `POST …/token/refresh/`; `GET /api/v1/flows/` with two flows. Model the payloads on `STT/backend/tests/test_module_auth.py` (`token_payload`) and `STT/frontend/tests/e2e/stub-server.py`. It checks that both credentials arrive and answers 401 otherwise. |
 | Web | `template/web`: Vite + React + TypeScript, `react-router` in library mode, `@eneo-ai/module-kit`. `src/main.tsx` imports `layers.css`, Astryx's `reset.css` and `astryx.css`, the kit's `theme.css`, wraps the app in `ModuleProviders`. Pages: `/` (sign-in button → `/api/auth/login`), `/flows` (a `List` of flows from `/api/eneo/flows/`). A minimal `RequireSession` component asks `/api/auth/status` and shows the sign-in page when unauthenticated; Phase 4 replaces it. `vite.config.ts` proxies `/api` to the BFF in development. The entry file shape ran in the 2026-10-01 trial. |

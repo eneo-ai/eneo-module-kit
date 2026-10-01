@@ -2,10 +2,12 @@ import time
 import unittest
 
 import httpx
+from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import ModuleSession, ModuleUser, SESSION_COOKIE
+from eneo_module_bff.deps import require_same_origin, require_session
 from eneo_module_bff.proxy import RESOURCE_ID, rule
 from eneo_module_bff.settings import Settings
 
@@ -32,7 +34,7 @@ class FakeProxyClient:
 
 
 class EneoProxyAuthTests(unittest.TestCase):
-    def build(self, rules=PROXY_RULES, **overrides) -> None:
+    def build(self, rules=PROXY_RULES, routers=(), **overrides) -> None:
         settings = Settings(
             eneo_backend_url="https://eneo.example.test",
             eneo_public_url="https://eneo.example.test",
@@ -44,7 +46,7 @@ class EneoProxyAuthTests(unittest.TestCase):
             **overrides,
         )
         self.proxy_client = FakeProxyClient()
-        app = create_app(settings, proxy_rules=rules, http_client=self.proxy_client)
+        app = create_app(settings, proxy_rules=rules, routers=routers, http_client=self.proxy_client)
         self.client = TestClient(app)
         session = ModuleSession(
             access_token="module-user-token",
@@ -234,6 +236,34 @@ class EneoProxyAuthTests(unittest.TestCase):
             response.json(),
             {"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
         )
+
+    def test_a_modules_own_route_under_api_eneo_wins_and_the_proxy_still_denies_the_rest(self) -> None:
+        router = APIRouter()
+
+        @router.post(
+            "/api/eneo/things/{thing_id}/files",
+            dependencies=[Depends(require_session), Depends(require_same_origin)],
+        )
+        async def upload(thing_id: str) -> dict[str, str]:
+            return {"own": thing_id}
+
+        self.build(rules=(), routers=[router])
+        origin = {"Origin": "https://module.example.test"}
+
+        self.assertEqual(self.client.post("/api/eneo/things/1/files", headers=origin).json(), {"own": "1"})
+        # The route is the module's, so it declares its own checks, and they hold.
+        self.assertEqual(self.client.post("/api/eneo/things/1/files").status_code, 403)
+        # Everything else under /api/eneo/ is still denied by default, and Eneo is never called.
+        for method, path in (
+            ("GET", "/api/eneo/things/"),
+            ("POST", "/api/eneo/things/1/other"),
+            ("GET", "/api/eneo/things/1/files"),
+        ):
+            self.assertEqual(self.client.request(method, path, headers=origin).status_code, 403, f"{method} {path}")
+        self.assertEqual(self.proxy_client.calls, [])
+
+        self.client.cookies.clear()
+        self.assertEqual(self.client.post("/api/eneo/things/1/files", headers=origin).status_code, 401)
 
     def test_without_a_session_the_proxy_is_401_before_its_rules_are_consulted(self) -> None:
         self.client.cookies.clear()
