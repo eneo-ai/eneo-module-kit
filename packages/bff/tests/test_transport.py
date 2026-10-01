@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import time
 import unittest
 
@@ -22,7 +24,7 @@ MINT_PATH = "flows/flow-1/runs/run-1/input-files/file-1/signed-url/"
 ORIGIN = {"Origin": "https://module.example.test"}
 
 
-def make_settings() -> Settings:
+def make_settings(**overrides: object) -> Settings:
     return Settings(
         eneo_backend_url="https://eneo.example.test",
         eneo_public_url="https://eneo.example.test",
@@ -31,6 +33,7 @@ def make_settings() -> Settings:
         eneo_api_key="test-key",
         session_secret="x" * 48,
         cookie_secure=False,
+        **overrides,
     )
 
 
@@ -49,8 +52,8 @@ def module_session() -> ModuleSession:
 class TransportFixture:
     """A module's app: create_app plus the two routes a module writes around the kit's functions."""
 
-    def build(self, http_client) -> None:
-        self.app = create_app(make_settings(), http_client=http_client)
+    def build(self, http_client, **settings: object) -> None:
+        self.app = create_app(make_settings(**settings), http_client=http_client)
 
         @self.app.post(
             "/upload/{flow_id}",
@@ -270,14 +273,17 @@ class FakeSignedUrlResponse:
 
 
 class FakeStreamResponse:
-    def __init__(self, status_code: int, headers: dict[str, str], body: bytes) -> None:
+    def __init__(self, status_code: int, headers: dict[str, str], body: bytes, hold: asyncio.Event | None = None) -> None:
         self.status_code = status_code
         self.headers = httpx2.Headers(headers)
         self._body = body
+        self.hold = hold
         self.closed = False
 
     async def aiter_raw(self):
         yield self._body
+        if self.hold is not None:
+            await self.hold.wait()  # the file is not at its end until the test says so
 
     async def aread(self):
         return self._body
@@ -298,6 +304,7 @@ class FakeAudioClient:
         self.stream_error: Exception | None = None
         self.content_type: str | None = "audio/webm"
         self.disposition: str | None = None
+        self.hold: asyncio.Event | None = None
 
     async def post(self, url, **kwargs):
         self.signed_url_calls.append({"url": url, **kwargs})
@@ -342,7 +349,7 @@ class FakeAudioClient:
                 ),
                 b"abcd",
             )
-        return FakeStreamResponse(200, self.file_headers({"content-length": "10"}), b"0123456789")
+        return FakeStreamResponse(200, self.file_headers({"content-length": "10"}), b"0123456789", self.hold)
 
     def file_headers(self, headers: dict[str, str]) -> dict[str, str]:
         if self.content_type is not None:
@@ -688,6 +695,152 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
             (streaming.status_code, streaming.json()),
             (502, {"error": "upstream_unreachable", "detail": "Eneo could not be reached."}),
         )
+
+
+
+class StreamSlotTests(TransportFixture, unittest.IsolatedAsyncioTestCase):
+    """At most max_concurrent_streams files stream at once; the rest are 503, so the pool keeps room for the API."""
+
+    LIMIT = 3
+
+    async def asyncSetUp(self) -> None:
+        self.fake = FakeAudioClient()
+        self.fake.hold = asyncio.Event()
+        self.build(self.fake, max_concurrent_streams=self.LIMIT)
+        self.slots = self.app.state.stream_slots
+        self.client = httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=self.app), base_url="https://module.example.test", cookies={SESSION_COOKIE: self.session_id}
+        )
+        self.addAsyncCleanup(self.client.aclose)
+
+    def free(self) -> int:
+        return self.slots._value
+
+    async def held(self, count: int) -> list[asyncio.Task]:
+        """``count`` streams that are open and not finished: each holds a slot until the test releases them."""
+        tasks = [asyncio.create_task(self.client.get(AUDIO)) for _ in range(count)]
+        for _ in range(200):
+            if self.free() == self.LIMIT - count:
+                break
+            await asyncio.sleep(0.01)
+        return tasks
+
+    async def test_a_stream_over_the_limit_is_503_with_retry_after_while_the_api_keeps_answering(self) -> None:
+        tasks = await self.held(self.LIMIT)
+        self.assertEqual(self.free(), 0)
+
+        busy = await self.client.get(AUDIO)
+        api = await self.client.get("/api/auth/status")
+
+        self.assertEqual(busy.status_code, 503)
+        self.assertEqual(busy.headers["retry-after"], "2")
+        self.assertEqual(busy.json(), {"error": "streams_busy", "detail": "Too many files are being streamed. Try again shortly."})
+        self.assertEqual(api.status_code, 200, "the slots a stream does not take are the API's")
+        self.fake.hold.set()
+        self.assertEqual([r.status_code for r in await asyncio.gather(*tasks)], [200] * self.LIMIT)
+        self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_the_limit_is_checked_before_anything_is_minted(self) -> None:
+        tasks = await self.held(self.LIMIT)
+        minted = len(self.fake.signed_url_calls)
+
+        await self.client.get("/audio/flow-1/run-2/file-2")
+
+        self.assertEqual(len(self.fake.signed_url_calls), minted)
+        self.fake.hold.set()
+        await asyncio.gather(*tasks)
+
+    async def test_a_slot_is_free_again_as_soon_as_a_stream_ends(self) -> None:
+        self.fake.hold.set()  # files that end at once
+
+        for _ in range(self.LIMIT * 3):
+            self.assertEqual((await self.client.get(AUDIO)).status_code, 200)
+
+        self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_a_stream_that_cannot_start_takes_no_slot(self) -> None:
+        self.fake.hold.set()
+        logging.disable(logging.CRITICAL)  # some of these are logged as errors, some are not: only the slot matters here
+        self.addCleanup(logging.disable, logging.NOTSET)
+        for label, setup in {
+            "mint refused": lambda: setattr(self.fake, "mint_status", 410),
+            "mint unreachable": lambda: setattr(self.fake, "mint_error", httpx2.ConnectError("down")),
+            "mint answer unusable": lambda: setattr(self.fake, "mint_payload", {}),
+            "file refused": lambda: setattr(self.fake, "stream_status", 403),
+            "file redirected": lambda: setattr(self.fake, "stream_status", 302),
+            "file unreachable": lambda: setattr(self.fake, "stream_error", httpx2.ReadTimeout("stalled")),
+        }.items():
+            with self.subTest(label):
+                self.fake.mint_status, self.fake.mint_error, self.fake.mint_payload = 200, None, None
+                self.fake.stream_status, self.fake.stream_error = 200, None
+                self.store.forget_signed_url(self.session_id, MINT_PATH)
+                setup()
+
+                response = await self.client.get(AUDIO)
+
+                self.assertGreaterEqual(response.status_code, 400)
+                self.assertEqual(self.free(), self.LIMIT)
+        with self.subTest("a path that leaves its route"):
+            self.assertEqual((await self.client.get("/audio/flow-1/%2E%2E/file-1")).status_code, 403)
+            self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_two_hundred_streams_that_are_cut_off_leave_no_slot_taken(self) -> None:
+        for round_ in range(200):
+            await self.cut_off(round_ % 2 == 0)
+
+        self.assertEqual(self.free(), self.LIMIT, "a client that goes away must give its slot back, collected garbage or not")
+        self.assertEqual((await self.client.get("/api/auth/status")).status_code, 200)
+
+    async def cut_off(self, by_failed_send: bool) -> None:
+        """One stream, fed straight to the app, that the client abandons: its connection breaks, or the request is cancelled."""
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET", "scheme": "https", "path": "/audio/flow-1/run-1/file-1",
+            "raw_path": b"/audio/flow-1/run-1/file-1", "query_string": b"", "root_path": "", "client": ("127.0.0.1", 1), "server": ("module.example.test", 443),
+            "headers": [(b"cookie", f"{SESSION_COOKIE}={self.session_id}".encode())],
+        }
+        started = asyncio.Event()
+        answered = 0
+
+        async def receive():
+            await asyncio.Event().wait()  # a GET has no body, and the client never says it is gone
+
+        async def send(message) -> None:
+            nonlocal answered
+            if message["type"] == "http.response.body":
+                answered += 1
+                started.set()
+                if by_failed_send:
+                    raise OSError("client disconnected")
+
+        task = asyncio.create_task(self.app(scope, receive, send))
+        try:
+            await asyncio.wait_for(started.wait(), 5)
+            if not by_failed_send:
+                task.cancel()
+            await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), 5)
+        finally:
+            if not task.done():
+                task.cancel()
+
+    async def test_the_default_limit_is_64_and_the_65th_stream_is_refused(self) -> None:
+        fake = FakeAudioClient()
+        fake.hold = asyncio.Event()
+        self.build(fake)  # the default
+        client = httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=self.app), base_url="https://module.example.test", cookies={SESSION_COOKIE: self.session_id}
+        )
+        self.addAsyncCleanup(client.aclose)
+        tasks = [asyncio.create_task(client.get(AUDIO)) for _ in range(64)]
+        for _ in range(300):
+            if self.app.state.stream_slots.locked():
+                break
+            await asyncio.sleep(0.01)
+
+        refused = await client.get(AUDIO)
+
+        self.assertEqual(refused.status_code, 503)
+        fake.hold.set()
+        self.assertEqual({r.status_code for r in await asyncio.gather(*tasks)}, {200})
 
 
 if __name__ == "__main__":

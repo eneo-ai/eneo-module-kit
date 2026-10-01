@@ -38,6 +38,7 @@ class ServeTests(unittest.TestCase):
             access_log=False,
             ws_max_size=128 * 1024,
             ws_max_queue=16,
+            timeout_graceful_shutdown=8,
         )
 
     def test_serve_takes_an_app_and_lets_host_port_and_other_options_be_chosen(self) -> None:
@@ -54,8 +55,22 @@ class ServeTests(unittest.TestCase):
             access_log=False,
             ws_max_size=128 * 1024,
             ws_max_queue=16,
+            timeout_graceful_shutdown=8,
             log_level="warning",
         )
+
+    def test_serve_gives_open_connections_less_time_than_dockers_ten_seconds_to_close(self) -> None:
+        # Without it uvicorn waits for every open stream, and docker kills the container after ten seconds.
+        with patch("uvicorn.run") as run:
+            eneo_module_bff.serve("main:app")
+
+        self.assertLess(run.call_args.kwargs["timeout_graceful_shutdown"], 10)
+
+    def test_the_graceful_shutdown_time_can_be_chosen(self) -> None:
+        with patch("uvicorn.run") as run:
+            eneo_module_bff.serve("main:app", timeout_graceful_shutdown=3)
+
+        self.assertEqual(run.call_args.kwargs["timeout_graceful_shutdown"], 3)
 
     def test_workers_and_access_log_are_fixed(self) -> None:
         for overrides in ({"workers": 2}, {"access_log": True}, {"workers": 1}, {"access_log": False}):

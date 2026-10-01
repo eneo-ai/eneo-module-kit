@@ -49,6 +49,9 @@ class Settings(BaseModel):
     max_body_bytes: int = 10 * 1024 * 1024
     # The most one upload may declare (forward_upload).
     max_upload_bytes: int = 1024 * 1024 * 1024
+    # How many files may stream at once (stream_signed). The shared client keeps 100 connections, and a file holds
+    # one for as long as it streams: this leaves the rest for the API.
+    max_concurrent_streams: int = 64
     # Övre gräns för modulsessionen. Den slutar senast vid
     # Eneos sessionstak (module_auth_max_session_hours); modultoken förnyas
     # via Eneo fram till dess.
@@ -235,6 +238,7 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         upload_proxy_timeout_seconds=upload_timeout,
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
+        max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
         session_max_age_seconds=session_minutes * 60,
         home_path=home_path,
         organization=organization,

@@ -79,6 +79,9 @@ BFF buffer up to `max_body_bytes` of a body, once per request, before a route's 
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
 http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
+At most `max_concurrent_streams` (64) files stream at once: a stream holds one of the shared client's 100
+connections for as long as it runs, so the next one is a 503 with `Retry-After` at once, and the API keeps its
+connections. The client waits at most 5 s for a free connection (`pool=5`), so a busy pool is a quick 502, not 60 s.
 A signed URL is a bearer URL to a file, so the session store keeps it and it ends with its session, however the
 session ends (logout, expiry, a refresh that ends it, a new login replacing it).
 
@@ -140,6 +143,10 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   within noise (11 runs each). The floor `>=2.12.0` is where its five advisories are all fixed. It pins `httpcore2`
   to its own version, and it uses the operating system's trust store (`truststore`) instead of `certifi`: a module that
   calls Eneo over HTTPS with a private CA installs that CA in its image.
+- Timeouts are per phase and that is the contract (60 s a read or write, 5 s for a free connection, 10 s to connect,
+  an upload's own budget): there is no total deadline per request. One is added when a module needs it.
+- `serve()` stops within 8 s of SIGTERM, with files still streaming (`timeout_graceful_shutdown`), because Docker
+  kills the container after 10 s.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

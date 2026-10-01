@@ -93,7 +93,8 @@ class AppFactoryTests(unittest.TestCase):
         # It exists before the app starts: the auth router needs it at once.
         self.assertFalse(created.is_closed)
         self.assertIs(app.state.module_auth.http_client, created)
-        self.assertEqual(created.timeout, httpx2.Timeout(60.0, connect=10.0))
+        # A call waits at most 5 s for a free connection, so a pool full of streams is a quick 502 for the API, not 60 s.
+        self.assertEqual(created.timeout, httpx2.Timeout(60.0, connect=10.0, pool=5.0))
         self.assertFalse(created.follow_redirects)
         with TestClient(app):
             self.assertFalse(created.is_closed)

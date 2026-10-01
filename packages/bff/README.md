@@ -40,7 +40,8 @@ path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.
 `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin`
 for a write). `stream_signed` shows a file inline only if it is
 audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment;
-`inline_types=[...]` widens that.
+`inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with
+`Retry-After`, at once, so the connections a stream holds do not crowd out the API.
 
 An upload route has no `File(...)` parameter, because FastAPI reads a route's body before it runs the route's
 dependencies, and a big body would be taken before the session is checked. `forward_upload` reads it itself, after
@@ -81,12 +82,16 @@ to the app after `create_app` returns come after the proxy and the page and are 
 | `SESSION_MAX_AGE_MINUTES` | `480` | The session also ends at Eneo's own ceiling |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | |
 | `MAX_BODY_BYTES` | `10485760` (10 MiB) | The most of any request body, but an upload that `forward_upload` reads |
+| `MAX_CONCURRENT_STREAMS` | `64` | How many files may stream at once through `stream_signed` |
 | `MAX_UPLOAD_BYTES` | `1073741824` (1 GiB) | The most one upload may declare |
 | `SHOW_ORGANIZATION`, `ORGANIZATION_NAME`, `ORGANIZATION_LOGO`, `ORGANIZATION_LOGO_DARK` | | The organisation shown beside the product name |
 
 ## Limits
 
 - The dependencies are ranges with security floors (see `pyproject.toml`), not exact pins: pin and lock them in the module's own requirements.
+- `serve()` stops within 8 s of SIGTERM even with files still streaming (Docker kills at 10 s). There is no total
+  deadline per request: the timeouts are per phase (60 s a read or write, 5 s for a free connection, 10 s to connect, and
+  an upload's own budget), and a total is added when a module needs one.
 - One process, one replica: sessions live in memory. `serve()` fixes one worker and turns the access log off,
   because the callback URL carries a login ticket.
 - Nothing in the package configures logging: a module sets up its own.

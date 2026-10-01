@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import time
 from collections.abc import Iterable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
+import anyio
 import httpx2
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.background import BackgroundTask
 from starlette.datastructures import UploadFile
+from starlette.types import Receive, Scope, Send
 
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
@@ -268,6 +270,24 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
     return url
 
 
+class _SlotStreamingResponse(StreamingResponse):
+    """A streamed file that holds one of the app's stream slots until the response is over, however it ends:
+    the file finished, the client went away, or the request was cancelled."""
+
+    def __init__(self, upstream: httpx2.Response, slots: asyncio.Semaphore, **kwargs: object) -> None:
+        super().__init__(upstream.aiter_raw(), **kwargs)
+        self._upstream = upstream
+        self._slots = slots
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._slots.release()
+            with anyio.CancelScope(shield=True):
+                await self._upstream.aclose()
+
+
 async def stream_signed(
     request: Request,
     *resource: str,
@@ -278,13 +298,40 @@ async def stream_signed(
     """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range.
 
     ``resource`` are the path ids that went into ``mint_path``; one that leaves its route is a 403. The file is
-    an attachment unless its media type is in ``INLINE_MEDIA_TYPES`` or ``inline_types``.
+    an attachment unless its media type is in ``INLINE_MEDIA_TYPES`` or ``inline_types``. At most
+    ``settings.max_concurrent_streams`` files stream at once: the next is a 503 with Retry-After, at once, so
+    that the connections a stream would hold stay free for the API.
     """
-    http_client = request.app.state.http
-    sessions = request.app.state.module_auth.sessions
     if any(leaves_route(part) for part in resource):
         raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
+    slots = request.app.state.stream_slots
+    if slots.locked():
+        return JSONResponse(
+            status_code=503,
+            content={"error": "streams_busy", "detail": "Too many files are being streamed. Try again shortly."},
+            headers={"Retry-After": "2"},
+        )
+    await slots.acquire()
+    response: Response | None = None
+    try:
+        response = await _stream_file(request, slots, resource, mint_path, unavailable, inline_types)
+        return response
+    finally:
+        # A file that is streaming keeps its slot until its response is over; anything else gives it back now.
+        if not isinstance(response, _SlotStreamingResponse):
+            slots.release()
 
+
+async def _stream_file(
+    request: Request,
+    slots: asyncio.Semaphore,
+    resource: tuple[str, ...],
+    mint_path: str,
+    unavailable: str,
+    inline_types: Sequence[str],
+) -> Response:
+    http_client = request.app.state.http
+    sessions = request.app.state.module_auth.sessions
     session_id = request.cookies.get(SESSION_COOKIE) or ""
     try:
         url = await _signed_url(request, session_id, mint_path, unavailable)
@@ -341,9 +388,4 @@ async def stream_signed(
         resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
     resp_headers["x-content-type-options"] = "nosniff"
     resp_headers["Cache-Control"] = "private, no-store"
-    return StreamingResponse(
-        upstream.aiter_raw(),
-        status_code=upstream.status_code,
-        headers=resp_headers,
-        background=BackgroundTask(upstream.aclose),
-    )
+    return _SlotStreamingResponse(upstream, slots, status_code=upstream.status_code, headers=resp_headers)

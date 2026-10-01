@@ -41,6 +41,18 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "ENEO_PUBLIC_URL"):
                 load_settings()
 
+    def test_at_most_64_files_stream_at_once_by_default_and_it_is_configurable(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertEqual(load_settings().max_concurrent_streams, 64)
+        with patch.dict(os.environ, valid_environment() | {"MAX_CONCURRENT_STREAMS": "8"}, clear=True):
+            self.assertEqual(load_settings().max_concurrent_streams, 8)
+
+    def test_rejects_an_invalid_stream_limit(self) -> None:
+        for raw in ("0", "-1", "many", "2.5", ""):
+            with self.subTest(raw=raw), patch.dict(os.environ, valid_environment() | {"MAX_CONCURRENT_STREAMS": raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "MAX_CONCURRENT_STREAMS must be an integer greater than zero"):
+                    load_settings()
+
     def test_the_body_limits_default_to_10_mib_and_1_gib(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             settings = load_settings()

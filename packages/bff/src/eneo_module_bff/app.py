@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
@@ -40,8 +41,10 @@ def create_app(
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.
+        # pool=5: a call waits at most 5 s for a free connection. With the default 60 s, a pool held full by
+        # streams made every API call a 502 after a minute.
         http_client = httpx2.AsyncClient(
-            timeout=httpx2.Timeout(60.0, connect=10.0),
+            timeout=httpx2.Timeout(60.0, connect=10.0, pool=5.0),
             follow_redirects=False,
         )
 
@@ -57,6 +60,8 @@ def create_app(
     app = FastAPI(title=title, lifespan=lifespan)
     app.state.settings = settings
     app.state.http = http_client
+    # One slot per file streaming at once (transport.stream_signed): the rest are 503, and the pool keeps room for the API.
+    app.state.stream_slots = asyncio.Semaphore(settings.max_concurrent_streams)
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
     # Added before the security headers, so that the 413 it answers carries them.
     app.add_middleware(BodyLimitMiddleware, max_body_bytes=settings.max_body_bytes, max_upload_bytes=settings.max_upload_bytes)
