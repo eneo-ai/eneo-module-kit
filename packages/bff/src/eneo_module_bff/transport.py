@@ -396,7 +396,15 @@ async def _stream_file(
     if upstream.status_code >= 400:
         # A rejected token is not worth keeping around; the next request mints anew.
         sessions.forget_signed_url(session_id, mint_path)
-        body = await _read_small(upstream)
+        try:
+            body = await _read_small(upstream)
+        except httpx2.RequestError:
+            # Cut off or silent while its body was read: no more an answer than one that never came.
+            logger.exception("File stream answer could not be read: path=%s status=%s", mint_path, upstream.status_code)
+            return JSONResponse(
+                status_code=502,
+                content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
+            )
         detail: object = unavailable
         if body and upstream.headers.get("content-type", "").startswith("application/json"):
             try:

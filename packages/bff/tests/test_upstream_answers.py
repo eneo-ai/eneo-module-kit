@@ -53,6 +53,20 @@ class Lazy(httpx2.AsyncByteStream):
         self.closed = True
 
 
+class Broken(httpx2.AsyncByteStream):
+    """A little of a body, then the connection fails: cut off (ReadError) or silent for too long (ReadTimeout)."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error, self.closed = error, False
+
+    async def __aiter__(self):
+        yield b'{"detail": "par'
+        raise self.error
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 class Eneo(httpx2.AsyncBaseTransport):
     """Answers per request by ``respond(request)``, a (status, headers, body stream or bytes) triple."""
 
@@ -181,6 +195,22 @@ class ControlAnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 500)
         self.assertLessEqual(eneo.streams[0].sent, 2 * MiB)
         self.assertTrue(eneo.streams[0].closed)
+
+    async def test_a_failed_file_answer_that_is_cut_off_or_times_out_while_it_is_read_is_a_502_and_closed(self) -> None:
+        for error in (httpx2.ReadError("cut off"), httpx2.ReadTimeout("silent"), httpx2.RemoteProtocolError("truncated")):
+            with self.subTest(type(error).__name__):
+                def respond(request, error=error):
+                    if request.url.path.endswith("/signed-url/"):
+                        return 200, json_headers(), MINT
+                    return 500, json_headers(), Broken(error)
+
+                eneo = Eneo(respond)
+                browser = Module(self, transport=eneo, routers=(router,), max_response_bytes=64 * MiB).browser()
+
+                response = await browser.get("/files/f1")
+
+                self.assertEqual((response.status_code, response.json()["error"]), (502, "upstream_unreachable"))
+                self.assertTrue(eneo.streams[0].closed)
 
     async def test_an_upload_answer_past_the_bound_is_a_502(self) -> None:
         eneo = Eneo(lambda request: (200, json_headers(), Lazy(300 * MiB)))
