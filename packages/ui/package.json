@@ -1,7 +1,7 @@
 {
   "name": "@eneo-ai/module-kit",
   "version": "0.1.0",
-  "description": "The UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell and brand.",
+  "description": "The UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell, brand and the session client.",
   "type": "module",
   "sideEffects": ["**/*.css"],
   "main": "./dist/index.js",
@@ -10,7 +10,8 @@
     ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
     "./theme.css": "./dist/theme.css",
     "./layers.css": "./dist/layers.css",
-    "./base.css": "./dist/base.css"
+    "./base.css": "./dist/base.css",
+    "./session": { "types": "./dist/session/index.d.ts", "default": "./dist/session/index.js" }
   },
   "files": ["dist"],
   "scripts": {

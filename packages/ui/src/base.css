@@ -65,3 +65,13 @@ img[data-brand-logo] {
   :root:not([data-theme]) [data-brand-logo="light"] { display: none; }
   :root:not([data-theme]) [data-brand-logo="dark"] { display: block; }
 }
+
+/* The session client (RequireSession). While the login has ended the page stays mounted, hidden here and out of reach
+   (`inert`), under a modal dialog that asks for a new login. */
+.eneo-session-cover { display: contents; }
+.eneo-session-cover[data-signed-out] { visibility: hidden; }
+
+/* Signed out, nothing of the page shows through the dialog's backdrop: not the page, and not a dialog the page had open
+   (a native one sits in the top layer too, and only what is opened after it covers it). Opaque, and still so where a
+   backdrop does not inherit the theme's custom properties (before Chromium 122), through the fallback. */
+.eneo-session-signed-out::backdrop { background: var(--color-background-body, Canvas); }
