@@ -71,7 +71,7 @@ async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
 
-The request must declare its `Content-Length` (else 411), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character in the file name or content type (else 400). Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
+The request must declare its `Content-Length` (else 411), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (else 400). The name is forwarded as it came, a path included: Eneo owns where a file lands. Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
 
 ## A module's own routes
 
@@ -97,7 +97,7 @@ Stable for the UI package and for any other frontend.
 
 | Status | When | Body |
 |---|---|---|
-| 400 | An upload is not exactly one file named `upload_file`, or has a control character in its file name or content type | `{"detail": ...}` |
+| 400 | An upload is not exactly one file named `upload_file`, or has a control character or line separator in its file name or content type | `{"detail": ...}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |

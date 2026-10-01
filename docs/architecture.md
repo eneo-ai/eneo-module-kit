@@ -193,7 +193,7 @@ sequenceDiagram
   R->>F: forward_upload(request, upstream_path)
   F->>F: path leaves its route 403, no Content-Length 411, above MAX_UPLOAD_BYTES 413
   F->>F: raise this request's limit to MAX_UPLOAD_BYTES, then parse the multipart
-  F->>F: not exactly one file named upload_file, or a control character in its name or type 400
+  F->>F: not exactly one file named upload_file, or a control or line-separator character in its name or type 400
   F->>A: POST /api/v1/upstream_path with one file and both credentials
   A-->>F: status and body
   F-->>B: same status, body and Content-Type. 504 on timeout, 502 if unreachable or redirected

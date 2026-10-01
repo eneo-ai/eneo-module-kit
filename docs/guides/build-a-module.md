@@ -124,13 +124,13 @@ async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
 
-The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multipart/form-data` body with one file part named `upload_file` and no other field.
+The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multipart/form-data` body with one file part named `upload_file` and no other field. The file name is forwarded as it came, a path included: Eneo owns where a file lands.
 
 | Request | Answer |
 |---|---|
 | No `Content-Length` | 411 |
 | Above `MAX_UPLOAD_BYTES` | 413 |
-| Not exactly one file named `upload_file`, or a control character in its file name or content type | 400 |
+| Not exactly one file named `upload_file`, or a control character (C0, DEL, C1) or a line or paragraph separator in its file name or content type | 400 |
 | The path leaves its route | 403 |
 | Eneo does not answer in time (`UPLOAD_PROXY_TIMEOUT_SECONDS`, or the lower `X-Upload-Timeout-Seconds`, never below 60 s) | 504 |
 | Eneo cannot be reached, or answers with a redirect | 502 |

@@ -22,4 +22,6 @@ FastAPI reads a body before it runs a route's dependencies and whatever the cont
 
 - An unauthenticated request can still make the BFF buffer up to `MAX_BODY_BYTES` of a body, once per request, before a route's dependencies run (on a route that declares a body parameter).
 - A module may not read a body past the cap except through `forward_upload`.
+- A body that passes the limit while a response is already streaming ends the response, as if the client had gone: a 413 can no longer be sent.
+- Measured, a body of the cap's size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight. A module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body.
 - `serve()` stops within 8 s of SIGTERM with files still streaming, because Docker kills the container after 10 s.

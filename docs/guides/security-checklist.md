@@ -60,9 +60,10 @@ Recorded in [design.md](../design.md) section 6.
 
 | Limit | What it means |
 |---|---|
-| An unauthenticated request can make the BFF buffer up to `MAX_BODY_BYTES` of a body, once per request | On a module route that declares a body parameter, FastAPI reads the body before the route's dependencies run. Keep `MAX_BODY_BYTES` low. |
+| An unauthenticated request can make the BFF buffer up to `MAX_BODY_BYTES` of a body, once per request | On a module route that declares a body parameter, FastAPI reads the body before the route's dependencies run. Measured, a body of the cap's size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight. A module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default. |
 | No cap on the number of sessions | Each needs an Eneo login, which Eneo rate-limits, and a second login ends the browser's old session. |
 | No single-flight for signed URLs | 20 concurrent cold Range requests for one file mint 20 URLs. |
 | The session store is process-local | One replica. Scaling out needs sticky sessions or a shared store, decided when a module needs it. |
 | No total deadline per request | Timeouts are per phase: 60 s a read or write, 5 s for a free connection, 10 s to connect, and an upload's own budget. |
+| At the Starlette floor (1.3.1), the temporary file of a cut-off upload is closed when garbage is collected, not at once | Measured: 13 open files at rest, 27 after 175 cut-off uploads, then steady. From Starlette 1.7 it is closed at once. Raising the floor removes the delay. |
 | One module so far | The kit is carved from one module. Versions stay 0.x until a second module has used it. |
