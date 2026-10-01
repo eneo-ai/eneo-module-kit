@@ -21,6 +21,7 @@ Deny by default, for paths and for headers.
 
 - A path that could reach another Eneo route (`.` or `..` segments, written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
 - The path Eneo receives is the path the rule matched, encoded as that one logical path: a `%2F` that the browser wrote as `%252F` is an id, and goes on as `%252F`, so Eneo does not decode it into a separator. This holds for the proxy, uploads and signed-URL requests.
+- The client follows no redirect, so the service key and the module token never go to a second server: a 3xx on the ticket exchange or the session check ends the login (`exchange_failed`, `validation_failed`), on a token refresh ends the session, on a signed-URL request is a 502 `upstream_invalid`, and on an upload or a proxied call is a 502 `upstream_redirect` (`test_redirects.py`, with a second server that must hear nothing).
 - The client that calls Eneo stores and sends no cookie (`upstream.make_client`): its jar would be shared by every user.
 - Every module has to write its allowlist, as narrow as it can be.
 - A header a module needs and the list lacks is added with `create_app(forward_request_headers=[...])`.
