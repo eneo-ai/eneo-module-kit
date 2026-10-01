@@ -1,5 +1,9 @@
 # @eneo-ai/module-kit
 
+Purpose: the UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell and brand.
+Read this when: you build a module's pages on it, or change the package.
+Related: [guide: the UI package](../../docs/guides/ui-package.md) (install, wiring, every name, colour mode, links, branding), [new module](../../docs/guides/new-module.md), [architecture](../../docs/architecture.md#the-ui-app-and-its-layers), [decisions K9, K10, K11](../../docs/decisions/README.md), [BFF README](../bff/README.md).
+
 The UI of an Eneo module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the
 colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a
 meta-framework. Version 0.x: the API may change until a second module has used it.
@@ -42,3 +46,5 @@ brand's mark, forced-colour edges, no ring on a programmatically focused heading
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.
+
+Install it from a packed tarball, not a `file:` folder (two copies of React): see the [guide](../../docs/guides/ui-package.md#install).

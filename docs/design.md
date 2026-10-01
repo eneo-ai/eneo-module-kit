@@ -4,7 +4,7 @@ Purpose: the long-form design record: the module contract with Eneo, the decisio
 Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
 Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
 
-Design record, 2026-10-01. Status: the BFF described here is built (`packages/bff`); the UI package and the template are planned. Where this page and the code disagree, the code wins.
+Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The UI package's session client, the Astryx integration and the first release are planned. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
@@ -98,12 +98,13 @@ session ends (logout, expiry, a refresh that ends it, a new login replacing it).
 the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.
 
 **K9. Colour mode is the UI package's own.** A static app has no server render, so the stored choice is read
-before React renders and passed to Astryx's `<Theme mode>` directly. The storage key is `theme` with values
+when the provider first renders (the first paint is already in the right mode) and passed to Astryx's `<Theme mode>` directly. The storage key is `theme` with values
 `light`, `dark`, `system`, the same key and values next-themes uses, so speech-to-text's saved preferences carry
 over. An inline script is not needed, which keeps the strict CSP.
 
-**K10. Branding without templating.** The page asks `/api/branding` before its first render and shows no
-organisation mark until it has the answer. Nothing is injected into `index.html`.
+**K10. Branding without templating.** The page asks `/api/branding` once, when it starts, with a
+deadline of 2 s, and shows the product name alone until it has the answer (and if none comes). Nothing is injected
+into `index.html`. The kit ships no organisation's mark: a module that bundles one passes it as `defaultLogo`.
 
 **K11. Astryx is pinned to an exact version** in the UI package and the template. The house bar above its defaults
 (44 px touch targets, a measured focus ring, a readable dark-mode error label) is met once, in the theme.

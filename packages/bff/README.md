@@ -2,7 +2,7 @@
 
 Purpose: the Eneo module contract for a FastAPI BFF, packaged: login handoff, a server-side session with token refresh, a deny-by-default proxy to Eneo, upload forwarding, signed-file streaming, security headers and the built UI.
 Read this when: you build a module's backend on it, change the package, or need its HTTP surface, public names or limits.
-Related: [guide: build a module](../../docs/guides/build-a-module.md), [configuration](../../docs/guides/configuration.md), [architecture](../../docs/architecture.md), [security checklist](../../docs/guides/security-checklist.md), [decisions](../../docs/decisions/README.md), [repository README](../../README.md).
+Related: [guide: new module](../../docs/guides/new-module.md), [guide: build a module](../../docs/guides/build-a-module.md), [UI package](../ui/README.md), [configuration](../../docs/guides/configuration.md), [architecture](../../docs/architecture.md), [security checklist](../../docs/guides/security-checklist.md), [decisions](../../docs/decisions/README.md), [repository README](../../README.md).
 
 It is the security boundary between a browser and Eneo, so it holds no module-specific route.
 

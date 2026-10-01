@@ -8,19 +8,19 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 
 | ID | Decision | Built? |
 |---|---|---|
-| [K1](k01-one-repository-three-parts.md) | One repository, three parts | Partly built |
-| [K2](k02-one-stack.md) | One stack | Partly built |
+| [K1](k01-one-repository-three-parts.md) | One repository, three parts | Built |
+| [K2](k02-one-stack.md) | One stack | Built |
 | [K3](k03-fastapi-not-hono.md) | FastAPI, not Hono | Built |
-| [K4](k04-static-ui-served-by-the-bff.md) | The UI is a static app served by the BFF | Partly built |
+| [K4](k04-static-ui-served-by-the-bff.md) | The UI is a static app served by the BFF | Built |
 | [K5](k05-sso-only.md) | SSO only | Built |
 | [K6](k06-deny-by-default.md) | Deny by default | Built |
 | [K7](k07-primitives-for-uploads-and-files.md) | Primitives, not routes, for uploads and files | Built |
 | [K8](k08-application-factory.md) | An application factory | Built |
-| [K9](k09-colour-mode-in-the-ui-package.md) | Colour mode is the UI package's own | Planned |
-| [K10](k10-branding-without-templating.md) | Branding without templating | Partly built |
-| [K11](k11-astryx-pinned.md) | Astryx is pinned to an exact version | Planned |
+| [K9](k09-colour-mode-in-the-ui-package.md) | Colour mode is the UI package's own | Built |
+| [K10](k10-branding-without-templating.md) | Branding without templating | Built |
+| [K11](k11-astryx-pinned.md) | Astryx is pinned to an exact version | Built |
 | [K12](k12-agent-setup.md) | For agents: AGENTS.md, the pinned Astryx CLI, and the UI package as an Astryx integration | Partly built |
 | [K13](k13-httpx2.md) | The HTTP client is httpx2, not httpx | Built |
 | [K14](k14-body-limits-and-stream-cap.md) | Body limits and a cap on streaming files | Built |
 
-"Built" means the code is in the repository and tested. "Planned" means the part it concerns (`packages/ui`, `template/`) is not in the repository yet. "Partly built" means the part in `packages/bff` is built and the rest is planned.
+"Built" means the code is in the repository and tested. "Partly built" means the decision is in place in part and the rest is planned (K12: the template's agent setup is built, the Astryx integration of the UI package is not).

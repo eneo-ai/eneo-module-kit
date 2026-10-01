@@ -11,11 +11,11 @@ Every claim about code names the file, never a line. If a diagram and the code d
 | Part | Path | Status |
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
-| UI package `@eneo-ai/module-kit` | `packages/ui/` | Planned. Not in the repository yet. |
-| Template (the smallest working module) | `template/` | Planned. Not in the repository yet. |
+| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand. Version 0.1.0, not released. Planned: the session client (sign-in screen, warning before the login ends, the cover while signed out) and the Astryx integration. |
+| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app, Dockerfile, compose file, module CI, agent files. Its `RequireSession` is a minimal stand-in for the session client. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
-The diagrams below describe the BFF as built, except the last one, which is the target deployment of a module made from the planned template.
+The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
 
 ## Parts and package structure
 
@@ -36,12 +36,13 @@ flowchart TB
     branding["branding.py: /api/branding"]
     settings["settings.py: Settings, load_settings"]
   end
-  ui["packages/ui (planned)"]
-  tpl["template/ (planned)"]
+  ui["packages/ui: providers, shell, brand, theme (built)"]
+  tpl["template/ (built)"]
   module --> app
   module --> serve
   module --> deps
   module --> transport
+  module -->|"web/ imports"| ui
   app --> auth
   app --> proxy
   app --> limits
@@ -55,11 +56,10 @@ flowchart TB
   transport --> auth
   deps --> auth
   auth --> settings
-  ui -.-> module
-  tpl -.-> module
+  tpl -.->|"a module starts as a copy"| module
 ```
 
-The dashed arrows are planned: a module will import the UI package and start as a copy of the template. The BFF holds the module contract with Eneo and no route of any module.
+A module imports both packages and copies none of their code. The BFF holds the module contract with Eneo and no route of any module. The UI package holds no page of any module and imports no router. The dashed arrow is a copy, not an import.
 
 ## System context
 
@@ -225,9 +225,68 @@ sequenceDiagram
 
 Source: `transport.py` (`stream_signed`) and `auth.py` (`ModuleSessionStore.signed_url`). The stream slot is released when the response ends, however it ends. At most `MAX_CONCURRENT_STREAMS` files stream at once. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
 
-## Target deployment
+## The UI app and its layers
 
-Look at: one container, one process, one replica. This is the deployment the planned template builds. The BFF half is built: `serve()` fixes one worker and turns the access log off.
+Look at: the nesting of providers, top to bottom. The kit's UI package supplies the middle (colour mode, theme, words, links, branding, the shell); the module supplies the router and the pages.
+
+```mermaid
+flowchart TB
+  main["main.tsx: five stylesheets in order, then render"] --> router["BrowserRouter: the module's"]
+  router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, links"]
+  mp --> bp["BrandingProvider: asks /api/branding once"]
+  bp --> app["App: the module's routes"]
+  app --> rs["RequireSession: asks /api/auth/status"]
+  rs --> frame["Frame: ModuleShell, Brand, Layout"]
+  frame --> page["A page, built from Astryx components"]
+```
+
+| Layer | Where | Owned by |
+|---|---|---|
+| Stylesheets: `layers.css`, Astryx's `reset.css` and `astryx.css`, `theme.css`, `base.css` | imported in `template/web/src/main.tsx`, in this order | the module imports, the kit and Astryx supply |
+| Providers, shell, brand, theme, colour mode | `packages/ui/src/` | the UI package |
+| Router, pages, `Frame`, `RequireSession`, `AccountMenu`, `config.ts` | `template/web/src/` | the module |
+| Components | `@astryxdesign/core`, pinned to an exact version | Astryx |
+| Design-system fixes | `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` | the UI package, once, for every module |
+
+The UI is a static app: the BFF serves its built files ([K4](decisions/k04-static-ui-served-by-the-bff.md)), so nothing is rendered on a server and the colour mode is read in the browser on the first render ([K9](decisions/k09-colour-mode-in-the-ui-package.md)). Detail: [UI package](guides/ui-package.md).
+
+## Where the organisation's branding enters
+
+Look at: the deployment sets the organisation once, in the BFF's environment; the page learns it from `/api/branding`; the module chooses its own product name and bundled logo.
+
+```mermaid
+flowchart LR
+  env["Deployment: ORGANIZATION_NAME, ORGANIZATION_LOGO, ORGANIZATION_LOGO_DARK, SHOW_ORGANIZATION"] --> settings["BFF: Settings.organization, logo files read at start"]
+  settings --> api["/api/branding and /api/branding/logo/light or dark, no session"]
+  api --> prov["UI: BrandingProvider asks once, with a 2 s deadline"]
+  prov --> brand["Brand: the mark and the product name in the top bar"]
+  mod["Module: PRODUCT_NAME, and defaultLogo if it bundles one"] --> brand
+```
+
+Until the answer comes, or when it fails, the lockup is the product name alone. The kit ships no organisation's mark. See [K10](decisions/k10-branding-without-templating.md) and [UI package: branding](guides/ui-package.md#branding).
+
+## The template and its image
+
+Look at: two builds in one image. Node builds the UI to static files, Python installs the backend's packages, and only Python and the built files reach the runtime image.
+
+```mermaid
+flowchart LR
+  subgraph build["Build"]
+    web["Stage web: node 22, npm install, npm run build, giving web/dist"]
+    pkgs["Stage python-packages: pip install into /install"]
+  end
+  kit["Build context kit: packed UI package and a copy of the BFF"] -.->|"until the release"| web
+  kit -.-> pkgs
+  web --> run["Runtime: python 3.12 slim, user uid 10001, no Node"]
+  pkgs --> run
+  run --> cmd["serve main:build_app on port 3001, HEALTHCHECK on /health"]
+```
+
+The dotted arrows are the pre-release route: without the `kit` build context the Dockerfile installs the pinned versions, which do not exist yet ([new module](guides/new-module.md#6-build-the-image)). Source: `template/Dockerfile`.
+
+## Deployment of a module
+
+Look at: one container, one process, one replica. This is what the template builds and what `serve()` fixes: one worker, no access log.
 
 ```mermaid
 flowchart LR
@@ -251,9 +310,24 @@ flowchart LR
 |---|---|
 | `serve()` runs one uvicorn worker, no access log (the callback URL carries a ticket), WebSocket buffers bounded, stops within 8 s of SIGTERM | Built (`serve.py`) |
 | Port 3001, `GET /health` answers `{"ok": true}` | Built (`serve.py`, `app.py`) |
+| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Built (`template/Dockerfile`) |
 | One container on the module network, no outbound internet | Contract from [design.md](design.md) section 2 |
-| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Planned (template) |
 | Sessions are process-local: one replica. More needs sticky sessions or a shared store | Decided when a module needs it |
+
+## What CI builds and proves
+
+Look at: every job builds against the packages of the same commit, not published ones, so the packages are always proven to work together ([K1](decisions/k01-one-repository-three-parts.md)).
+
+```mermaid
+flowchart TB
+  commit["A commit or pull request"] --> bff["bff: the suite at the lowest and the newest versions, pip-audit"]
+  commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
+  commit --> tb["template-backend: the template's tests on this commit's BFF"]
+  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF, three browsers and the gate"]
+  commit --> ti["template-image: build the image from this commit's packages, run it, GET /health"]
+```
+
+Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
 
 ## Where each fact lives
 
@@ -270,3 +344,16 @@ flowchart LR
 | App factory | `app.py` | `test_app.py` |
 | Running the server | `serve.py` | `test_serve.py`, `test_shutdown.py` |
 | Public names and version | `__init__.py` | `test_serve.py` (the names), `test_package.py` (the version) |
+
+The UI package, the template and the image:
+
+| Topic | Path | Tests |
+|---|---|---|
+| Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
+| Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
+| Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
+| Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
+| A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
+| Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |
+| A module's UI | `template/web/src/` | `template/web/tests/e2e/` |
+| The image | `template/Dockerfile`, `docker-compose.yml` | the `template-image` job of `.github/workflows/ci.yml` |

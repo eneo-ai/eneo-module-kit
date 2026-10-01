@@ -4,7 +4,7 @@ Purpose: record the decision why the kit is not framework-agnostic.
 Read this when: someone proposes Next.js, Hono, Tailwind or a second UI library, or a different split of work between UI and server.
 Related: [decisions](README.md), [K1](k01-one-repository-three-parts.md), [K3](k03-fastapi-not-hono.md), [K4](k04-static-ui-served-by-the-bff.md).
 
-Status: Accepted, 2026-10-01. Built: the BFF half. Planned: the UI half.
+Status: Accepted, 2026-10-01. Built: the BFF, the UI package and the template.
 
 ## Context
 
