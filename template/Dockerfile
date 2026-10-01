@@ -21,18 +21,19 @@ RUN --mount=from=kit,target=/kit \
     if [ -f package-lock.json ] && [ -z "$pack" ]; then npm ci; else npm install; fi; \
     npm run build
 
-# ---- the backend's packages (git is only here: the kit's BFF is pinned to a commit until its first release)
+# ---- the backend's packages: what the kit's BFF depends on, locked with hashes (backend/requirements.lock), then the BFF
+# itself (git is only here: it is pinned to a commit of the kit until its first release)
 FROM python:3.12-slim AS python-packages
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
-COPY backend/requirements.txt /requirements.txt
+COPY backend/requirements.lock backend/requirements.txt /
+RUN pip install --no-cache-dir --prefix=/install --require-hashes --no-deps -r /requirements.lock
 RUN --mount=from=kit,target=/kit \
     set -e; \
     if [ -d /kit/bff ]; then \
       cp -r /kit/bff /tmp/bff; \
-      grep -v '^eneo-module-bff' /requirements.txt > /others.txt || true; \
-      pip install --no-cache-dir --prefix=/install /tmp/bff -r /others.txt; \
+      pip install --no-cache-dir --prefix=/install --no-deps /tmp/bff; \
     else \
-      pip install --no-cache-dir --prefix=/install -r /requirements.txt; \
+      pip install --no-cache-dir --prefix=/install --no-deps -r /requirements.txt; \
     fi
 
 # ---- what runs

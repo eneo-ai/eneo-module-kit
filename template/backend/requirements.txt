@@ -1,3 +1,16 @@
-# The kit's BFF. Until its first release it is pinned to a commit of the kit; replace <full sha> with the one you start from.
-# (The kit's own CI installs the workspace copy first: pip install -e packages/bff.)
+# The kit's BFF, and only it. Everything it depends on is locked, with hashes, in requirements.lock (install that first).
+#
+#   pip install --require-hashes --no-deps -r requirements.lock
+#   pip install --no-deps -r requirements.txt
+#
+# Until the kit's first release the BFF is pinned to a commit of the kit: replace <full sha> with the one you start from.
+# After the release: `eneo-module-bff==x.y.z`, and requirements.lock is compiled from it (see below).
+#
+# requirements.lock is generated, not edited. Before the release, from the root of the kit repository (the command is also
+# in the lock's header; --exclude-newer fixes the index's state, so the same command gives the same file):
+#   uv pip compile packages/bff/pyproject.toml --python-version 3.12 --universal --generate-hashes \
+#     --exclude-newer <date> -o template/backend/requirements.lock
+# After the release, in the module: list `eneo-module-bff==x.y.z` and the module's own packages in requirements.in and run
+#   uv pip compile requirements.in --python-version 3.12 --universal --generate-hashes -o requirements.lock
+# (then this file is not needed).
 eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff
