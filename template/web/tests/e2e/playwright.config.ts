@@ -23,7 +23,7 @@ type Use = NonNullable<PlaywrightTestConfig["use"]>;
 const touch = (width: number, height: number): Use => ({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
 
-const flow = /flow\.spec\.ts/;
+const flow = /(flow|session-cover)\.spec\.ts/;
 const gate = /(a11y|harness|header-fit)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
