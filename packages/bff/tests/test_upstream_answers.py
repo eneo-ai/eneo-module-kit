@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, Request
 
 from eneo_module_bff.deps import require_same_origin, require_session
 from eneo_module_bff.proxy import RESOURCE_ID, rule
+from eneo_module_bff.settings import Settings
 from eneo_module_bff.transport import forward_upload, stream_signed
+from eneo_module_bff.upstream import UnboundedAnswer, make_client
 
 from .fake_eneo import Module
 
@@ -109,6 +111,20 @@ class ProxyAnswerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual((response.status_code, len(response.content)), (200, CAP))
 
+    async def test_a_304_may_carry_the_length_or_the_encoding_of_the_representation_it_did_not_send(self) -> None:
+        # RFC 9110 section 8.6: a 304 has no content, and may carry the Content-Length (and Content-Encoding) the 200 would have had.
+        for label, headers in (
+            ("a length past the bound", {"content-length": str(10**9), "etag": '"v1"'}),
+            ("an encoding", {"content-encoding": "gzip", "etag": '"v1"'}),
+        ):
+            with self.subTest(label):
+                eneo, browser = self.module(lambda request: (304, headers, b""))
+
+                response = await browser.get("/api/eneo/things/x/", headers={"If-None-Match": '"v1"'})
+
+                self.assertEqual((response.status_code, response.content), (304, b""))
+                self.assertEqual(response.headers["etag"], '"v1"')
+
     async def test_the_client_asks_for_no_encoding(self) -> None:
         seen = []
         eneo, browser = self.module(lambda request: (seen.append(request.headers["accept-encoding"]) or 200, json_headers(), b"{}"))
@@ -116,6 +132,28 @@ class ProxyAnswerTests(unittest.IsolatedAsyncioTestCase):
         await browser.get("/api/eneo/things/x/")
 
         self.assertEqual(seen, ["identity"])
+
+
+class NoContentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_an_answer_that_cannot_carry_content_is_not_refused_for_what_it_declares(self) -> None:
+        settings = Settings(
+            eneo_backend_url="http://eneo.test", eneo_public_url="http://eneo.example", module_public_url="http://module.test",
+            module_key="m", eneo_api_key="k", session_secret="x" * 48, max_response_bytes=CAP,
+        )
+        declared = {"content-length": str(10**9)}
+        for label, method, status in (("a HEAD answer", "HEAD", 200), ("a 204", "GET", 204), ("a 304", "GET", 304)):
+            with self.subTest(label):
+                client = make_client(settings, transport=Eneo(lambda request: (status, declared, b"")))
+                self.addAsyncCleanup(client.aclose)
+
+                response = await client.request(method, "http://eneo.test/x")
+
+                self.assertEqual((response.status_code, response.content), (status, b""))
+        # A GET that is a 200 with the same declaration is still refused.
+        client = make_client(settings, transport=Eneo(lambda request: (200, declared, b"")))
+        self.addAsyncCleanup(client.aclose)
+        with self.assertRaises(UnboundedAnswer):
+            await client.get("http://eneo.test/x")
 
 
 class ControlAnswerTests(unittest.IsolatedAsyncioTestCase):

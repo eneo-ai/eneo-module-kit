@@ -78,7 +78,9 @@ def make_client(settings: Settings, *, transport: httpx2.AsyncBaseTransport | No
     async def bound(response: httpx2.Response) -> None:
         request = response.request
         limit = request.extensions.get(LIMIT, settings.max_response_bytes)
-        if limit is None:
+        # No content to bound: the answer to a HEAD, a 1xx, a 204, and a 304, which may carry the Content-Length and
+        # the Content-Encoding of the representation it did not send (RFC 9110 section 8.6) and is not refused for them.
+        if limit is None or request.method == "HEAD" or response.status_code in {204, 304} or response.status_code < 200:
             return
         if response.headers.get("content-encoding", "identity").strip().lower() not in {"", "identity"}:
             raise UnboundedAnswer("The answer is encoded, and its decoded size is not known", request=request)

@@ -175,7 +175,7 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   for no encoding, refuses an encoded answer (a few KB of gzip decode to gigabytes, and the decoded size is what is
   held), and stops at `max_response_bytes` (32 MiB; 502 `upstream_too_large`, the answer closed): the proxy and
   uploads. The answers that carry a token or a URL (ticket exchange, session check, refresh, signed URL) stop at 1 MiB
-  and the body of a failed file answer is read to 1 MiB and dropped past it. Only a file that streams is unbounded. A
+  and the body of a failed file answer is read to 1 MiB and dropped past it. Only a file that streams is unbounded, and an answer that cannot carry content (to a HEAD, a 204, a 304, which may declare the length of the representation it did not send) is not checked. A
   proxied answer is still held whole until it is sent, so `MAX_RESPONSE_BYTES` is the most payload one answer retains,
   not the memory it costs: httpx2 joins the chunks it read into one `bytes`, and holds both while it does, and the
   transport adds its own buffers. Measured against a real server, one 24 MiB answer raised the module's peak by 55 to
