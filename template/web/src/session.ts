@@ -1,9 +1,18 @@
 import { fetchWithSession } from "@eneo-ai/module-kit/session";
 
-/** Ends the session (a same-origin POST), then starts over from the sign-in page. */
-export async function signOut(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST" });
+/**
+ * Ends the session (a same-origin POST), then starts over from the sign-in page. Only the backend's yes counts: a refusal
+ * or no answer at all means the login lives on, so the page is not left and this says `false`, for the caller to say so.
+ */
+export async function signOut(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/auth/logout", { method: "POST" });
+    if (!response.ok) return false;
+  } catch {
+    return false;
+  }
   window.location.assign("/");
+  return true;
 }
 
 /** The error of a call the backend answered with a status. A login that ended is not one: `fetchWithSession` waits for the new login. */
