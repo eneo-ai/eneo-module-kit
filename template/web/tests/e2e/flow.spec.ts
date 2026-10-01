@@ -64,6 +64,7 @@ test("the page's strict Content Security Policy is the backend's, on the page an
 
 test.describe("the organisation's mark", () => {
   test("a logo for each colour mode: the light one in light, the dark one in dark, never both", async ({ page }) => {
+    test.skip(!!process.env.E2E_EXTERNAL_URL, "the organisation is configured by the config's own backend");
     await page.goto("/");
     const light = page.locator('img[data-brand-logo="light"]');
     const dark = page.locator('img[data-brand-logo="dark"]');
