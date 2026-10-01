@@ -88,7 +88,7 @@ Stable for the UI package and for any other frontend.
 | `GET /api/auth/callback?ticket=&state=` | Finishes it: 303 to `next` with the session cookie set, or to `/?auth_error=<code>` |
 | `POST /api/auth/logout` | Ends the session (same origin required) |
 | `GET /api/auth/status` | `{"authenticated": false, "user": null}`, or `{authenticated, user, session_ends_in, refresh_in}` (`refresh_in` only while a refresh is still possible) |
-| `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. |
+| `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. `logo` is `"custom"` (served here), `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it) or null (the name as text). |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
