@@ -27,10 +27,14 @@ class FakeResponse:
 class FakeProxyClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.response_headers = None
 
     async def request(self, **kwargs):
         self.calls.append(kwargs)
-        return FakeResponse()
+        response = FakeResponse()
+        if self.response_headers is not None:
+            response.headers = self.response_headers
+        return response
 
 
 class EneoProxyAuthTests(unittest.TestCase):
@@ -196,6 +200,31 @@ class EneoProxyAuthTests(unittest.TestCase):
         for path in ("flows/", "flows/a b/runs/", "flows/\u00e5ngest/runs/", "flows/abc-1_2.3~/runs/", "flows/a%20b/"):
             with self.subTest(path=path):
                 self.assertFalse(leaves_route(path))
+
+    def test_a_cookie_from_eneo_never_reaches_the_browser(self) -> None:
+        # Several would be merged into one line, and one named like the module's session would replace it.
+        session = self.client.cookies.get(SESSION_COOKIE)
+        self.proxy_client.response_headers = httpx.Headers(
+            [
+                ("content-type", "application/json"),
+                ("set-cookie", f"{SESSION_COOKIE}=ENEO-SET; Path=/"),
+                ("set-cookie", "other=2"),
+            ]
+        )
+
+        response = self.client.get("/api/eneo/flows/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("set-cookie", response.headers)
+        self.assertEqual(self.client.cookies.get(SESSION_COOKIE), session)
+        self.assertIsNone(self.client.cookies.get("other"))
+
+    def test_a_proxied_response_is_not_cached_unless_eneo_says_how(self) -> None:
+        self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "private, no-store")
+
+        self.proxy_client.response_headers = {"content-type": "application/json", "Cache-Control": "max-age=60"}
+
+        self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "max-age=60")
 
     def test_with_no_rules_every_path_is_refused_and_eneo_is_never_called(self) -> None:
         self.build(rules=())

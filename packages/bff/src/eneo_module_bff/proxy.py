@@ -44,13 +44,15 @@ _NEVER_FORWARDED_REQUEST_HEADERS = frozenset(
     }
 )
 
-# Headers we should not forward from upstream response back to client.
-_HOP_BY_HOP_RESPONSE_HEADERS = {
+# Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
+# several would be merged into one line, and one named like the module's session would replace it.
+_UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
     "connection",
     "keep-alive",
     "content-length",
+    "set-cookie",
 }
 
 FORWARDED_REQUEST_HEADERS = frozenset({"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"})
@@ -167,8 +169,11 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         resp_headers = {
             k: v
             for k, v in upstream.headers.items()
-            if k.lower() not in _HOP_BY_HOP_RESPONSE_HEADERS
+            if k.lower() not in _UNFORWARDED_RESPONSE_HEADERS
         }
+        # A response is one user's: no cache keeps it unless Eneo said how it may be kept.
+        if not any(name.lower() == "cache-control" for name in resp_headers):
+            resp_headers["Cache-Control"] = "private, no-store"
 
         return Response(
             content=upstream.content,
