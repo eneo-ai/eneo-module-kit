@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 logger = logging.getLogger("eneo_config")
@@ -35,6 +35,16 @@ CREDENTIAL_AND_FRAMING_HEADERS = frozenset(
         "upgrade",
     }
 )
+
+
+def _key_header_problem(name: str) -> str | None:
+    """What is wrong with ``name`` as the header that carries the service key, or None."""
+    if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name) is None:
+        return "must be a valid HTTP header name"
+    # X-API-Key is the default name, so it is the one entry of the set that is allowed.
+    if name.lower() in CREDENTIAL_AND_FRAMING_HEADERS - {"x-api-key"}:
+        return f"cannot be a credential or framing header ({name})"
+    return None
 
 
 class Organization(BaseModel):
@@ -72,6 +82,9 @@ class Settings(BaseModel):
     max_body_bytes: int = 10 * 1024 * 1024
     # The most one upload may declare (forward_upload).
     max_upload_bytes: int = 1024 * 1024 * 1024
+    # The most of an answer from Eneo the module reads (upstream.py), decoded: a larger one is a 502. Not for a file
+    # that streams (stream_signed), and the answers that carry a token or a URL have a bound of their own.
+    max_response_bytes: int = 32 * 1024 * 1024
     # How many files may stream at once (stream_signed). The shared client keeps 100 connections, and a file holds
     # one for as long as it streams: this leaves the rest for the API.
     max_concurrent_streams: int = 64
@@ -85,6 +98,14 @@ class Settings(BaseModel):
     organization: Organization | None = None
     organization_logo: LogoFile | None = None
     organization_logo_dark: LogoFile | None = None
+
+    @field_validator("eneo_api_key_header_name")
+    @classmethod
+    def _service_key_header(cls, name: str) -> str:
+        # The model's invariant, so settings a module builds itself hold it too (create_app takes them as they are).
+        if problem := _key_header_problem(name):
+            raise ValueError(f"eneo_api_key_header_name {problem}")
+        return name
 
     @property
     def module_origin(self) -> str:
@@ -252,11 +273,8 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         raise RuntimeError("MODULE_KEY must use lowercase kebab-case")
 
     api_key_header_name = os.environ.get("ENEO_API_KEY_HEADER_NAME", "X-API-Key")
-    if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", api_key_header_name) is None:
-        raise RuntimeError("ENEO_API_KEY_HEADER_NAME must be a valid HTTP header name")
-    # X-API-Key is the default name, so it is the one entry of the set that is allowed.
-    if api_key_header_name.lower() in CREDENTIAL_AND_FRAMING_HEADERS - {"x-api-key"}:
-        raise RuntimeError(f"ENEO_API_KEY_HEADER_NAME cannot be a credential or framing header ({api_key_header_name})")
+    if problem := _key_header_problem(api_key_header_name):
+        raise RuntimeError(f"ENEO_API_KEY_HEADER_NAME {problem}")
 
     raw_session_minutes = os.environ.get("SESSION_MAX_AGE_MINUTES", "480")
     try:
@@ -280,6 +298,7 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
+        max_response_bytes=_positive_int("MAX_RESPONSE_BYTES", 32 * 1024 * 1024),
         max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
         session_max_age_seconds=session_minutes * 60,
         home_path=home_path,

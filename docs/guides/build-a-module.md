@@ -135,7 +135,7 @@ The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multi
 | Not exactly one file named `upload_file`, or a control character (C0, DEL, C1) or a line or paragraph separator in its file name or content type | 400 |
 | The path leaves its route | 403 |
 | Eneo does not answer in time (`UPLOAD_PROXY_TIMEOUT_SECONDS`, or the lower `X-Upload-Timeout-Seconds`, never below 60 s) | 504 |
-| Eneo cannot be reached, or answers with a redirect | 502 |
+| Eneo cannot be reached, answers with a redirect, or answers with more than `MAX_RESPONSE_BYTES` (or encoded) | 502 |
 | Otherwise | Eneo's status, body and `Content-Type` |
 
 ## 7. Stream a signed file

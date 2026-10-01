@@ -13,6 +13,7 @@ from starlette.datastructures import Headers
 
 from .deps import require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
+from .upstream import UnboundedAnswer
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -41,6 +42,16 @@ _UNFORWARDED_RESPONSE_HEADERS = {
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
 # error, not an answer for the browser. (304 is not one: If-None-Match is forwarded, and a conditional read gets it.)
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+def upstream_too_large() -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "upstream_too_large",
+            "detail": "Eneo's answer is larger than the module reads.",
+        },
+    )
 
 
 def upstream_redirect() -> JSONResponse:
@@ -182,6 +193,9 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             )
         except httpx2.InvalidURL:
             raise uri_too_long() from None
+        except UnboundedAnswer:
+            logger.error("Eneo's answer is past the bound: method=%s url=%s", request.method, url)
+            return upstream_too_large()
         except httpx2.RequestError:
             logger.exception(
                 "Upstream request failed: method=%s url=%s",

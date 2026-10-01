@@ -42,7 +42,7 @@ def create_app(
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.
-        http_client = make_client()
+        http_client = make_client(settings)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

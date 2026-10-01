@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from eneo_module_bff.settings import Organization, canonical_origin, load_settings
+from eneo_module_bff.settings import Organization, Settings, canonical_origin, load_settings
 
 SUNDSVALL = Organization(name="Sundsvalls kommun", logo="default")
 PNG =bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000b49444154789c6360000200000500017a5eab3f0000000049454e44ae426082")  # a real 1x1 PNG
@@ -75,6 +75,18 @@ class SettingsTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, f"{name} must be an integer greater than zero"):
                         load_settings()
 
+    def test_the_response_bound_defaults_to_32_mib_and_is_configurable(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertEqual(load_settings().max_response_bytes, 32 * 1024 * 1024)
+        with patch.dict(os.environ, valid_environment() | {"MAX_RESPONSE_BYTES": "65536"}, clear=True):
+            self.assertEqual(load_settings().max_response_bytes, 65536)
+
+    def test_rejects_an_invalid_response_bound(self) -> None:
+        for raw in ("0", "-5", "big", "1.5", ""):
+            with self.subTest(raw=raw), patch.dict(os.environ, valid_environment() | {"MAX_RESPONSE_BYTES": raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "MAX_RESPONSE_BYTES must be an integer greater than zero"):
+                    load_settings()
+
     def test_home_path_is_where_the_callback_lands_without_a_next(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             self.assertEqual(load_settings().home_path, "/")
@@ -123,6 +135,20 @@ class SettingsTests(unittest.TestCase):
             with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {"ENEO_API_KEY_HEADER_NAME": name}, clear=True):
                 with self.assertRaisesRegex(RuntimeError, "ENEO_API_KEY_HEADER_NAME .*credential or framing"):
                     load_settings()
+
+    def test_settings_built_by_a_module_refuse_the_same_service_key_headers(self) -> None:
+        # The invariant is the model's, not the environment loader's: create_app takes the settings a module built.
+        fields = dict(
+            eneo_backend_url="http://eneo.test", eneo_public_url="http://eneo.example", module_public_url="http://module.test",
+            module_key="m", eneo_api_key="k", session_secret="x" * 48,
+        )
+        for name in ("Authorization", "cookie", "Host", "Transfer-Encoding", "not a header", ""):
+            with self.subTest(name=name):
+                with self.assertRaises(ValueError) as caught:
+                    Settings(**fields, eneo_api_key_header_name=name)
+                self.assertIn("eneo_api_key_header_name", str(caught.exception))
+        for name in ("X-API-Key", "X-Eneo-Module-Key"):
+            self.assertEqual(Settings(**fields, eneo_api_key_header_name=name).eneo_api_key_header_name, name)
 
     def test_the_default_and_a_custom_service_key_header_are_accepted(self) -> None:
         for name in ("X-API-Key", "x-api-key", "X-Eneo-Module-Key"):

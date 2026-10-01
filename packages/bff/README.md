@@ -107,6 +107,7 @@ Stable for the UI package and for any other frontend.
 | 414 | A path and query that, as sent to Eneo, are longer than the HTTP client writes (65,536 characters) | `{"detail": "Request URI too long"}` |
 | 413 | A body over its limit. Header `Connection: close` | `{"detail": "Request body too large"}`, or `"Upload too large"` |
 | 502 | Eneo cannot be reached | `{"error": "upstream_unreachable", ...}` |
+| 502 | Eneo's answer is longer than `MAX_RESPONSE_BYTES`, or is content-encoded (the module asks for no encoding) | `{"error": "upstream_too_large", ...}` |
 | 502 | Eneo answered with 301, 302, 303, 307 or 308 | `{"error": "upstream_redirect", ...}` |
 | 502 | The answer to the signed-URL request cannot be used | `{"error": "upstream_invalid", ...}` |
 | 503 | No free stream slot. Header `Retry-After: 2` | `{"error": "streams_busy", ...}` |
