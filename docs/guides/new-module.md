@@ -13,9 +13,11 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `backend/main.py` | `build_app(...)`: the kit's `create_app` with this module's `PROXY_RULES` (one: `GET flows/`) and its router. The image runs it with `serve('main:build_app', factory=True)`. |
 | `backend/routes.py` | The module's own routes on `router`: one, `GET /api/example`, behind `require_session`. |
 | `backend/tests/` | Run without Eneo. `test_app.py`: the page, the deep link, 404s, the route, the proxy and its allowlist. `test_routes.py` with `guards.py`: fails when a route lacks `require_session` (or a write lacks `require_same_origin`). |
-| `backend/requirements.txt` | The BFF, pinned to a commit of the kit until its first release (`<full sha>` is a placeholder). |
+| `backend/requirements.lock` | Everything the BFF depends on, with hashes: a generated, hash-pinned `uv pip compile` of the BFF's requirements. Install it first. The kit's CI fails when it drifts from the BFF's requirements. |
+| `backend/requirements.txt` | The BFF itself, pinned to a commit of the kit until its first release (`<full sha>` is a placeholder). |
 | `stub-eneo/server.py` | Eneo's side of the contract, stdlib only, for development and tests. Never shipped in the image. See [local development](local-development.md). |
 | `web/` | A Vite + React + react-router app on `@eneo-ai/module-kit`: `main.tsx` (providers, stylesheets), `App.tsx` (routes), `Frame.tsx` (the shell every page uses), `config.ts` (`PRODUCT_NAME`), `RequireSession.tsx`, `session.ts`, `AccountMenu.tsx`, `pages/SignIn.tsx`, `pages/Flows.tsx`. |
+| `web/package-lock.json`, `web/vendor/`, `web/scripts/relock.mjs` | The web app's own lock, with hashes. Before the release it finds `@eneo-ai/module-kit` in `web/vendor/` (the packed tarball, not committed); `relock.mjs` regenerates the lock. Both go when the package is published. |
 | `web/tests/e2e/` | Playwright against the built app, and the accessibility gate. |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` | One image, one process, port 3001. The compose file runs the module and the stub. `.env.example` lists every variable the backend reads. |
 | `.devcontainer/` | Python 3.12 and Node 22, ports 3001, 5173 and 8411 forwarded. |
@@ -24,14 +26,23 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 
 ## Before the first release
 
-Neither package is published. `web/package.json` names `@eneo-ai/module-kit` `0.1.0`, and `backend/requirements.txt` holds a placeholder, so a plain copy cannot install them yet. Until the release:
+Neither package is published. `web/package.json` names `@eneo-ai/module-kit` `0.1.0`, and `backend/requirements.txt` holds a placeholder, so a plain copy cannot install them yet, and a plain `docker build` fails. Until the release:
 
 | Package | How a module gets it |
 |---|---|
-| `@eneo-ai/module-kit` | The packed tarball: [UI package: install](ui-package.md#install). Never a `file:` folder (two copies of React). |
-| `eneo-module-bff` | A commit pin in `backend/requirements.txt` (replace `<full sha>` with the commit of this repository you start from), or `pip install /path/to/eneo-module-kit/packages/bff` for work on your own machine. |
+| `@eneo-ai/module-kit` | The packed tarball in `web/vendor/`, then `npm ci` ([step 2](#2-install-the-packages)). Not `npm install <tarball>`, which rewrites the manifest and the lock, and never a `file:` folder (two copies of React). |
+| `eneo-module-bff` | Its third-party packages from `backend/requirements.lock`, then the BFF itself: a commit pin in `backend/requirements.txt` (replace `<full sha>` with the commit of this repository you start from), or `pip install --no-deps /path/to/eneo-module-kit/packages/bff` on your own machine. |
 
-After the release both are version pins, and a plain `docker build -t my-module .` and `docker compose up --build` work as `template/README.md` says. Today they do not: the build fails at the BFF install. Use the build context below.
+After the release both are version pins, and in a module's own folder `docker build -t my-module .` and `docker compose up --build` work. Before it, build the image with the build context of [step 6](#6-build-the-image).
+
+## Node and Python
+
+| What | Needs |
+|---|---|
+| A module that uses the UI package | Node `>=22.13.0`: the Astryx CLI's own minimum (`engines` of `@eneo-ai/module-kit`) |
+| `template/web` | Node `>=22.22.0` (its `engines`) |
+| Working in the kit repository (`npm ci`, the tests, the build) | Node `^22.22.2 \|\| ^24.15.0 \|\| >=26.0.0`: what the locked development tools need together (root `package.json`; a test in `packages/ui` fails when a bumped dependency asks for more) |
+| The backend | Python 3.12 |
 
 ## 1. Copy and rename
 
@@ -54,16 +65,29 @@ A module in its own repository makes the copy its root: `template/` becomes `.`.
 
 ## 2. Install the packages
 
-```bash
-# the UI package: pack it in the kit checkout (see the UI package guide), then, in the module's web/ folder
-npm install /path/to/dir/eneo-ai-module-kit-0.1.0.tgz
+The web app. `web/package-lock.json` says that `@eneo-ai/module-kit` `0.1.0` is found in `web/vendor/eneo-ai-module-kit-0.1.0.tgz`, with no hash (it is the kit's own build, which changes with every commit); every other package is locked with its hash. Put the packed UI package there, and install from the lock:
 
-# the BFF: a virtual environment for the module, from the kit checkout
-python3.12 -m venv .venv
-.venv/bin/pip install /path/to/eneo-module-kit/packages/bff
+```bash
+# in the kit checkout
+npm ci && npm run -w packages/ui build
+npm pack -w packages/ui --pack-destination /path/to/eneo-mod-<name>/web/vendor
+
+# in the module's web/ folder
+npm ci
 ```
 
-`npm install <tarball>` rewrites the dependency in `web/package.json` to a `file:` path of the tarball; keep that out of a commit you share, or put the tarball somewhere stable.
+After a change of a dependency or of the kit's version, regenerate the lock: `node scripts/relock.mjs /path/to/the-tarball.tgz` (in `web/`). Do not `npm install <tarball>`: it rewrites `package.json` to a `file:` path. The tarball is not committed (`web/vendor/.gitignore`). After the release, delete `web/vendor/` and `web/scripts/relock.mjs` and run `npm install @eneo-ai/module-kit@<version>`: the lock then names the registry, with its hash.
+
+The backend. A virtual environment for the module; the locked third-party packages first, then the BFF:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install --require-hashes --no-deps -r backend/requirements.lock
+.venv/bin/pip install --no-deps /path/to/eneo-module-kit/packages/bff       # on your machine; a module's repository uses its commit pin instead:
+# .venv/bin/pip install --no-deps -r backend/requirements.txt              # after replacing <full sha>
+```
+
+`backend/requirements.lock` is generated, not edited: its header holds the `uv pip compile` command, and `--exclude-newer` fixes the index's state so the same command gives the same file. After the release, a module lists `eneo-module-bff==x.y.z` and its own packages in a `requirements.in` and compiles its own lock.
 
 ## 3. Set the environment
 
@@ -122,9 +146,9 @@ cd web && PYTHON="$(pwd)/../.venv/bin/python" npm run test:e2e
 
 ## 6. Build the image
 
-One image, one process: Node 22 builds `web/dist`, a `python:3.12-slim` runtime image installs the backend's requirements, copies the build, and runs `serve('main:build_app', factory=True)` as a non-root user (uid 10001). `HEALTHCHECK` is `/health` on 3001. No Node and no supervisor at run time.
+One image, one process: Node 22 builds `web/dist` from `web/package-lock.json` (`npm ci`), Python installs the locked packages with their hashes (`backend/requirements.lock`) and then the BFF, and a `python:3.12-slim` runtime image copies both and runs `serve('main:build_app', factory=True)` as a non-root user (uid 10001). `HEALTHCHECK` is `/health` on 3001. No Node and no supervisor at run time.
 
-Until the release, give the build a context named `kit` that holds the packed UI package and a copy of the BFF. The Dockerfile then uses them in place of the pins (this is what the kit's CI does):
+Until the release, give the build a context named `kit` that holds the packed UI package and a copy of the BFF. The Dockerfile then puts the tarball where the lock looks for it (`web/vendor/`) and installs the BFF from the copy instead of the commit pin (this is what the kit's CI does):
 
 ```bash
 # in the kit checkout
@@ -132,7 +156,7 @@ npm ci && npm run -w packages/ui build
 mkdir kit-context
 npm pack -w packages/ui --pack-destination kit-context
 cp -R packages/bff kit-context/bff
-docker build --build-context kit=kit-context -t my-module template
+docker build --build-context kit=kit-context -t eneo-module template
 ```
 
 After the release: `docker build -t my-module .` in the module's folder.
@@ -144,11 +168,15 @@ STUB_HOST=0.0.0.0 python3 stub-eneo/server.py &
 docker run -d --name my-module -p 127.0.0.1:3001:3001 \
   -e ENEO_BACKEND_URL=http://host.docker.internal:8411 -e ENEO_PUBLIC_URL=http://localhost:8411 \
   -e MODULE_PUBLIC_URL=http://localhost:3001 -e MODULE_KEY=eneo-module -e ENEO_API_KEY=stub-service-key \
-  -e SESSION_SECRET=change-me-to-at-least-32-random-characters -e COOKIE_SECURE=false my-module
+  -e SESSION_SECRET=change-me-to-at-least-32-random-characters -e COOKIE_SECURE=false eneo-module
 curl -fsS http://localhost:3001/health        # {"ok":true}
 ```
 
-With `docker compose up --build` (after the release, `cp .env.example .env` first) the stub runs as a second service, `stub-eneo` on 8411.
+Or with compose, which also runs the stub as a second service (`stub-eneo` on 8411). Its `module` service uses the image tagged `eneo-module`, so before the release start it from the image built above, and after the release `docker compose up --build` builds it:
+
+```bash
+cd template && cp .env.example .env && docker compose up      # then open http://localhost:3001
+```
 
 ## 7. Add to it
 
@@ -177,7 +205,7 @@ The kit's CI (`.github/workflows/ci.yml`) builds the template against the packag
 |---|---|---|
 | `bff` (lowest and newest versions) | The BFF suite, then `pip-audit` | The package works at the lowest and the newest dependency versions its ranges allow, with no known advisory in either set |
 | `ui` | `npm run -w packages/ui lint`, `npm test`, `build`, then `theme:build` and `git diff --exit-code` | The UI package type-checks, passes its tests, builds, and its committed theme is not stale |
-| `template-backend` | The template's backend and stub tests, with the workspace BFF | The module's routes are guarded, the allowlist is the one route, the page and 404s behave |
+| `template-backend` | The template's hash-locked third-party packages, then the workspace BFF, then the template's backend and stub tests; then it regenerates `backend/requirements.lock` from the BFF's requirements (`uv pip compile`, at the date the lock records) and fails on any difference | The module's routes are guarded, the allowlist is the one route, the page and 404s behave, and the lock is the BFF's current requirements |
 | `template-web` | `npm run -w template/web test:e2e` in Chromium, WebKit and Firefox, and the gate | Sign-in through the stub, the shell (one main region, a named navigation, the skip link), the proxied route, the module's own route, sign-out, a deep link without a session, 401 and 403 and 404 where they belong, the strict CSP header, stored and system dark mode, the account menu's colour choice, a logo for each mode, a failing Eneo with retry; every test fails on a console error or a CSP violation; and the gate (below) |
 | `template-image` | `docker build` with the `kit` context, `docker run`, `curl /health` | The image builds from the workspace packages and the app starts and answers |
 

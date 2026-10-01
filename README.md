@@ -46,19 +46,21 @@ It needs the environment of [configuration](docs/guides/configuration.md) and an
 
 ## Quick start: a module with a UI
 
-From the repository root (Node 22, Python 3.12). The packages are not published yet, so the UI package is installed from a tarball and the BFF from its folder:
+From the repository root (Node 22.22.2 or newer, Python 3.12). The packages are not published yet, so the UI package goes in `web/vendor/` as a tarball and the BFF is installed from its folder:
 
 ```bash
 npm ci && npm run -w packages/ui build
 mkdir -p /tmp/kit-pack && npm pack -w packages/ui --pack-destination /tmp/kit-pack
 cp -R template ../eneo-mod-example && cd ../eneo-mod-example
-(cd web && npm install /tmp/kit-pack/eneo-ai-module-kit-0.1.0.tgz && npm run build)
-python3.12 -m venv .venv && .venv/bin/pip install /path/to/eneo-module-kit/packages/bff
+cp /tmp/kit-pack/eneo-ai-module-kit-0.1.0.tgz web/vendor/
+(cd web && npm ci && npm run build)
+python3.12 -m venv .venv && .venv/bin/pip install --require-hashes --no-deps -r backend/requirements.lock
+.venv/bin/pip install --no-deps /path/to/eneo-module-kit/packages/bff
 ```
 
 Then the stub Eneo and the backend, as in step 4 of the guide below.
 
-[New module](docs/guides/new-module.md) has every step in order: rename, environment, run against the stub, test, build the image, register in Eneo, and what CI proves. `template/README.md` says `cp .env.example .env && docker compose up --build`. The compose file runs the template's plain `docker build`, which fails until the first release (checked with `docker build`): [the guide](docs/guides/new-module.md#6-build-the-image) says why and what to run instead.
+[New module](docs/guides/new-module.md) has every step in order: rename, environment, run against the stub, test, build the image, register in Eneo, and what CI proves. Until the first release a plain `docker build` of the template fails (the packages are not published): [the guide](docs/guides/new-module.md#6-build-the-image) builds the image with the packages of this checkout, as `template/README.md` does.
 
 ## The module contract, in short
 

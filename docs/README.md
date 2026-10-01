@@ -33,7 +33,7 @@ Status: **current** matches the code today; **planned** describes something not 
 |---|---|---|---|
 | [BFF package README](../packages/bff/README.md) | Public names, HTTP surface, answers, limits, how to develop the package | BFF developers | current |
 | [UI package README](../packages/ui/README.md) | The package's exports in brief | UI developers | current |
-| [template README](../template/README.md) | The module template in ten lines | Module developers | current, except its `docker compose up --build` line (see [new module](guides/new-module.md#6-build-the-image)) |
+| [template README](../template/README.md) | The module template in brief, with the pre-release way to try it | Module developers | current |
 | [decisions](decisions/README.md) | K1 to K14, one short page each | Anyone asking why | current |
 | [module contract](module-contract.md) | The calls between the BFF and Eneo, with examples, and what the BFF does with each failure | Stub and Eneo-side developers, debuggers | current |
 | [design](design.md) | The long form: the module contract with Eneo (section 2), the HTTP surface (5), limits (6), open questions (7) | Developers, the owner | current |

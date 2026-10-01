@@ -277,10 +277,10 @@ Look at: two builds in one image. Node builds the UI to static files, Python ins
 ```mermaid
 flowchart LR
   subgraph build["Build"]
-    web["Stage web: node 22, npm install, npm run build, giving web/dist"]
-    pkgs["Stage python-packages: pip install into /install"]
+    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist"]
+    pkgs["Stage python-packages: pip install with hashes from requirements.lock, then the BFF"]
   end
-  kit["Build context kit: packed UI package and a copy of the BFF"] -.->|"until the release"| web
+  kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"until the release"| web
   kit -.-> pkgs
   web --> run["Runtime: python 3.12 slim, user uid 10001, no Node"]
   pkgs --> run

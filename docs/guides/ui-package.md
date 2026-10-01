@@ -8,19 +8,21 @@ Related: [new module](new-module.md), [architecture](../architecture.md#the-ui-a
 
 ## Install
 
-The package is not on npm yet. Pack it from a checkout of this repository and install the tarball:
+The package is not on npm yet. Pack it from a checkout of this repository:
 
 ```bash
 # in the kit checkout
 npm ci
 npm run -w packages/ui build
 npm pack -w packages/ui --pack-destination /path/to/dir      # writes eneo-ai-module-kit-0.1.0.tgz
-
-# in the module's web/ folder
-npm install /path/to/dir/eneo-ai-module-kit-0.1.0.tgz
 ```
 
-Install the tarball, not the folder (`npm install file:../eneo-module-kit/packages/ui`). A folder install is a symlink, and the package then finds `react` in the kit's `node_modules`, the module finds its own: two copies of React, and hooks fail. (Checked: the two paths resolve to different files.) Inside this repository the template's `web/` is an npm workspace, which hoists one copy, so the template needs no tarball. The Dockerfile of the template uses the tarball too: see [new module](new-module.md).
+- **A module made from the template** puts the tarball in `web/vendor/` and runs `npm ci`: the template's `web/package-lock.json` already says the package is found there, and every other package is locked with its hash. After a change of a dependency, `node scripts/relock.mjs <tarball>` regenerates the lock. Not `npm install <tarball>`: it rewrites `package.json` and the lock to a `file:` path. [New module](new-module.md#2-install-the-packages) has the steps.
+- **Any other app** installs the tarball: `npm install /path/to/dir/eneo-ai-module-kit-0.1.0.tgz`.
+
+Install the tarball, not the folder (`npm install file:../eneo-module-kit/packages/ui`). A folder install is a symlink, and the package then finds `react` in the kit's `node_modules`, the module finds its own: two copies of React, and hooks fail. (Checked: the two paths resolve to different files.) Inside this repository the template's `web/` is an npm workspace, which hoists one copy, so the template needs no tarball there. The template's Dockerfile puts the tarball in `web/vendor/` itself: see [new module](new-module.md#6-build-the-image).
+
+Node: a module that uses the package needs `>=22.13.0` (the Astryx CLI's own minimum, the package's `engines`). Working in this repository needs `^22.22.2 || ^24.15.0 || >=26.0.0`, and `template/web` needs `>=22.22.0` ([new module](new-module.md#node-and-python)).
 
 Peer dependencies, all exact except React: `@astryxdesign/core` `0.6.3`, `@stylexjs/stylex` `0.19.1`, `react` and `react-dom` `>=19`. The module lists them itself (the template's `web/package.json` does).
 
@@ -29,7 +31,7 @@ Peer dependencies, all exact except React: `@astryxdesign/core` `0.6.3`, `@style
 The package imports no stylesheet from its code; the module imports five, in this order:
 
 ```tsx
-// web/src/main.tsx (from the template)
+// web/src/main.tsx (the template's, with React Router's Link passed as it is)
 import "@eneo-ai/module-kit/layers.css";   // first: declares the cascade layers
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
@@ -39,7 +41,7 @@ import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
 
 createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
-    <ModuleProviders linkComponent={RouterLink}>
+    <ModuleProviders linkComponent={Link}>
       <BrandingProvider defaultLogo="/brand/logo.svg">
         <App />
       </BrandingProvider>
@@ -94,13 +96,13 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 
 ## Links
 
-The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes them the app's router links, through Astryx's `LinkProvider`. The component receives `href` and the usual anchor props. React Router's `Link` takes `to`, so the template adapts it once:
+The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes them the app's router links, through Astryx's `LinkProvider`. The component receives the props of an anchor, `href` first (`href`, `children` and the usual anchor attributes), and also `to`, the same address, which Astryx adds for routers that take their address as `to`. So React Router's `Link` is passed as it is, and a component that takes `href` needs nothing more:
 
 ```tsx
-function RouterLink({ href, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
-  return <Link to={href} {...rest} />;
-}
+<ModuleProviders linkComponent={Link}>   {/* Link from "react-router" */}
 ```
+
+A router whose link wants something else needs a small adapter of its own. (A test in `packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.) The template's `main.tsx` still wraps `Link` in a small `RouterLink` that turns `href` into `to`: it predates this and is not needed.
 
 Without `linkComponent` the links are plain anchors and a click reloads the page. A link that leaves the app for another origin or for the BFF (`/api/auth/login`) is a plain `<a>`, as the template's sign-in page does.
 
