@@ -30,6 +30,8 @@ export function createSessionState(): SessionState {
   let signedOut = false;
   let otherUser: SessionUser | null = null;
   let endTimer: ReturnType<typeof setTimeout> | undefined;
+  // When the last answer said the login ends (ms), once one has; the timer for it runs while a page holds the login.
+  let endsAtMs: number | null = null;
   let waiting: Array<(renewed: boolean) => void> = [];
   const listeners = new Set<() => void>();
 
@@ -48,6 +50,11 @@ export function createSessionState(): SessionState {
   const ended = () => {
     if (pages > 0) setSignedOut(true);
   };
+  // The login ends at its time whatever the page does; only a new login moves it. No page, no timer to leak.
+  const arm = () => {
+    clearTimeout(endTimer);
+    if (pages > 0 && endsAtMs !== null) endTimer = setTimeout(ended, Math.max(0, endsAtMs - Date.now()));
+  };
 
   return {
     get signedOut() {
@@ -63,6 +70,7 @@ export function createSessionState(): SessionState {
     begin(user) {
       owner = user;
       pages += 1;
+      arm();
       let open = true;
       return () => {
         if (!open) return;
@@ -81,8 +89,8 @@ export function createSessionState(): SessionState {
       // Someone else's login is not this page's: it stays covered, and nothing waiting goes out as them.
       if (pages > 0 && owner && user.id !== owner.id) return setSignedOut(true, user);
       setSignedOut(false);
-      // The login ends at this time whatever the page does; only a new login moves it.
-      if (status.session_ends_in !== undefined) endTimer = setTimeout(ended, status.session_ends_in * 1000);
+      endsAtMs = status.session_ends_in === undefined ? null : Date.now() + status.session_ends_in * 1000;
+      arm();
     },
     ended,
     whenRenewed(signal) {

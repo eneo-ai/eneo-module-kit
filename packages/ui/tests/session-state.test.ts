@@ -157,3 +157,15 @@ test("only the backend's own mark says the login ended: Eneo's own 401 is an ans
   assert.equal(isSessionEndedAnswer(401, null), false);
   assert.equal(isSessionEndedAnswer(403, "session"), false);
 });
+
+test("a status read before any page holds the login leaves no timer; the page that begins later is told the end that passed", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const state = createSessionState();
+  state.observe(signedIn(60)); // a gate that read the status, and failed before it began
+  t.mock.timers.tick(61_000);
+  assert.equal(state.signedOut, false, "nobody is there to have signed out");
+  const end = state.begin(anna);
+  t.after(end);
+  t.mock.timers.tick(1);
+  assert.equal(state.signedOut, true, "a page that begins after the end has passed is signed out at once");
+});
