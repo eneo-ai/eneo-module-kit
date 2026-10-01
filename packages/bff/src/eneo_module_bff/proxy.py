@@ -70,7 +70,6 @@ def upstream_redirect() -> JSONResponse:
         },
     )
 
-FORWARDED_REQUEST_HEADERS = frozenset({"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"})
 RESOURCE_ID = r"[^/]+"
 
 
