@@ -32,7 +32,9 @@ where they differ, these win.
   script (`element.style.x = ...`, a React `style` prop) are fine.
 - Accessibility bar: WCAG 2.2 AA, 44 px touch targets (24 px with a mouse), a visible focus indicator. A new page adds its
   states to `web/tests/e2e/screens.ts`; `npm run test:e2e` in `web/` is the proof, and its thresholds are never lowered.
-- A page that needs a session goes inside `RequireSession`. The browser holds only an opaque cookie; the module-user
+- A page that needs a session goes inside `RequireSession`, and calls the backend with `fetchWithSession` (both from the kit's
+  `session` export): when the login ends the page is covered and kept, and a read waits for the new login. A dialog of
+  the page is closed while `useSignedOut()` says so (`isOpen={open && !signedOut}`, its state above it). The browser holds only an opaque cookie; the module-user
   token never reaches it.
 
 ## Checks
