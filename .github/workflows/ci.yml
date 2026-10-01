@@ -7,11 +7,21 @@ on:
 
 jobs:
   bff:
+    # The package declares ranges with security floors: the suite runs at the lowest versions the ranges allow
+    # and at the newest, and pip-audit must find nothing in either installed set.
+    name: bff (${{ matrix.resolution }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        resolution: [lowest-direct, highest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e "packages/bff[test]"
-      - run: python -m unittest discover -s packages/bff/tests -t packages/bff
+      - run: python -m pip install uv pip-audit
+      - run: uv venv bff-venv
+      - run: uv pip install --python bff-venv/bin/python --resolution ${{ matrix.resolution }} -e "packages/bff[test]"
+      - run: bff-venv/bin/python -m unittest discover -s packages/bff/tests -t packages/bff
+      - run: pip-audit --path bff-venv/lib/python3.12/site-packages

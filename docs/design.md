@@ -110,6 +110,7 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
 
 - The kit is carved from one module. The template is a working fixture, not proof that the abstraction fits a
   different module. Versions stay 0.x until speech-to-text runs on the kit and a second module has used it.
+- The BFF package declares dependency ranges with security floors, not exact pins (a library; the pins copied from speech-to-text carried 14 known advisories). CI runs the suite at the floors and at the newest versions, with `pip-audit` on both; a module pins and locks its own.
 - The session store is process-local: one replica. Scaling out needs sticky sessions or a shared store, decided
   when a module needs it.
 - Astryx is pre-1.0. Menus and pickers are not anchored to their trigger on Safari before 26 and Firefox before 147.

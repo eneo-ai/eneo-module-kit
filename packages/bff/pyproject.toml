@@ -7,12 +7,14 @@ name = "eneo-module-bff"
 version = "0.1.0"
 description = "The Eneo module contract for a FastAPI BFF: login handoff, session, deny-by-default proxy"
 requires-python = ">=3.12"
+# Ranges with security floors, not exact pins: this is a library. A module's own requirements pin and lock them.
 dependencies = [
-  "fastapi==0.115.0",
-  "uvicorn[standard]==0.30.6",
-  "httpx==0.27.2",
-  "itsdangerous==2.2.0",
-  "python-multipart==0.0.12",
+  "fastapi>=0.142.2,<1",
+  "starlette>=1.3.1,<2",
+  "uvicorn[standard]>=0.54,<1",
+  "httpx>=0.28,<1",
+  "itsdangerous>=2.2,<3",
+  "python-multipart>=0.0.31,<1",
 ]
 
 [project.optional-dependencies]

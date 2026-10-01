@@ -62,6 +62,7 @@ to the app after `create_app` returns come after the proxy and the page and are 
 
 ## Limits
 
+- The dependencies are ranges with security floors (see `pyproject.toml`), not exact pins: pin and lock them in the module's own requirements.
 - One process, one replica: sessions live in memory. `serve()` fixes one worker and turns the access log off,
   because the callback URL carries a login ticket.
 - Nothing in the package configures logging: a module sets up its own.
