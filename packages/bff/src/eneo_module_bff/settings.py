@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -70,6 +71,12 @@ class Settings(BaseModel):
         if origin is None:
             raise ValueError("module_public_url must be an absolute http(s) URL")
         return origin
+
+
+def has_control_character(value: str | None) -> bool:
+    """A control character (C0, DEL, C1) or a line or paragraph separator: none belongs in a file name, a media type
+    or a path that a browser or a URL parser will read."""
+    return value is not None and any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in value)
 
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}

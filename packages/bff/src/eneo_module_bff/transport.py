@@ -4,7 +4,6 @@ import asyncio
 import logging
 import math
 import time
-import unicodedata
 from collections.abc import Iterable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -19,7 +18,7 @@ from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .limits import allow_upload, declared_length, too_large
 from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect, upstream_url
-from .settings import Settings
+from .settings import Settings, has_control_character
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -50,11 +49,6 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
     except ValueError:
         return None
     return value if value > 0 else None
-
-
-def _has_control_character(value: str | None) -> bool:
-    """A control character (C0, DEL, C1) or a line or paragraph separator: none belongs in a file name or a media type."""
-    return value is not None and any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in value)
 
 
 # Uploads bypass the catch-all proxy because forwarding
@@ -94,7 +88,7 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
         if len(parts) != 1 or parts[0][0] != "upload_file" or not isinstance(parts[0][1], UploadFile):
             raise HTTPException(status_code=400, detail="Exactly one file, named upload_file, is required")
         upload_file = parts[0][1]
-        if _has_control_character(upload_file.filename) or _has_control_character(upload_file.content_type):
+        if has_control_character(upload_file.filename) or has_control_character(upload_file.content_type):
             raise HTTPException(status_code=400, detail="The file name and content type must not contain control characters")
         return await _post_file(request, upstream_path, upload_file)
 

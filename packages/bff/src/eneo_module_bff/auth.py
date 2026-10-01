@@ -26,7 +26,7 @@ from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ValidationError, field_validator
 
-from .settings import Settings, canonical_origin
+from .settings import Settings, canonical_origin, has_control_character
 
 logger = logging.getLogger("eneo_module_auth")
 
@@ -120,13 +120,18 @@ MAX_NEXT_LENGTH = 512
 
 
 def module_path(value: str | None, home_path: str) -> str:
-    """``value`` when it is a short path on the module's own origin, else ``home_path`` (Settings.home_path)."""
+    """``value`` when it is a short path on the module's own origin, else ``home_path`` (Settings.home_path).
+
+    No control character, whatever it is: a browser (and urlsplit) removes a tab, CR or LF from a URL before it reads
+    it, so ``/<tab>/host`` would be ``//host``, another origin, once a query is added to it.
+    """
     if (
         value
         and len(value) <= MAX_NEXT_LENGTH
         and value.startswith("/")
         and not value.startswith("//")
         and "\\" not in value
+        and not has_control_character(value)
     ):
         return value
     return home_path
