@@ -13,7 +13,13 @@ It answers what a module's BFF asks of Eneo (docs/module-contract.md):
 A call without both credentials (the service key in X-API-Key and the module-user token as a bearer token) is a 401.
 
 For tests, unauthenticated control routes:
-  POST /__stub/end-session                            every token is refused from now on, as when Eneo ends the login
+  POST /__stub/end-session                            every token is refused from now on, as when Eneo ends the login: the module's
+                                                      session ends at its next refresh (with token_seconds=4, within a few seconds)
+  POST /__stub/session?ends_in=S&token_seconds=T      for the logins made after this call: the session ends S seconds after the login
+                                                      (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module
+                                                      refreshes at half). Defaults 28800 and 900; `reset` as a value restores them
+  POST /__stub/login-as?user=erik|sara                who the logins made after this call are (default erik: Erik Lund), to show a
+                                                      renewal that signs in someone else
   POST /__stub/flows?mode=normal|empty|error          what the flow list answers (two flows, none, or a 500)
 """
 
@@ -28,7 +34,10 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 MODULE_KEY = os.environ.get("STUB_MODULE_KEY", "eneo-module")
 API_KEY = os.environ.get("STUB_ENEO_API_KEY", "stub-service-key")
-USER = {"id": "user-1", "email": "erik.lund@example.test", "username": "Erik Lund"}
+USERS = {
+    "erik": {"id": "user-1", "email": "erik.lund@example.test", "username": "Erik Lund"},
+    "sara": {"id": "user-2", "email": "sara.holm@example.test", "username": "Sara Holm"},
+}
 TENANT = "tenant-1"
 TOKEN_SECONDS = 900
 SESSION_SECONDS = 8 * 60 * 60
@@ -42,25 +51,30 @@ FLOWS = [
 
 
 class State:
-    """What the stub remembers: tickets not yet exchanged, tokens it has given, and the test controls."""
+    """What the stub remembers: tickets not yet exchanged, the tokens it has given (each with the end of its session), and the test controls."""
 
     def __init__(self) -> None:
         self.tickets: dict[str, float] = {}
-        self.tokens: set[str] = set()
+        self.tokens: dict[str, tuple[datetime, dict[str, str]]] = {}
+        self.user = "erik"
         self.flows_mode = "normal"
+        self.session_seconds = SESSION_SECONDS
+        self.token_seconds = TOKEN_SECONDS
 
-    def new_token(self) -> dict[str, object]:
+    def new_token(self, previous: tuple[datetime, dict[str, str]] | None = None) -> dict[str, object]:
+        """A token for a new login (the session ends `session_seconds` from now, for the current `user`), or for a
+        refresh (`previous`: the same end, the same user)."""
         token = secrets.token_urlsafe(24)
-        self.tokens.add(token)
-        ceiling = datetime.now(timezone.utc) + timedelta(seconds=SESSION_SECONDS)
+        ceiling, user = previous or (datetime.now(timezone.utc) + timedelta(seconds=self.session_seconds), USERS[self.user])
+        self.tokens[token] = (ceiling, user)
         return {
             "access_token": token,
             "token_type": "bearer",
-            "expires_in": TOKEN_SECONDS,
+            "expires_in": self.token_seconds,
             "session_expires_at": ceiling.isoformat(),
             "module_key": MODULE_KEY,
             "tenant_id": TENANT,
-            "user": USER,
+            "user": user,
         }
 
 
@@ -118,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == f"/api/v1/module-auth/{quote(MODULE_KEY)}/session/":
             if not self.has_both_credentials():
                 return self.refuse("both the service key and the module-user token are required")
-            return self.send_json(200, {"module_key": MODULE_KEY, "tenant_id": TENANT, "user": USER})
+            return self.send_json(200, {"module_key": MODULE_KEY, "tenant_id": TENANT, "user": STATE.tokens[self.bearer() or ""][1]})
         if path == "/api/v1/flows/":
             if not self.has_both_credentials():
                 return self.refuse("both the service key and the module-user token are required")
@@ -142,10 +156,28 @@ class Handler(BaseHTTPRequestHandler):
         if path == f"/api/v1/module-auth/{quote(MODULE_KEY)}/token/refresh/":
             if not self.has_both_credentials():
                 return self.refuse("both the service key and the module-user token are required")
-            return self.send_json(200, STATE.new_token())
+            return self.send_json(200, STATE.new_token(STATE.tokens[self.bearer() or ""]))
         if path == "/__stub/end-session":
             STATE.tokens.clear()
             return self.send_json(200, {"ok": True})
+        if path == "/__stub/session":
+            query = parse_qs(url.query)
+            try:
+                for name, attribute, default in (("ends_in", "session_seconds", SESSION_SECONDS), ("token_seconds", "token_seconds", TOKEN_SECONDS)):
+                    if name in query:
+                        value = default if query[name][0] == "reset" else int(query[name][0])
+                        if value < 1:
+                            raise ValueError(name)
+                        setattr(STATE, attribute, value)
+            except ValueError:
+                return self.send_json(400, {"detail": "ends_in and token_seconds are whole seconds of at least 1, or reset"})
+            return self.send_json(200, {"ok": True, "ends_in": STATE.session_seconds, "token_seconds": STATE.token_seconds})
+        if path == "/__stub/login-as":
+            user = parse_qs(url.query).get("user", [""])[0]
+            if user not in USERS:
+                return self.send_json(400, {"detail": "user is erik or sara"})
+            STATE.user = user
+            return self.send_json(200, {"ok": True, "user": USERS[user]["username"]})
         if path == "/__stub/flows":
             mode = parse_qs(url.query).get("mode", ["normal"])[0]
             if mode not in {"normal", "empty", "error"}:
