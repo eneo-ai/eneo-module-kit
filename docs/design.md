@@ -86,7 +86,7 @@ A Content-Length that is not a length (not ASCII digits, longer than 19 characte
 and `int()` refuses more than 4300 digits, so it would otherwise be a 500.
 A body that passes the limit while a response is already streaming ends the response, as if the client had gone.
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
-http(s) or that the client refuses (a NUL, over 65,536 characters), an `expires_at` that is not a finite number or is too big for one) is a 502 `upstream_invalid`, and the log names the mint path,
+http(s) or that the client refuses (a NUL, over 65,536 characters), an `expires_at` that was given but is not a finite number above zero (`false`, `0`, `""`, `[]`, `{}`, a negative one or one too big for a float; only a missing or null one means the default of 15 minutes)) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
 At most `max_concurrent_streams` (64) files stream at once: a stream holds one of the shared client's 100
 connections for as long as it runs, so the next one is a 503 with `Retry-After` at once, and the API keeps its

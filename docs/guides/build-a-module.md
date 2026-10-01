@@ -155,7 +155,7 @@ async def audio(run_id: str, request: Request):
     )
 ```
 
-The mint route must answer JSON with `url`, and may give `expires_at`; anything else is a 502 `upstream_invalid`. The file is shown inline only if it is audio, video, a PDF or a PNG, JPEG, GIF or WebP image, and is an attachment otherwise, always with `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. Widen it with `inline_types=["text/plain", "image/bmp"]` (a media type or `type/*`); never add one that can run script (`text/html`, `image/svg+xml`). At most `MAX_CONCURRENT_STREAMS` files stream at once: the next gets 503 with `Retry-After` at once.
+The mint route must answer JSON with `url`, and may give `expires_at` (a number above zero; missing or null means 15 minutes); anything else is a 502 `upstream_invalid`. The file is shown inline only if it is audio, video, a PDF or a PNG, JPEG, GIF or WebP image, and is an attachment otherwise, always with `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. Widen it with `inline_types=["text/plain", "image/bmp"]` (a media type or `type/*`); never add one that can run script (`text/html`, `image/svg+xml`). At most `MAX_CONCURRENT_STREAMS` files stream at once: the next gets 503 with `Retry-After` at once.
 
 ## 8. Settings of your own module
 

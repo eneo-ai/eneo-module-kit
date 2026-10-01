@@ -220,8 +220,12 @@ def _read_mint_answer(upstream: httpx2.Response, base_url: str, now: float) -> t
     try:
         payload = upstream.json()
         url = payload["url"]
-        expires_at = payload.get("expires_at") or now + _SIGNED_URL_TTL_SECONDS
-        if isinstance(expires_at, bool):
+        # The default only when the key is missing or null: any other value was supplied, so it must be a number
+        # (0, false, "", [] and {} are not "missing", and none of them is one).
+        expires_at = payload.get("expires_at")
+        if expires_at is None:
+            expires_at = now + _SIGNED_URL_TTL_SECONDS
+        elif isinstance(expires_at, bool):
             raise ValueError("expires_at is not a number")
         expires_at = float(expires_at)
         # Only the path and the signed query of the URL are used, on the host the module reaches Eneo on; but a URL
@@ -231,7 +235,7 @@ def _read_mint_answer(upstream: httpx2.Response, base_url: str, now: float) -> t
         # Not JSON, not an object, no url, an expires_at that is not a number (or too big for one), or a URL that
         # cannot be parsed.
         raise _InvalidMintAnswer from None
-    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc or not math.isfinite(expires_at):
+    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc or not (math.isfinite(expires_at) and expires_at > 0):
         raise _InvalidMintAnswer
     rebased = _rebase_signed_url(url, base_url)
     try:
