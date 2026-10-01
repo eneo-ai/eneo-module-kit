@@ -2,7 +2,8 @@ import time
 import unittest
 
 import httpx
-from fastapi import Depends, FastAPI, Request, WebSocket
+from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket
+from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -46,6 +47,119 @@ def build_app(module_public_url: str = MODULE_ORIGIN) -> tuple[FastAPI, ModuleAu
         await websocket.close()
 
     return app, auth
+
+
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def dependency_calls(dependant) -> set:
+    """Every dependency of a route, however deep: its own, its parameters', and what those depend on."""
+    calls = set()
+    for sub in dependant.dependencies:
+        calls.add(sub.call)
+        calls |= dependency_calls(sub)
+    return calls
+
+
+def unguarded_routes(*routers: APIRouter) -> list[str]:
+    """What a module author may have forgotten on the routes of ``routers``.
+
+    Every route needs ``require_session``. A route that writes, and every WebSocket route (a handshake acts for the
+    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route this
+    cannot check (a mount, a raw route, a nested include) is reported, never passed over.
+
+    It walks the module's routers, not ``app.routes``: FastAPI keeps an included router as one object there.
+    The template's test (Phase 3) reuses it.
+    """
+    problems = []
+    for router in routers:
+        for route in router.routes:
+            if isinstance(route, APIWebSocketRoute):
+                label, writes = f"WebSocket {route.path}", True
+            elif isinstance(route, APIRoute):
+                label, writes = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS)
+            else:
+                problems.append(f"{getattr(route, 'path', '?')}: a {type(route).__name__} cannot be checked")
+                continue
+            calls = dependency_calls(route.dependant)
+            if require_session not in calls:
+                problems.append(f"{label}: no require_session")
+            if writes and require_same_origin not in calls:
+                problems.append(f"{label}: no require_same_origin")
+    return problems
+
+
+async def module_dependency(_: ModuleSession = Depends(require_session)) -> None:
+    """A module's own dependency that rests on require_session."""
+
+
+class RouteWalkerTests(unittest.TestCase):
+    def test_a_router_with_every_guard_has_nothing_unguarded(self) -> None:
+        router = APIRouter()
+
+        @router.get("/api/by-route-dependency", dependencies=[Depends(require_session)])
+        async def by_route_dependency() -> None: ...
+
+        @router.get("/api/by-parameter")
+        async def by_parameter(_: ModuleSession = Depends(require_session)) -> None: ...
+
+        @router.get("/api/by-its-own-dependency", dependencies=[Depends(module_dependency)])
+        async def by_its_own_dependency() -> None: ...
+
+        @router.post("/api/write", dependencies=[Depends(require_session), Depends(require_same_origin)])
+        async def write() -> None: ...
+
+        @router.websocket("/api/socket", dependencies=[Depends(require_same_origin)])
+        async def socket(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
+
+        self.assertEqual(unguarded_routes(router), [])
+
+    def test_a_forgotten_guard_is_reported_on_every_kind_of_route(self) -> None:
+        router = APIRouter()
+
+        @router.get("/api/open")
+        async def open_route() -> None: ...
+
+        @router.delete("/api/write-without-origin", dependencies=[Depends(require_session)])
+        async def write_without_origin() -> None: ...
+
+        @router.websocket("/api/socket-without-origin")
+        async def socket_without_origin(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
+
+        @router.websocket("/socket-without-session", dependencies=[Depends(require_same_origin)])
+        async def socket_without_session(websocket: WebSocket) -> None: ...
+
+        self.assertEqual(
+            unguarded_routes(router),
+            [
+                "GET /api/open: no require_session",
+                "DELETE /api/write-without-origin: no require_same_origin",
+                "WebSocket /api/socket-without-origin: no require_same_origin",
+                "WebSocket /socket-without-session: no require_session",
+            ],
+        )
+
+    def test_a_route_it_cannot_check_is_reported(self) -> None:
+        router = APIRouter()
+        router.mount("/files", FastAPI())
+
+        self.assertEqual(unguarded_routes(router), ["/files: a Mount cannot be checked"])
+
+    def test_the_guards_the_walker_looks_for_are_the_ones_that_act(self) -> None:
+        router = APIRouter()
+
+        @router.websocket("/api/socket", dependencies=[Depends(require_same_origin)])
+        async def socket(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None:
+            await websocket.accept()
+            await websocket.close()
+
+        app, auth = build_app()
+        app.include_router(router)
+        client = TestClient(app)
+        self.assertEqual(unguarded_routes(router), [])
+        with self.assertRaises(WebSocketDisconnect):  # the guards are really on the route
+            with client.websocket_connect("/api/socket"):
+                pass
 
 
 class DependencyTests(unittest.TestCase):
