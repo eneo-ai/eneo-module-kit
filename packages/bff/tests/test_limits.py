@@ -4,6 +4,7 @@ A body is fed to the app lazily, one MiB at a time, and the test counts how many
 answered. Nothing here materialises a large body.
 """
 
+import asyncio
 import os
 import tempfile
 import time
@@ -11,11 +12,14 @@ import unittest
 
 import httpx2
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from starlette.datastructures import Headers
 
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleSession, ModuleUser
 from eneo_module_bff.deps import require_same_origin, require_session
+from eneo_module_bff.limits import declared_length
 from eneo_module_bff.proxy import rule
 from eneo_module_bff.settings import Settings
 from eneo_module_bff.transport import forward_upload
@@ -118,6 +122,15 @@ def build() -> tuple:
     async def upload(flow_id: str, request: Request):
         return await forward_upload(request, f"flows/{flow_id}/files/")
 
+    @router.get("/api/stream")
+    async def endless():
+        async def chunks():
+            while True:
+                yield b"x" * 1024
+                await asyncio.sleep(0.005)
+
+        return StreamingResponse(chunks())
+
     app = create_app(settings, routers=[router], proxy_rules=[rule("POST", r"things/$")], http_client=eneo)
     return app, eneo, app.state.module_auth.sessions.create(session())
 
@@ -133,12 +146,12 @@ class Case(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.app, self.eneo, self.session_id = build()
 
-    async def post(self, path: str, body: Lazy, *, authenticated: bool = True, declare_length: bool = True, headers: dict | None = None):
+    async def post(self, path: str, body: Lazy, *, authenticated: bool = True, declare_length: bool = True, headers: dict | None = None, method: str = "POST"):
         sent = {"Content-Type": "application/json", **(headers or {})}
         if declare_length:
             sent["Content-Length"] = str(body.length)
         async with client(self.app, self.session_id if authenticated else None) as c:
-            return await c.post(path, content=body.stream(), headers=sent)
+            return await c.request(method, path, content=body.stream(), headers=sent)
 
 
 class JsonBodyTests(Case):
@@ -232,6 +245,49 @@ class MultipartDisguiseTests(Case):
         self.assertEqual(response.status_code, 413)
         self.assertLessEqual(body.taken, UPLOAD_CAP // MiB + 2)
         self.assertEqual(self.eneo.calls, [])
+
+
+class DeclaredLengthTests(unittest.TestCase):
+    def length(self, value: str | None) -> int | None:
+        return declared_length(Headers({"content-length": value} if value is not None else {}))
+
+    def test_a_plain_length_is_read(self) -> None:
+        self.assertEqual((self.length("0"), self.length("5"), self.length("0005"), self.length("10485761")), (0, 5, 5, 10485761))
+
+    def test_no_length_or_a_length_that_is_not_a_number_is_none(self) -> None:
+        for value in (None, "", "abc", "-1", "+5", "5.0", "0x10", "5, 5", "\u00b2"):
+            with self.subTest(value=value):
+                self.assertIsNone(self.length(value))
+
+    def test_a_very_long_length_is_neither_an_error_nor_a_small_number(self) -> None:
+        # int() refuses a string of more than 4300 digits, and the server's own parser lets zero-padded ones through.
+        self.assertEqual(self.length("0" * 5000 + "5"), 5)
+        self.assertEqual(self.length("0" * 5000), 0)
+        for digits in (19, 21, 300, 5000):
+            with self.subTest(digits=digits):
+                self.assertGreater(self.length("9" * digits), 1 << 62)
+
+
+class LongLengthTests(Case):
+    async def test_a_zero_padded_length_of_5000_digits_is_read_not_a_500(self) -> None:
+        small = await self.post("/api/public", Lazy(0, head=b'{"text": "hi"}'), authenticated=False, declare_length=False,
+                                headers={"Content-Length": "0" * 5000 + "14"})
+        huge = await self.post("/api/public", Lazy(1), authenticated=False, declare_length=False, headers={"Content-Length": "9" * 5000})
+
+        self.assertEqual(small.status_code, 200)
+        self.assertEqual(huge.status_code, 413)
+
+
+class StreamingResponseTests(Case):
+    async def test_a_body_sent_to_a_streaming_get_ends_the_stream_instead_of_failing_it_late(self) -> None:
+        # A GET has no body. If one arrives anyway and passes the cap while the response is already streaming, the
+        # response is cut as if the client had gone: no error from "response already started".
+        body = Lazy(400)
+
+        response = await self.post("/api/stream", body, declare_length=False, headers={"Content-Type": "application/octet-stream"}, method="GET")
+
+        self.assertIn(response.status_code, (200, 413))
+        self.assertLessEqual(body.taken, CAP // MiB + 2)
 
 
 class ProxyBodyTests(Case):
@@ -384,6 +440,10 @@ class UploadTests(Case):
             "NUL in the file name": multipart_head(filename="a\x00b.webm"),
             "tab in the file name": multipart_head(filename="a\tb.webm"),
             "DEL in the content type": multipart_head(content_type="audio/webm\x7f"),
+            "C1 control NEL in the file name": multipart_head(filename="a\u0085b.webm"),
+            "C1 control in the content type": multipart_head(content_type="audio/webm\u009f"),
+            "line separator in the file name": multipart_head(filename="a\u2028b.webm"),
+            "paragraph separator in the file name": multipart_head(filename="a\u2029b.webm"),
         }
         for label, head in cases.items():
             with self.subTest(label):
@@ -409,11 +469,15 @@ class UploadTests(Case):
                     self.assertFalse(any(c < " " for c in call["filename"] + call["content_type"]))
                     self.assertNotIn("X-Injected", call["filename"] + call["content_type"])
 
-    async def test_a_file_name_with_spaces_and_non_ascii_letters_is_forwarded(self) -> None:
-        response = await self.upload(Lazy(1, multipart_head(filename="möte ett.webm", content_type="audio/webm"), MULTIPART_TAIL))
+    async def test_ordinary_file_names_in_any_script_are_forwarded(self) -> None:
+        # What a control-character check must not catch: Swedish letters (Å, Ø), a euro sign, curly quotes, an
+        # ellipsis, CJK, emoji, spaces and dots. None of them is a control or a separator.
+        for name in ("möte ett.webm", "Åsa Ø.webm", "pris €5 – “bra”… .webm", "会議.webm", "voice 🎙.webm", "a.b.c.webm"):
+            with self.subTest(name=name):
+                response = await self.upload(Lazy(1, multipart_head(filename=name, content_type="audio/webm"), MULTIPART_TAIL))
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual((self.eneo.calls[-1]["filename"], self.eneo.calls[-1]["content_type"]), ("möte ett.webm", "audio/webm"))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual((self.eneo.calls[-1]["filename"], self.eneo.calls[-1]["content_type"]), (name, "audio/webm"))
 
     async def test_a_file_name_given_only_as_rfc_2231_is_a_400(self) -> None:
         # Starlette does not read filename*=, so the part is a text field to it. Browsers send the name in quotes.

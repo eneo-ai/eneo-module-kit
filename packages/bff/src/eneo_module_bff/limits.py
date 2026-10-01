@@ -15,6 +15,8 @@ holds it for the whole app, whatever route or content type:
 
 from __future__ import annotations
 
+import sys
+
 from fastapi import HTTPException, Request
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
@@ -33,7 +35,12 @@ def too_large(detail: str = TOO_LARGE) -> HTTPException:
 def declared_length(headers: Headers) -> int | None:
     """The Content-Length a request declares, or None if it has none or it is not a number."""
     value = headers.get("content-length")
-    return int(value) if value is not None and value.isascii() and value.isdigit() else None
+    if value is None or not (value.isascii() and value.isdigit()):
+        return None
+    # int() refuses a string of more than 4300 digits, and the server's parser lets zero-padded ones through. Once
+    # the zeros are gone, anything of 20 digits or more is more than a request can be: say so, don't parse it.
+    digits = value.lstrip("0")
+    return int(digits or "0") if len(digits) < 20 else sys.maxsize
 
 
 def allow_upload(request: Request, limit: int) -> None:
@@ -62,16 +69,32 @@ class BodyLimitMiddleware:
             await JSONResponse({"detail": error.detail}, status_code=413, headers=error.headers)(scope, receive, send)
             return
         received = 0
+        answering = False
+        overflowed = False
+
+        async def tracked_send(message: Message) -> None:
+            nonlocal answering
+            if message["type"] == "http.response.start":
+                answering = True
+            await send(message)
 
         async def counted_receive() -> Message:
-            nonlocal received
+            nonlocal received, overflowed
+            if overflowed:
+                return {"type": "http.disconnect"}
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > scope.get(BODY_LIMIT, self.max_body_bytes):
+                    if answering:
+                        # A response is already on its way (a stream that never asked for the body, whose server
+                        # side only listens here for the client to go): the client is as good as gone, and a 413
+                        # can no longer be sent.
+                        overflowed = True
+                        return {"type": "http.disconnect"}
                     # An HTTPException, not a private error: FastAPI turns any other exception raised while it
                     # reads a body into a 400.
                     raise too_large()
             return message
 
-        await self.app(scope, counted_receive, send)
+        await self.app(scope, counted_receive, tracked_send)

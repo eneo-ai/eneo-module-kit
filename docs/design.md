@@ -67,7 +67,8 @@ The module declares its own `Depends(require_session)` and `require_same_origin`
 An upload route has no `File(...)` parameter: FastAPI reads a route's body before it runs the route's dependencies,
 so `forward_upload(request, path)` reads the multipart itself, after them. It requires the Content-Length (411),
 at most `max_upload_bytes` (413, default 1 GiB), one file part named `upload_file` and no other field (400), and no
-control character in the file name or content type (400).
+control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (400). The name is
+forwarded as it came, a path included: Eneo owns where a file lands.
 No body is read before auth or past a limit. A pure-ASGI cap, `max_body_bytes` (default 10 MiB), covers every
 request body of every route, including a module's deliberately public ones, because it looks at no session (a 401
 gate would break them): 413 at once when the declared length is above it, else as soon as the stream passes it.
@@ -75,7 +76,10 @@ No content type is exempt: FastAPI reads a body whatever the content type says, 
 would otherwise buy an unbounded read. Only `forward_upload` lifts the limit, to `max_upload_bytes`, for its own
 request, after the route's dependencies and its own checks; the bytes that arrive are counted, so a Content-Length
 that lies, or a chunked body, gets no further. What this does not do: an unauthenticated request can still make the
-BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run.
+BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run. Measured, a body of
+that size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight, so a
+module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default.
+A body that passes the limit while a response is already streaming ends the response, as if the client had gone.
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
 http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
@@ -147,6 +151,9 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   an upload's own budget): there is no total deadline per request. One is added when a module needs it.
 - `serve()` stops within 8 s of SIGTERM, with files still streaming (`timeout_graceful_shutdown`), because Docker
   kills the container after 10 s.
+- At the Starlette floor (1.3.1) the temporary file of an upload that is cut off is closed when garbage is collected,
+  not at once (13 open files at rest, 27 after 175 cut-off uploads in a test, then steady); from 1.7 it is closed
+  at once. Raising the floor to 1.7 removes the delay.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

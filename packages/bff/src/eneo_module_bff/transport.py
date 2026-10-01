@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import time
+import unicodedata
 from collections.abc import Iterable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -52,7 +53,8 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
 
 
 def _has_control_character(value: str | None) -> bool:
-    return value is not None and any(character < " " or character == "\x7f" for character in value)
+    """A control character (C0, DEL, C1) or a line or paragraph separator: none belongs in a file name or a media type."""
+    return value is not None and any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in value)
 
 
 # Uploads bypass the catch-all proxy because forwarding

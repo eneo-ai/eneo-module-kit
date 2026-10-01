@@ -54,7 +54,7 @@ async def upload(flow_id: str, request: Request):
 ```
 
 The request must declare its `Content-Length` (else 411), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part
-named `upload_file` and no other field (else 400), with no control character in the file name or content type
+named `upload_file` and no other field (else 400), with no control character or line separator in the file name or content type
 (else 400). Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type,
 for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it,
 for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no
