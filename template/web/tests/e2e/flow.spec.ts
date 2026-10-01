@@ -1,3 +1,4 @@
+import type { Route } from "@playwright/test";
 import { expect, signIn, stubFlows, test } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
@@ -31,6 +32,40 @@ test("sign in through the stub Eneo, see the shell and the flows, call the modul
   expect(await status.json()).toMatchObject({ authenticated: false });
   expect((await page.request.get("/api/eneo/flows/")).status(), "the session is gone").toBe(401);
 });
+
+// Signing out that did not happen must not look like it did: no walk to the sign-in page while the login lives on, and a
+// menu item that is not left saying "Loggar ut…". The shared fixture also fails on an unhandled rejection (a page error).
+const FAILED_LOGOUTS = [
+  { name: "the backend refuses it", provoked: /status of 403/, answer: (route: Route) => route.fulfill({ status: 403, json: { detail: "Refused" } }) },
+  { name: "the connection is lost", provoked: /ERR_FAILED|NS_ERROR|Load failed|Fetch API cannot load/, answer: (route: Route) => route.abort() },
+];
+for (const failure of FAILED_LOGOUTS) {
+  test.describe(`when signing out fails because ${failure.name}`, () => {
+    // The browser reports the failed request the test provoked.
+    test.use({ allowConsole: [failure.provoked] });
+
+    test("the person stays signed in and is told so, the control is usable again, and trying again signs out", async ({ page }) => {
+      await signIn(page);
+      await page.route("**/api/auth/logout", failure.answer);
+      await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+      await page.getByRole("menuitem", { name: "Logga ut" }).click();
+
+      // Seen and announced: the toast is an alert, in a region the design system names in Swedish.
+      const message = "Det gick inte att logga ut. Försök igen.";
+      const toasts = page.getByRole("region", { name: "Aviseringar" });
+      await expect(toasts.getByText(message)).toBeVisible();
+      await expect(toasts.getByRole("alert")).toContainText(message);
+      await expect(page.getByRole("menuitem", { name: "Logga ut" })).toBeEnabled();
+      await expect(page).toHaveURL(/\/flows$/);
+      expect(await (await page.request.get("/api/auth/status")).json(), "still signed in").toMatchObject({ authenticated: true });
+
+      await page.unroute("**/api/auth/logout");
+      await page.getByRole("menuitem", { name: "Logga ut" }).click();
+      await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
+      expect(await (await page.request.get("/api/auth/status")).json(), "signed out by the second try").toMatchObject({ authenticated: false });
+    });
+  });
+}
 
 test("a deep link without a session shows the sign-in page, and signing in lands back on the page", async ({ page }) => {
   await page.goto("/flows");

@@ -50,3 +50,18 @@ test("a link component given to the providers is the one the design system's lin
   const view = await mount(createElement(ModuleProviders, { linkComponent: Custom as never, children: createElement(Link, { href: "/flows", children: "Flöden" }) }));
   assert.ok(view.container.querySelector('a[data-custom-link][href="/flows"]'), "the app's own router link");
 });
+
+test("a toast is hosted inside the providers, so its words are Swedish, not in a root of its own that speaks English", async () => {
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  const { useToast } = await import("@astryxdesign/core/Toast");
+  const { useEffect } = await import("react");
+  function Notifier() {
+    const toast = useToast();
+    useEffect(() => toast({ type: "error", body: "Det gick inte att logga ut. Försök igen." }), [toast]);
+    return null;
+  }
+  await mount(createElement(ModuleProviders, { children: createElement(Notifier) }));
+  assert.ok(!document.querySelector("[data-astryx-toast-fallback]"), "no fallback viewport outside the providers");
+  assert.ok(document.querySelector('[aria-label="Aviseringar"]'), "the viewport is named in Swedish");
+  assert.match(document.body.textContent ?? "", /Det gick inte att logga ut/);
+});

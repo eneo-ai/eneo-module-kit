@@ -41,7 +41,7 @@ and a component that takes `href` needs nothing more. A router whose link wants 
 
 | Export | What it is |
 |---|---|
-| `ModuleProviders` | Colour mode, the built Eneo theme, Astryx's words in Swedish, and (with `linkComponent`) the app's link component, taking `href`, for Astryx's links. |
+| `ModuleProviders` | Colour mode, the built Eneo theme, Astryx's words in Swedish, the place its toasts (`useToast`) appear, and (with `linkComponent`) the app's link component, taking `href`, for Astryx's links. |
 | `ColorModeProvider`, `useColorMode()`, `readStoredColorMode()` | The mode is `localStorage["theme"]` (`light`, `dark`, `system`; the key and values next-themes used), read before the first render and written back by `setMode`. `useColorMode()` returns `{ mode, resolved, setMode }`. No inline script and no cookie. |
 | `ModuleShell` | The page frame: top bar, skip link, one `role="main"` region. A page renders no `<main>` of its own. |
 | `BrandingProvider`, `Brand` | The organisation beside the product's name, from `GET /api/branding`, asked once. Until it answers (or when it fails) the lockup is the product name alone. `defaultLogo` is the module's own copy of the bundled logo. |

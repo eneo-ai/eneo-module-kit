@@ -8,6 +8,8 @@ import { signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
 export interface State {
   name: string;
   go: (page: Page) => Promise<void>;
+  /** Console messages the state provokes on purpose (a failure the test caused); anything else on the console fails the gate. */
+  allowConsole?: RegExp[];
 }
 
 export const STATES: State[] = [
@@ -46,6 +48,8 @@ export const STATES: State[] = [
   },
   {
     name: "flows-error",
+    // The browser reports the 500 the stub was told to answer.
+    allowConsole: [/status of 500/],
     go: async (page) => {
       await stubFlows(page, "error");
       await signIn(page);

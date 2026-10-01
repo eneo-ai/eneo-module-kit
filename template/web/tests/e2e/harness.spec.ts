@@ -3,7 +3,7 @@
  * They run once, at one width. Copied from speech-to-text's gate (known debt, like checks.ts).
  */
 import { expect, test } from "@playwright/test";
-import { axe, blocking, focusStop, tabWalk, targetSizes } from "./checks";
+import { axe, blocking, clippedFocus, focusStop, tabWalk, targetSizes } from "./checks";
 
 test.beforeEach(({}, info) => test.skip(info.project.name !== "laptop-1440-light", "the checks' own tests run once"));
 
@@ -118,4 +118,23 @@ test("a slider's control is its target, and a control too thin for a finger is r
   expect(await targetSizes(page, 44, false), "44 px tall: the control is the target").toEqual([]);
   await page.setContent(slider(20));
   expect(await targetSizes(page, 44, false), "20 px tall: as the design system draws it").toEqual(['slider "Läge" 20×20']);
+});
+
+test("a focus ring cut by a scroller is reported; the clipping outside a modal dialog is not asked, the dialog's own is", async ({ page }) => {
+  const ring = "outline: 3px solid #111; outline-offset: 2px; margin: 0";
+  await page.setContent(`<div style="overflow: hidden"><button id="cut" style="${ring}">Klippt</button></div>`);
+  await page.locator("#cut").focus();
+  expect(await clippedFocus(page), "a ring that the next box clips").toMatch(/^div/);
+
+  // The page's own clip does not reach a modal dialog (the top layer); a dialog that scrolls clips its own content.
+  const dialog = (padding: number) => `
+    <div style="overflow: clip; width: 200px; height: 60px">
+      <dialog style="width: 300px; padding: ${padding}px; overflow: auto"><button id="in" style="${ring}">I dialogen</button></dialog>
+    </div>`;
+  for (const [padding, cut] of [[20, null], [0, "dialog."]] as const) {
+    await page.setContent(dialog(padding));
+    await page.evaluate(() => document.querySelector("dialog")!.showModal());
+    await page.locator("#in").focus();
+    expect(await clippedFocus(page), `a dialog with ${padding} px of room`).toBe(cut);
+  }
 });

@@ -2,14 +2,13 @@
  * Every state at every width and theme: axe (no WCAG violation at any impact, no serious or critical best practice;
  * what axe cannot decide is listed as a manual check), every control named in Chromium's own tree, placeholder text at
  * 4.5:1, target sizes (24 px, WCAG 2.5.8; 44 px under pointer: coarse), reflow at 320 px and 200 % zoom (WCAG 1.4.10,
- * and 1.4.12 text spacing), and no endless motion with reduced motion. The measurements go to findings.json in each
+ * and 1.4.12 text spacing), no endless motion with reduced motion, and a console without an error or a CSP violation. The measurements go to findings.json in each
  * test's output folder. Copied from speech-to-text's gate: known debt, to become a package export when a second module
  * needs it.
  */
 import { writeFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
 import { axe, blocking, endlessAnimations, placeholderContrast, reflow, targetSizes, unnamedControls } from "./checks";
-import { stubFlows } from "./fixtures";
+import { expect, stubFlows, test } from "./fixtures";
 import { STATES } from "./screens";
 
 // WCAG 1.4.12: the spacing a user may set must not cut anything off.
@@ -22,7 +21,9 @@ test.afterEach(async ({ page }) => {
 });
 
 for (const state of STATES) {
-  test(state.name, async ({ page }, info) => {
+  // The shared fixture also fails a state that leaves an error or a CSP violation on the console; only what the state provokes is let through.
+  const stateTest = test.extend({ allowConsole: state.allowConsole ?? [] });
+  stateTest(state.name, async ({ page }, info) => {
     const project = info.project.name;
     const edges = project.startsWith("phone-320") || project === "zoom-200" || project.startsWith("laptop");
     await state.go(page);

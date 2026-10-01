@@ -548,7 +548,7 @@ export function orderProblems(stops: FocusStop[]): string[] {
  * The name of the scrolling or clipping ancestor that cuts the focus ring of the focused element, if there is one:
  * the ring is drawn outside its owner (the element, or the near ancestor that carries the outline: a field's box)
  * by the outline's width and offset, and an ancestor that clips at the owner's own edge leaves a ring with a side
- * missing (WCAG 2.4.7).
+ * missing (WCAG 2.4.7). Ancestors of a modal dialog are not asked: the top layer escapes their clipping.
  */
 export function clippedFocus(page: Page): Promise<string | null> {
   return page.evaluate(() => {
@@ -567,11 +567,14 @@ export function clippedFocus(page: Page): Promise<string | null> {
     const r = owner.getBoundingClientRect();
     for (let p = owner.parentElement; p && p !== document.body; p = p.parentElement) {
       const s = getComputedStyle(p);
-      if (!/auto|scroll|hidden|clip/.test(s.overflowX + s.overflowY)) continue;
-      const b = p.getBoundingClientRect();
-      if (r.left - ring < b.left || r.right + ring > b.right || r.top - ring < b.top || r.bottom + ring > b.bottom) {
-        return `${p.tagName.toLowerCase()}.${String(p.className).split(" ")[0]}`;
+      if (/auto|scroll|hidden|clip/.test(s.overflowX + s.overflowY)) {
+        const b = p.getBoundingClientRect();
+        if (r.left - ring < b.left || r.right + ring > b.right || r.top - ring < b.top || r.bottom + ring > b.bottom) {
+          return `${p.tagName.toLowerCase()}.${String(p.className).split(" ")[0]}`;
+        }
       }
+      // A modal dialog is in the top layer: what its ancestors clip does not reach it, so the walk ends with it.
+      if (p.matches(":modal")) break;
     }
     return null;
   });

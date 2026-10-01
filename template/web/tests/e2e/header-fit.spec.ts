@@ -3,8 +3,7 @@
  * shrinks the brand, so a brand that is too wide runs into the account button beside it: the product's name is then
  * covered or cut. They keep a gap's width between them. (Copied in spirit from speech-to-text's header-fit test.)
  */
-import { expect, test } from "@playwright/test";
-import { signIn } from "./fixtures";
+import { expect, signIn, test } from "./fixtures";
 
 // A constructed style sheet: the page's Content Security Policy refuses an inline <style>.
 const TEXT_SPACING = "* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }";

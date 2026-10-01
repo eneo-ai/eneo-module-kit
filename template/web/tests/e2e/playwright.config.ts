@@ -24,7 +24,7 @@ const touch = (width: number, height: number): Use => ({ viewport: { width, heig
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
 
 const flow = /(flow|session-cover)\.spec\.ts/;
-const gate = /(a11y|harness|header-fit)\.spec\.ts/;
+const gate = /(a11y|harness|header-fit|keyboard)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
@@ -69,7 +69,7 @@ export default defineConfig({
     { name: "chromium", testMatch: flow, use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
     { name: "webkit", testMatch: flow, use: { ...devices["Desktop Safari"], colorScheme: "light" } },
     { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], colorScheme: "light" } },
-    // The accessibility gate: every state at every width and theme.
+    // The accessibility gate: every state at every width and theme, and the keyboard on the real screens.
     { name: "phone-320-light", testMatch: gate, use: { ...touch(320, 568), colorScheme: "light" } },
     { name: "phone-390-light", testMatch: gate, use: { ...touch(390, 844), colorScheme: "light" } },
     { name: "phone-390-dark", testMatch: gate, use: { ...touch(390, 844), colorScheme: "dark" } },

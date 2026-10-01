@@ -3,6 +3,7 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem } from "@astryxdesign/core/DropdownMenu";
 import { Item } from "@astryxdesign/core/Item";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { useColorMode, type ColorMode } from "@eneo-ai/module-kit";
 import type { SessionUser } from "@eneo-ai/module-kit/session";
 import { signOut } from "./session";
@@ -14,6 +15,7 @@ import { signOut } from "./session";
 export function AccountMenu({ user }: { user: SessionUser }) {
   const { mode, setMode } = useColorMode();
   const [leaving, setLeaving] = useState(false);
+  const toast = useToast();
   const name = user.username?.trim() || user.email;
   return (
     <DropdownMenu
@@ -40,9 +42,13 @@ export function AccountMenu({ user }: { user: SessionUser }) {
         isDisabled={leaving}
         // The menu stays open to say that it is signing out.
         hasCloseOnSelect={false}
-        onClick={() => {
+        onClick={async () => {
           setLeaving(true);
-          void signOut();
+          // Still signed in: the control is the person's to use again, and the toast says what happened.
+          if (!(await signOut())) {
+            setLeaving(false);
+            toast({ type: "error", body: "Det gick inte att logga ut. Försök igen.", uniqueID: "sign-out-failed" });
+          }
         }}
       />
     </DropdownMenu>
