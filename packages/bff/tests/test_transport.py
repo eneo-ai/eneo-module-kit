@@ -82,6 +82,21 @@ class TransportFixture:
                 unavailable="Audio is not available for this run.",
             )
 
+        @self.app.get(
+            "/notes/{flow_id}/{run_id}/{file_id}",
+            dependencies=[Depends(require_session)],
+        )
+        async def notes(flow_id: str, run_id: str, file_id: str, request: Request) -> Response:
+            return await stream_signed(
+                request,
+                flow_id,
+                run_id,
+                file_id,
+                mint_path=f"flows/{flow_id}/runs/{run_id}/input-files/{file_id}/signed-url/",
+                unavailable="The note is not available.",
+                inline_types=["text/plain", "image/*"],
+            )
+
         self.client = TestClient(self.app)
         self.client.cookies.set(SESSION_COOKIE, self.app.state.module_auth.sessions.create(module_session()))
 
@@ -261,6 +276,8 @@ class FakeAudioClient:
         self.stream_status = 200
         self.mint_error: Exception | None = None
         self.stream_error: Exception | None = None
+        self.content_type: str | None = "audio/webm"
+        self.disposition: str | None = None
 
     async def post(self, url, **kwargs):
         self.signed_url_calls.append({"url": url, **kwargs})
@@ -289,20 +306,24 @@ class FakeAudioClient:
         if "range" in request.headers:
             return FakeStreamResponse(
                 206,
-                {
-                    "content-type": "audio/webm",
-                    "content-range": "bytes 0-3/10",
-                    "content-length": "4",
-                    "accept-ranges": "bytes",
-                    "set-cookie": "leak=1",
-                },
+                self.file_headers(
+                    {
+                        "content-range": "bytes 0-3/10",
+                        "content-length": "4",
+                        "accept-ranges": "bytes",
+                        "set-cookie": "leak=1",
+                    }
+                ),
                 b"abcd",
             )
-        return FakeStreamResponse(
-            200,
-            {"content-type": "audio/webm", "content-length": "10"},
-            b"0123456789",
-        )
+        return FakeStreamResponse(200, self.file_headers({"content-length": "10"}), b"0123456789")
+
+    def file_headers(self, headers: dict[str, str]) -> dict[str, str]:
+        if self.content_type is not None:
+            headers["content-type"] = self.content_type
+        if self.disposition is not None:
+            headers["content-disposition"] = self.disposition
+        return headers
 
 
 AUDIO = "/audio/flow-1/run-1/file-1"
@@ -392,6 +413,87 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"0123456789")
         self.assertEqual(response.headers["cache-control"], "private, no-store")
+
+    def test_a_file_that_could_run_in_the_modules_origin_is_never_shown_inline(self) -> None:
+        # Eneo is asked for inline, and a user's upload decides its own content type: only the types that
+        # cannot run script are shown inline from the module's origin.
+        for content_type in (
+            "text/html; charset=utf-8",
+            "Text/HTML",
+            "image/svg+xml",
+            "application/xhtml+xml",
+            "application/javascript",
+            "application/octet-stream",
+            "text/plain",
+            None,
+        ):
+            with self.subTest(content_type=content_type):
+                self.fake.content_type = content_type
+                self.fake.disposition = "inline"
+
+                response = self.client.get(AUDIO)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-disposition"], "attachment")
+                self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    def test_a_refused_inline_file_keeps_eneos_file_name(self) -> None:
+        self.fake.content_type = "text/html"
+        self.fake.disposition = 'inline; filename="rapport.html"'
+
+        response = self.client.get(AUDIO)
+
+        self.assertEqual(response.headers["content-disposition"], 'attachment; filename="rapport.html"')
+
+    def test_audio_video_pdf_and_common_images_are_shown_inline_as_eneo_sent_them(self) -> None:
+        for content_type in (
+            "audio/webm",
+            "audio/mpeg",
+            "video/mp4",
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "AUDIO/WebM; codecs=opus",
+        ):
+            with self.subTest(content_type=content_type):
+                self.fake.content_type = content_type
+                self.fake.disposition = 'inline; filename="a"'
+
+                response = self.client.get(AUDIO)
+
+                self.assertEqual(response.headers["content-disposition"], 'inline; filename="a"')
+                self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    def test_audio_with_a_range_is_inline_and_206(self) -> None:
+        self.fake.disposition = "inline"
+
+        response = self.client.get(AUDIO, headers={"Range": "bytes=0-3"})
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["content-range"], "bytes 0-3/10")
+        self.assertEqual(response.headers["content-disposition"], "inline")
+
+    def test_the_module_does_not_invent_a_disposition_for_a_safe_file(self) -> None:
+        response = self.client.get(AUDIO)
+
+        self.assertNotIn("content-disposition", response.headers)
+
+    def test_a_module_can_widen_what_is_shown_inline_but_only_by_what_it_names(self) -> None:
+        for content_type, inline in (
+            ("text/plain", True),
+            ("image/svg+xml", True),  # "image/*" is the module's own choice
+            ("text/html", False),
+            ("application/javascript", False),
+        ):
+            with self.subTest(content_type=content_type):
+                self.fake.content_type = content_type
+                self.fake.disposition = "inline"
+
+                response = self.client.get("/notes/flow-1/run-1/file-1")
+
+                self.assertEqual(response.headers["content-disposition"], "inline" if inline else "attachment")
 
     def test_only_range_if_range_and_accept_reach_the_signed_url(self) -> None:
         # The signed URL is the credential; the browser's own are never sent to it.

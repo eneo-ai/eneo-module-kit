@@ -382,11 +382,15 @@ async def forward_upload(request: Request, upstream_path: str, upload_file: Uplo
     X-Upload-Timeout-Seconds header. 504 on timeout, 502 when Eneo cannot be reached, 403 for a path that
     leaves its route."""
 
-async def stream_signed(request: Request, *resource: str, mint_path: str, unavailable: str) -> Response:
-    """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range."""
+async def stream_signed(
+    request: Request, *resource: str, mint_path: str, unavailable: str, inline_types: Sequence[str] = ()
+) -> Response:
+    """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range.
+    The file is an attachment unless its media type is audio/*, video/*, application/pdf or image/png|jpeg|gif|webp
+    (or in inline_types, each a media type or type/*), with X-Content-Type-Options: nosniff."""
 ```
 
-Changes from the source, and only these: `upstream_url` becomes `upstream_path` (the function prepends the base URL); the signed-URL cache is `request.app.state.signed_urls`, created by `create_app`, not a module global; `settings`, the client and auth headers come from the app.
+Changes from the source, and only these: `upstream_url` becomes `upstream_path` (the function prepends the base URL); the signed-URL cache is `request.app.state.signed_urls`, created by `create_app`, not a module global; `settings`, the client and auth headers come from the app. One addition: Eneo is asked for an inline file and a user's upload decides its own content type, so a file whose media type could run script (`text/html`, `image/svg+xml`) would be served inline from the module's origin; `stream_signed` makes it an attachment unless the type is in the safe list or the module's `inline_types`.
 
 - [ ] **Step 1:** Carry over the two test files into `test_transport.py`. The test app is `create_app(...)` plus two routes declared in the test, each with `Depends(require_session)` (and `require_same_origin` for the upload), calling the two functions. Keep every case: timeout budget, 504, 502, Range headers forwarded, cache reuse, a rejected URL dropped from the cache, `Cache-Control: private, no-store`.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Carry the code over. **Step 4:** Run, `OK`.

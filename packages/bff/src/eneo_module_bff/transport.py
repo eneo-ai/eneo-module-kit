@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
@@ -132,6 +133,25 @@ _STREAM_FORWARD_RESPONSE_HEADERS = frozenset(
 )
 
 
+# Eneo is asked for an inline file and a user's upload decides its own content type, so a file is shown inline
+# from the module's origin only if its media type cannot run script. Anything else is an attachment.
+# ``stream_signed(inline_types=...)`` adds to this; an entry is a media type or ``type/*``.
+INLINE_MEDIA_TYPES = ("audio/*", "video/*", "application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp")
+
+
+def _may_be_shown_inline(media_type: str, allowed: Iterable[str]) -> bool:
+    return any(
+        media_type.startswith(pattern[:-1]) if pattern.endswith("/*") else media_type == pattern
+        for pattern in (entry.lower() for entry in allowed)
+    )
+
+
+def _attachment(disposition: str | None) -> str:
+    """``attachment``, keeping the parameters Eneo sent (the file name)."""
+    parameters = (disposition or "").partition(";")[2].strip()
+    return f"attachment; {parameters}" if parameters else "attachment"
+
+
 class _SignedUrl(NamedTuple):
     url: str
     expires_at: float
@@ -197,11 +217,16 @@ async def _signed_url(request: Request, key: tuple[str, str], unavailable: str) 
 
 
 async def stream_signed(
-    request: Request, *resource: str, mint_path: str, unavailable: str
+    request: Request,
+    *resource: str,
+    mint_path: str,
+    unavailable: str,
+    inline_types: Sequence[str] = (),
 ) -> Response:
     """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range.
 
-    ``resource`` are the path ids that went into ``mint_path``; one that leaves its route is a 403.
+    ``resource`` are the path ids that went into ``mint_path``; one that leaves its route is a 403. The file is
+    an attachment unless its media type is in ``INLINE_MEDIA_TYPES`` or ``inline_types``.
     """
     http_client = request.app.state.http
     signed_urls = request.app.state.signed_urls
@@ -242,10 +267,14 @@ async def stream_signed(
         raise HTTPException(status_code=upstream.status_code, detail=detail)
 
     resp_headers = {
-        k: v
+        k.lower(): v
         for k, v in upstream.headers.items()
         if k.lower() in _STREAM_FORWARD_RESPONSE_HEADERS
     }
+    media_type = resp_headers.get("content-type", "").split(";")[0].strip().lower()
+    if not _may_be_shown_inline(media_type, (*INLINE_MEDIA_TYPES, *inline_types)):
+        resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
+    resp_headers["x-content-type-options"] = "nosniff"
     resp_headers["Cache-Control"] = "private, no-store"
     return StreamingResponse(
         upstream.aiter_raw(),
