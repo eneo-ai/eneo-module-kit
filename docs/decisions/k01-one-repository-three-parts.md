@@ -4,7 +4,7 @@ Purpose: record the decision why the kit is one repository with an imported BFF 
 Read this when: you are deciding where a piece of shared or per-module code belongs.
 Related: [decisions](README.md), [K2](k02-one-stack.md), [architecture](../architecture.md#parts-and-package-structure), [new module](../guides/new-module.md#what-ci-proves).
 
-Status: Accepted, 2026-10-01. Built: `packages/bff`, `packages/ui`, `template/`, and the CI jobs that build the template against both packages (`bff`, `ui`, `template-backend`, `template-web`, `template-image`). Planned: the UI package's session client and the first release.
+Status: Accepted, 2026-10-01. Built: `packages/bff`, `packages/ui`, `template/`, and the CI jobs that build the template against both packages (`bff`, `ui`, `template-backend`, `template-web`, `template-image`). Planned: the first release.
 
 ## Context
 

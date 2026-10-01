@@ -173,6 +173,19 @@ app = create_app(load_settings(home_path="/flows"), routers=[router])
 python -m unittest discover -s tests
 ```
 
+## 10. Sessions and dialogs
+
+The UI side of a login that can end while a page is open. Wrap every page that needs a login in `RequireSession` (from `@eneo-ai/module-kit/session`) and call the backend with `fetchWithSession` instead of `fetch`. Route `/inloggad` to `<SignedInAgain productName=... />`: it is where a login in a window of its own ends.
+
+- Signed out, `RequireSession` shows the sign-in screen.
+- Signed in, it keeps the login: it asks the backend when the page is seen, when a login window says it is done, and when the backend wants Eneo's token renewed. It warns five minutes before the end.
+- When the login has ended it covers the page with a modal dialog that asks for a new login in place, so nothing on the page is lost.
+- A read waits for the new login and is sent once more. A write waits only if it carries an `Idempotency-Key`; otherwise it fails with `SessionExpiredError`.
+- A dialog of your own page must be closed while `useSignedOut()` is true (`isOpen={open && !signedOut}`), with its state held above the dialog, so it is back as it was after the new login. Render page dialogs in place, inside the children of `RequireSession`.
+- `onIdentity(user)` is awaited before the page is shown: clear what belongs to someone else there.
+
+See `template/web/src/App.tsx` and `template/web/src/pages/Flows.tsx`, the [UI package guide](ui-package.md#the-session-client), and the [security checklist](security-checklist.md#the-cover-for-an-ended-login).
+
 ## What stays in your module
 
 Its route allowlist, its domain routes and protocols (a WebSocket relay, for example: the kit has no relay helper), its own copy and recovery messages, and its draft handling. Anything that would be the same in every module belongs in the kit instead: raise it in this repository.

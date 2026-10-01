@@ -4,7 +4,7 @@ Purpose: the long-form design record: the module contract with Eneo, the decisio
 Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
 Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
 
-Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The UI package's session client, the Astryx integration and the first release are planned. Where this page and the code disagree, the code wins.
+Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The Astryx integration and the first release are planned. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
@@ -138,6 +138,13 @@ Stable for the UI package and for any other frontend:
 | anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
+
+The UI package's session client depends on four things in this surface:
+
+- The `X-Auth-Required: session` mark on a 401: it is how a request learns that the login ended, as opposed to Eneo's own 401.
+- `session_ends_in` and `refresh_in` in `/api/auth/status`: the warning and the keepalive.
+- `next` and `renew=1` on `/api/auth/login`: before the end a renewal is bound to the user signed in; after the end the backend refuses a renewal (`fel=utgangen`), so the page starts a login without `renew`.
+- The redirect `?fel=annan-anvandare` or `?fel=utgangen` when a renewal is refused: the value is part of the contract and is Swedish.
 
 ## 6. Limits to be honest about
 

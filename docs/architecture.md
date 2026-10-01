@@ -11,8 +11,8 @@ Every claim about code names the file, never a line. If a diagram and the code d
 | Part | Path | Status |
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
-| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand. Version 0.1.0, not released. Planned: the session client (sign-in screen, warning before the login ends, the cover while signed out) and the Astryx integration. |
-| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app, Dockerfile, compose file, module CI, agent files. Its `RequireSession` is a minimal stand-in for the session client. |
+| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Planned: the Astryx integration. |
+| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose file, module CI, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
 The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
@@ -240,7 +240,7 @@ flowchart TB
   router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, links"]
   mp --> bp["BrandingProvider: asks /api/branding once"]
   bp --> app["App: the module's routes"]
-  app --> rs["RequireSession: asks /api/auth/status"]
+  app --> rs["RequireSession, from the session client: asks /api/auth/status"]
   rs --> frame["Frame: ModuleShell, Brand, Layout"]
   frame --> page["A page, built from Astryx components"]
 ```
@@ -248,12 +248,39 @@ flowchart TB
 | Layer | Where | Owned by |
 |---|---|---|
 | Stylesheets: `layers.css`, Astryx's `reset.css` and `astryx.css`, `theme.css`, `base.css` | imported in `template/web/src/main.tsx`, in this order | the module imports, the kit and Astryx supply |
-| Providers, shell, brand, theme, colour mode | `packages/ui/src/` | the UI package |
-| Router, pages, `Frame`, `RequireSession`, `AccountMenu`, `config.ts` | `template/web/src/` | the module |
+| Providers, shell, brand, theme, colour mode, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
+| Router, pages, `Frame`, `AccountMenu`, `config.ts`, `getJson` | `template/web/src/` | the module |
 | Components | `@astryxdesign/core`, pinned to an exact version | Astryx |
 | Design-system fixes | `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` | the UI package, once, for every module |
 
 The UI is a static app: the BFF serves its built files ([K4](decisions/k04-static-ui-served-by-the-bff.md)), so nothing is rendered on a server and the colour mode is read in the browser on the first render ([K9](decisions/k09-colour-mode-in-the-ui-package.md)). Detail: [UI package](guides/ui-package.md).
+
+## How a page learns the login ended and gets it back
+
+Look at: the page never navigates. It asks the BFF, finds the login ended, covers itself and opens the new login in a window of its own, then hears from that window and asks again.
+
+```mermaid
+sequenceDiagram
+  participant P as Page
+  participant B as BFF
+  participant E as Eneo
+  participant W as Login window
+  P->>B: GET /api/auth/status, when the backend wants a renewal or the page is seen
+  B->>E: refresh the token
+  E-->>B: refused
+  B-->>P: authenticated false
+  P->>P: cover the page, open the sign-in dialog
+  P->>W: person presses Logga in igen, window opens /api/auth/login?next=/inloggad
+  W->>E: sign in, back to the BFF callback
+  E-->>W: ticket
+  W->>B: callback, session cookie set, then to /inloggad
+  W->>P: BroadcastChannel eneo-module:session
+  P->>B: GET /api/auth/status
+  B-->>P: authenticated true, the same user
+  P->>P: lift the cover, give the focus back
+```
+
+Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
 
 ## Where the organisation's branding enters
 
@@ -359,6 +386,7 @@ The UI package, the template and the image:
 | Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
 | Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
 | Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
+| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
 | A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
 | Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |

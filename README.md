@@ -13,8 +13,8 @@ The first module, [eneo-mod-speech-to-text](https://github.com/eneo-ai/eneo-mod-
 | Part | Path | What it is | Status |
 |---|---|---|---|
 | BFF package | `packages/bff/` | `eneo-module-bff`: FastAPI, the module contract with Eneo | **Built and tested.** Version 0.1.0, not released. |
-| UI package | `packages/ui/` | `@eneo-ai/module-kit`: React and Astryx: theme, colour mode, providers, page shell, brand | **Built and tested.** Version 0.1.0, not released. Planned: the session client (sign-in screen, warning before the login ends, the cover while signed out). |
-| Template | `template/` | The smallest working module: backend, stub Eneo, Vite app, Dockerfile, compose file, CI, agent files | **Built and tested** against both packages on every commit. Its `RequireSession` is a minimal stand-in for the session client. |
+| UI package | `packages/ui/` | `@eneo-ai/module-kit`: React and Astryx: theme, colour mode, providers, page shell, brand | **Built and tested.** Version 0.1.0, not released. `@eneo-ai/module-kit/session` is the session client: the gate (`RequireSession`), the sign-in screen, the page a login window lands on (`SignedInAgain`) and `fetchWithSession`. See `packages/ui/README.md`. |
+| Template | `template/` | The smallest working module: backend, stub Eneo, Vite app, Dockerfile, compose file, CI, agent files | **Built and tested** against both packages on every commit. Its pages run on the kit's session client. |
 | Docs | `docs/` | Architecture, guides, decisions, the module contract | Current. |
 | First release | | Both packages published, the template pinned to their versions | Planned. Until then a module installs the packages from a checkout of this repository. |
 
@@ -78,7 +78,7 @@ The full contract is in [design.md](docs/design.md) section 2, in Eneo's [module
 
 ```
 packages/bff/    eneo-module-bff        FastAPI: module login, session, proxy to Eneo          built
-packages/ui/     @eneo-ai/module-kit    React + Astryx: theme, providers, page shell, brand    built (session screens planned)
+packages/ui/     @eneo-ai/module-kit    React + Astryx: theme, providers, shell, brand, session   built
 template/        the smallest working module, built against both packages on every commit       built
 docs/            the module contract with Eneo, architecture, guides and decisions
 ```
@@ -97,7 +97,7 @@ A new module starts as a copy of `template/` and imports the two packages. It do
 
 - The Eneo theme for [Astryx](https://astryx.atmeta.com), built to static CSS, and the providers a page needs (colour mode, theme, Swedish strings, links through the app's router).
 - A presentational page shell and brand lockup.
-- Planned: the session screens (sign-in, the warning before the login ends, the cover while signed out) and generic loading, problem and offline states.
+- The session client, `@eneo-ai/module-kit/session`: the sign-in screen, keeping the login (a keepalive, a warning five minutes before the end), and a cover over the page, with a sign-in dialog, when the login has ended, so nothing on the page is lost.
 
 **`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, compose file, module CI, devcontainer, agent instructions, an accessibility gate in three browsers, and a stub Eneo for development.
 
@@ -142,7 +142,7 @@ There is no custom MCP server and no skill. Astryx's hosted MCP server is option
 | BFF package, extracted from speech-to-text's backend with its tests | Done |
 | Template skeleton | Done |
 | UI package: theme, colour mode, providers, shell, brand | Done |
-| UI package: the session client and screens | Planned |
+| UI package: the session client and screens | Done |
 | Astryx integration, the first release of both packages | Planned. The owner decides first whether the packages are public and who owns the `@eneo-ai` npm scope ([design.md](docs/design.md) section 7) |
 | Speech-to-text running on the kit | After its Astryx port, on a released kit version |
 

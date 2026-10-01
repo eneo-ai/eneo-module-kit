@@ -31,6 +31,8 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Stub Eneo | `template/stub-eneo/server.py`: Eneo's side of the module contract in about 170 lines, for development and tests. Never shipped. |
 | Gate | The accessibility gate: Playwright and axe over every state of the template at several widths and themes (`template/web/tests/e2e/`). Its thresholds are never lowered. |
 | Colour mode | The person's choice of `light`, `dark` or `system`, stored under `localStorage["theme"]`. Owned by the UI package. |
+| Cover | What hides and disables the page while the login has ended (`SignedOutCover`): the page stays mounted under it, `inert` and invisible, with the sign-in dialog above. |
+| Session client | `@eneo-ai/module-kit/session`: `RequireSession`, the sign-in screen, `SignedInAgain` and `fetchWithSession`. It keeps a page's login and asks for a new one in place. |
 | Shell | `ModuleShell`: the page frame with the top bar, the skip link and the one main region. |
 | Brand (lockup) | `Brand`: the organisation's mark, a divider and the product's name in the top bar. |
 | Module network | The network the module container shares with Eneo's backend. |

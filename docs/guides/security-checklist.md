@@ -54,6 +54,16 @@ Tick each before a module goes live.
 - [ ] A module that calls Eneo over HTTPS with a private CA installs that CA in its image: `httpx2` uses the operating system's trust store, not `certifi`.
 - [ ] The module's dependencies are pinned and locked, and `pip-audit` finds nothing in the installed set (the package declares ranges with security floors).
 
+## The cover for an ended login
+
+While the login has ended the page is covered, not removed: it stays mounted, hidden and out of reach, under the sign-in dialog ([K15](../decisions/k15-cover-for-an-ended-login.md)). A native dialog of the page escapes that, so a module checks:
+
+- [ ] Every native dialog of the page closes while `useSignedOut()` is true (`isOpen={open && !signedOut}`, its state held above the dialog).
+- [ ] No dialog is portalled out of `RequireSession`'s children: one outside the cover stays in the accessibility tree.
+- [ ] A dialog left open is hidden by the sign-in dialog's opaque backdrop in every engine, but in WebKit it is still reachable by Tab, so the check above is the module's own.
+
+Proof, for the template: `template/web/tests/e2e/session-cover.spec.ts` (Chromium, WebKit and Firefox) and `packages/ui/tests/session-gate.test.ts`.
+
 ## What the kit does not protect against
 
 Recorded in [design.md](../design.md) section 6.

@@ -22,7 +22,7 @@ Status: **current** matches the code today; **planned** describes something not 
 |---|---|---|---|
 | [new module](guides/new-module.md) | Start from `template/`: copy, rename, install, run against the stub, test, image, register, what CI proves | Module developers | current |
 | [build a module](guides/build-a-module.md) | The backend in detail: `create_app`, guards, proxy rules, uploads, signed files, tests | Module developers | current |
-| [UI package](guides/ui-package.md) | Install and wire `@eneo-ai/module-kit`; its names, colour mode, links, branding, shell, theme | Module developers | current (session client planned) |
+| [UI package](guides/ui-package.md) | Install and wire `@eneo-ai/module-kit`; its names, colour mode, links, branding, shell, theme | Module developers | current |
 | [configuration](guides/configuration.md) | Every environment variable, default and check | Module developers, operators | current |
 | [local development](guides/local-development.md) | The template's stub Eneo and a walk through the login | Module developers | current |
 | [security checklist](guides/security-checklist.md) | What the kit enforces, what a module must do, known limits | Module developers, reviewers | current |
@@ -34,7 +34,7 @@ Status: **current** matches the code today; **planned** describes something not 
 | [BFF package README](../packages/bff/README.md) | Public names, HTTP surface, answers, limits, how to develop the package | BFF developers | current |
 | [UI package README](../packages/ui/README.md) | The package's exports in brief | UI developers | current |
 | [template README](../template/README.md) | The module template in brief, with the pre-release way to try it | Module developers | current |
-| [decisions](decisions/README.md) | K1 to K14, one short page each | Anyone asking why | current |
+| [decisions](decisions/README.md) | K1 to K15, one short page each | Anyone asking why | current |
 | [module contract](module-contract.md) | The calls between the BFF and Eneo, with examples, and what the BFF does with each failure | Stub and Eneo-side developers, debuggers | current |
 | [design](design.md) | The long form: the module contract with Eneo (section 2), the HTTP surface (5), limits (6), open questions (7) | Developers, the owner | current |
 

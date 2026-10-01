@@ -4,7 +4,7 @@ Purpose: say how a module installs `@eneo-ai/module-kit`, wires it up, and what 
 Read this when: you build a module's pages, change the colour mode, the page shell or the brand lockup, or touch the theme.
 Related: [new module](new-module.md), [architecture](../architecture.md#the-ui-app-and-its-layers), [decisions K9](../decisions/k09-colour-mode-in-the-ui-package.md), [K10](../decisions/k10-branding-without-templating.md), [K11](../decisions/k11-astryx-pinned.md), [package README](../../packages/ui/README.md), [BFF README](../../packages/bff/README.md).
 
-`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, not released) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those. Planned: the session client (sign-in screen, the warning before the login ends, the cover while signed out) and the Astryx integration.
+`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, not released) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Planned: the Astryx integration.
 
 ## Install
 
@@ -60,14 +60,15 @@ A page is a `ModuleShell` with the brand in its heading:
 
 The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`.
 
-## The four exports of the package
+## The five exports of the package
 
 | Import | What it is |
 |---|---|
 | `@eneo-ai/module-kit` | The code, below. |
 | `@eneo-ai/module-kit/layers.css` | `@layer reset, astryx-base, astryx-theme;` Import it first, so the layers have their order. |
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
-| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`). Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended. Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/session` | The session client, below. |
 
 ## The code
 
@@ -121,6 +122,34 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 - A page that must not be left (a recording, a sending) passes less in `end` and `heading`; the shell decides nothing.
 - The bar scrolls away with the page (`base.css`): stuck to the top it would hide a focused control (WCAG 2.4.11).
 
+## The session client
+
+`@eneo-ai/module-kit/session` keeps the login of a page that can outlive its login. SSO only: it uses the BFF's `GET /api/auth/status`, `GET /api/auth/login?next=&renew=` and the `X-Auth-Required: session` mark on a 401 ([design.md](../design.md) section 5). A page's whole use of it, from the template's `web/src/App.tsx`:
+
+```tsx
+<Route path="/inloggad" element={<SignedInAgain productName={PRODUCT_NAME} />} />   {/* where a login window ends */}
+<Route
+  path="/flows"
+  element={
+    <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} signInDescription={SIGN_IN_TEXT}>
+      <Flows />
+    </RequireSession>
+  }
+/>
+```
+
+and every call to the backend through `fetchWithSession(path, init)` instead of `fetch` (the template's `getJson` in `web/src/session.ts`).
+
+| Export | What it is |
+|---|---|
+| `RequireSession` | The gate. Signed out: the sign-in screen (`signIn` replaces it; `navigate` with `signInPath` sends the person to a route of the app's own). Signed in: `children`, the keepalive (the backend's `refresh_in`), a status read when the page is seen and when a login window says it is done, the warning five minutes before the end, and, when the login has ended, the cover and the sign-in dialog. `onIdentity(user)` is awaited before `children` are shown. `signedOutControls` and `signedOutNote` are for what stays reachable while signed out. |
+| `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable into. |
+| `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. Answers are returned as they came. |
+| `SignInScreen`, `SignedInAgain` | The sign-in screen (one button that starts Eneo's login; it says once when a callback failed, `?auth_error=`); the page a login in a window of its own lands on: it tells the module's tabs (`SESSION_CHANNEL`, `"eneo-module:session"`) and closes itself, or says why a renewal was refused (`?fel=annan-anvandare`, `?fel=utgangen`). Route it at `signedInAgainPath` (default `/inloggad`). |
+| `createSessionState()`, `sessionState`, `createFetchWithSession(state)`, `SessionExpiredError`, `isSessionEndedAnswer`, `refusalOf`, `sessionUser`, `userDisplayName`, `userInitial` | The state (one per page, shared by the gate and `fetchWithSession`), for tests and for a transport that is not `fetch`; the error; the helpers. The package README lists them. |
+
+When the login has ended the page is covered, not removed: it stays mounted with all it holds, hidden and out of reach (`inert`), under a native modal dialog with an opaque backdrop that nothing but the new login closes, opened in a window of its own. Only the page's own user signing in again lifts it; someone else's login keeps the page covered and says whom to sign in as. A native dialog of the page is the module's to close while signed out (`isOpen={open && !useSignedOut()}`): see [build a module](build-a-module.md#10-sessions-and-dialogs) and the [security checklist](security-checklist.md#the-cover-for-an-ended-login). The decision: [K15](../decisions/k15-cover-for-an-ended-login.md). The flow: [architecture](../architecture.md#how-a-page-learns-the-login-ended-and-gets-it-back). The Swedish words are in `packages/ui/src/session/messages.ts`.
+
 ## Fix a shortfall once
 
 A design-system shortfall (a target under 44 px, a missing focus ring, a label that cannot be read in dark mode) is fixed once, in `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` in `packages/ui`, and the regenerated `src/theme/built/` is committed. Astryx is pinned to an exact version in the package and in the template ([K11](../decisions/k11-astryx-pinned.md)); an upgrade is its own change. No ejected Astryx component and no authored StyleX.
@@ -137,4 +166,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, shell, branding, theme, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

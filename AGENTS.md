@@ -1,6 +1,6 @@
 # Agent instructions: eneo-module-kit
 
-The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package's session client, the Astryx integration and the first release are planned. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
+The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the Astryx integration of the UI package and the first release are planned. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
 
 ## Directory map
 
@@ -9,7 +9,7 @@ The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are 
 | `packages/bff/src/eneo_module_bff/` | The BFF package, one file per concern: `app.py` (factory), `auth.py` (login, session, refresh), `deps.py` (route dependencies), `proxy.py` (allowlist proxy), `transport.py` (uploads, signed files), `limits.py` (body limit), `upstream.py` (the client to Eneo: no cookies, answers bounded), `web.py` (security headers, built UI), `branding.py`, `settings.py`, `serve.py`. `__init__.py` holds the public names | built |
 | `packages/bff/tests/` | unittest, one file per module of the package | built |
 | `packages/bff/README.md` | The package's public names, HTTP surface, answers and limits | current |
-| `packages/ui/src/` | The UI package: `color-mode.tsx`, `ModuleProviders.tsx`, `ModuleShell.tsx`, `branding.tsx`, `theme/eneo.theme.ts` (source) and `theme/built/` (generated, committed), `layers.css`, `base.css`; `index.ts` holds the public names | built |
+| `packages/ui/src/` | The UI package: `color-mode.tsx`, `ModuleProviders.tsx`, `ModuleShell.tsx`, `branding.tsx`, `session/` (the session client, the `./session` export), `theme/eneo.theme.ts` (source) and `theme/built/` (generated, committed), `layers.css`, `base.css`; `index.ts` holds the public names | built |
 | `packages/ui/tests/` | node:test with jsdom, one file per concern | built |
 | `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml`, `.env.example`, `.devcontainer/`, `.github/workflows/ci.yml` (a module's own CI), its own `AGENTS.md` | built |
 | `docs/` | `architecture.md`, `guides/`, `decisions/`, `glossary.md`, `design.md` (long form); `docs/README.md` is the index | current |

@@ -36,7 +36,9 @@ For tests, two unauthenticated control routes:
 
 | Call | Effect |
 |---|---|
-| `POST /__stub/end-session` | Every token is refused from now on, as when Eneo ends the login |
+| `POST /__stub/end-session` | Every token is refused from now on, as when Eneo ends the login: the module's session ends at its next token refresh |
+| `POST /__stub/session?ends_in=S&token_seconds=T` | For the logins made after this call: the session ends S seconds after the login (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module refreshes at half). Defaults 28800 and 900; `reset` as a value restores them |
+| `POST /__stub/login-as?user=erik\|sara` | Who the logins made after this call are (default Erik Lund), to show a renewal that signs in someone else |
 | `POST /__stub/flows?mode=normal\|empty\|error` | What the flow list answers: two flows, none, or a 500 |
 
 ## Run the module against it
@@ -93,7 +95,9 @@ curl -s -b jar -c jar -X POST -H "Origin: $M" -w ' %{http_code}\n' "$M/api/auth/
 |---|---|
 | A refresh | Lower `TOKEN_SECONDS` in the stub (for example to 20): the token is refreshed at half its life, on the next request or `GET /api/auth/status` after it. |
 | The session ending | Set `SESSION_MAX_AGE_MINUTES=1` on the module: a minute later the next request is a 401. |
-| Eneo ending the login | `curl -X POST localhost:8411/__stub/end-session`: a call to Eneo (`/api/eneo/flows/`) now answers 401, and the module's next refresh is refused and ends the session. |
+| Eneo ending the login | `curl -X POST localhost:8411/__stub/end-session`: a call to Eneo (`/api/eneo/flows/`) now answers 401, and the module's next refresh is refused and ends the session. With `__stub/session?token_seconds=4` set before the login, that takes seconds, and the page is covered by the sign-in dialog. |
+| The warning before the end | `curl -X POST "localhost:8411/__stub/session?ends_in=200"`, then sign in: the page warns at once (five minutes before the end). `?ends_in=reset&token_seconds=reset` restores the defaults. |
+| Someone else signing in | `curl -X POST "localhost:8411/__stub/login-as?user=sara"` before the new login: after an end the page stays covered and says whom to sign in as; before the warning's renewal, the renewal is refused (`fel=annan-anvandare`) and the old login is kept. |
 | An empty list, a failing Eneo | `curl -X POST "localhost:8411/__stub/flows?mode=empty"` or `mode=error`, then reload the flows page; `mode=normal` restores it. |
 | Eneo not answering a refresh | Make `refresh` in the stub answer 503: the session keeps its token and asks again in 10 s. With 401 it ends. |
 | A failed login | Do steps 1 and 2 above, stop the stub, then do step 3: the callback redirects to `/?auth_error=exchange_unavailable`. |
