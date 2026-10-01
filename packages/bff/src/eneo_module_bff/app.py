@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 import httpx
 from fastapi import FastAPI
 
 from . import branding
 from .auth import ModuleAuth
+from .proxy import ProxyRule, proxy_router
 from .settings import Settings, load_settings
 
 
@@ -15,6 +16,7 @@ def create_app(
     settings: Settings | None = None,  # None: load_settings()
     *,
     title: str = "Eneo module",
+    proxy_rules: Sequence[ProxyRule] = (),  # the routes under /api/eneo; none by default
     http_client: httpx.AsyncClient | None = None,  # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI:
     """The module's app: auth under /api/auth, health, branding. Everything hangs off ``app.state``.
@@ -47,6 +49,7 @@ def create_app(
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
     app.include_router(branding.router)
+    app.include_router(proxy_router(proxy_rules))
 
     @app.get("/api/healthz")
     @app.get("/health")
