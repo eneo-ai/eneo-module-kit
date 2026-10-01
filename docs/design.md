@@ -176,8 +176,13 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   held), and stops at `max_response_bytes` (32 MiB; 502 `upstream_too_large`, the answer closed): the proxy and
   uploads. The answers that carry a token or a URL (ticket exchange, session check, refresh, signed URL) stop at 1 MiB
   and the body of a failed file answer is read to 1 MiB and dropped past it. Only a file that streams is unbounded. A
-  proxied answer is still held whole until it is sent, so `MAX_RESPONSE_BYTES` times the proxy's concurrency is its
-  memory bound; a module that serves large downloads uses `stream_signed`, not the proxy.
+  proxied answer is still held whole until it is sent, so `MAX_RESPONSE_BYTES` is the most payload one answer retains,
+  not the memory it costs: httpx2 joins the chunks it read into one `bytes`, and holds both while it does, and the
+  transport adds its own buffers. Measured against a real server, one 24 MiB answer raised the module's peak by 55 to
+  59 MiB (2.3 to 2.5 times the payload), and six 8 MiB answers at once by 73 to 89 MiB (1.5 to 1.9 times each, as
+  the joins do not all coincide). A module plans for about 2.5 times `MAX_RESPONSE_BYTES` per answer in flight, times
+  the answers it expects at once, and sets `MAX_RESPONSE_BYTES` for its largest real answer; one that serves large
+  downloads uses `stream_signed`, not the proxy.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

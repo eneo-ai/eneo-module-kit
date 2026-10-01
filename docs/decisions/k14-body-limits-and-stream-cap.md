@@ -17,7 +17,7 @@ FastAPI reads a body before it runs a route's dependencies and whatever the cont
 - Only `forward_upload` lifts the limit, to `MAX_UPLOAD_BYTES` (default 1 GiB), for its own request, after the route's dependencies and its own checks. The bytes that arrive are counted, so a `Content-Length` that lies, or a chunked body, gets no further.
 - At most `MAX_CONCURRENT_STREAMS` (default 64) files stream at once; the next is a 503 with `Retry-After` at once, so the API keeps its connections.
 - The shared client waits at most 5 s for a free connection (`pool=5`), so a busy pool is a quick 502.
-- What Eneo answers is bounded too: the shared client stops at `MAX_RESPONSE_BYTES` (default 32 MiB, decoded) for the proxy and uploads, at 1 MiB for the answers that carry a token or a URL, and refuses an encoded answer (502 `upstream_too_large`). A file that streams is the one unbounded answer.
+- What Eneo answers is bounded too: the shared client stops at `MAX_RESPONSE_BYTES` (default 32 MiB, decoded) for the proxy and uploads, at 1 MiB for the answers that carry a token or a URL, and refuses an encoded answer (502 `upstream_too_large`). A file that streams is the one unbounded answer. The proxy still holds an answer whole until it is sent: `MAX_RESPONSE_BYTES` is the payload retained, and the memory is about 2.5 times that while httpx2 joins the chunks (measured: 55 to 59 MiB for a 24 MiB answer; 1.5 to 1.9 times each for six at once).
 - The security-headers middleware is added after the body limit, so the 413 carries the headers.
 
 ## Consequences
