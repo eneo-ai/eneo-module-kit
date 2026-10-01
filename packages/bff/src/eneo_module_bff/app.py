@@ -4,7 +4,7 @@ import contextlib
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
-import httpx
+import httpx2
 from fastapi import APIRouter, FastAPI
 
 from . import branding
@@ -23,7 +23,7 @@ def create_app(
     forward_request_headers: Sequence[str] = (),  # added to the request headers the proxy forwards
     static_dir: Path | None = None,  # the built UI, served last
     security_headers: dict[str, str] | None = None,  # replaces defaults, e.g. Permissions-Policy microphone=(self)
-    http_client: httpx.AsyncClient | None = None,  # tests inject one; otherwise the lifespan owns one
+    http_client: httpx2.AsyncClient | None = None,  # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI:
     """The module's app: auth under /api/auth, health, branding. Everything hangs off ``app.state``.
 
@@ -39,8 +39,8 @@ def create_app(
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.
-        http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=10.0),
+        http_client = httpx2.AsyncClient(
+            timeout=httpx2.Timeout(60.0, connect=10.0),
             follow_redirects=False,
         )
 

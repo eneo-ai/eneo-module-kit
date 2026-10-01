@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-import httpx
+import httpx2
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
@@ -41,8 +41,8 @@ def module_router() -> APIRouter:
 
 
 class AppFactoryTests(unittest.TestCase):
-    def injected_client(self) -> httpx.AsyncClient:
-        client = httpx.AsyncClient()
+    def injected_client(self) -> httpx2.AsyncClient:
+        client = httpx2.AsyncClient()
         self.addCleanup(lambda: asyncio.run(client.aclose()))
         return client
 
@@ -93,7 +93,7 @@ class AppFactoryTests(unittest.TestCase):
         # It exists before the app starts: the auth router needs it at once.
         self.assertFalse(created.is_closed)
         self.assertIs(app.state.module_auth.http_client, created)
-        self.assertEqual(created.timeout, httpx.Timeout(60.0, connect=10.0))
+        self.assertEqual(created.timeout, httpx2.Timeout(60.0, connect=10.0))
         self.assertFalse(created.follow_redirects)
         with TestClient(app):
             self.assertFalse(created.is_closed)

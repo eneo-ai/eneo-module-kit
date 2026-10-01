@@ -1,6 +1,6 @@
 import unittest
 
-import httpx
+import httpx2
 from fastapi.testclient import TestClient
 
 from eneo_module_bff.app import create_app
@@ -27,7 +27,7 @@ class BrandingRouteTests(unittest.TestCase):
             organization_logo=logo,
             organization_logo_dark=dark,
         )
-        self.client = TestClient(create_app(settings, http_client=httpx.AsyncClient()))
+        self.client = TestClient(create_app(settings, http_client=httpx2.AsyncClient()))
 
     def test_the_branding_says_who_is_shown_without_a_session(self) -> None:
         self.use(DEFAULT_ORGANIZATION)

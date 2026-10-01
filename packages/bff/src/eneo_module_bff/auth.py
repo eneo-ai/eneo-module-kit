@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
-import httpx
+import httpx2
 from fastapi import (
     APIRouter,
     Cookie,
@@ -208,7 +208,7 @@ class ModuleAuth:
         self,
         *,
         settings: Settings,
-        http_client: httpx.AsyncClient,
+        http_client: httpx2.AsyncClient,
     ) -> None:
         self.settings = settings
         self.http_client = http_client
@@ -307,9 +307,9 @@ class ModuleAuth:
                     self.settings.eneo_api_key_header_name: self.settings.eneo_api_key
                 },
                 json={"ticket": ticket},
-                timeout=httpx.Timeout(10.0),
+                timeout=httpx2.Timeout(10.0),
             )
-        except httpx.RequestError:
+        except httpx2.RequestError:
             logger.exception("Module ticket exchange could not reach Eneo")
             return self._auth_error("exchange_unavailable")
 
@@ -349,9 +349,9 @@ class ModuleAuth:
                     self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
                     "Authorization": f"Bearer {token.access_token}",
                 },
-                timeout=httpx.Timeout(10.0),
+                timeout=httpx2.Timeout(10.0),
             )
-        except httpx.RequestError:
+        except httpx2.RequestError:
             logger.exception("Module session validation could not reach Eneo")
             return self._auth_error("validation_unavailable")
 
@@ -522,9 +522,9 @@ class ModuleAuth:
                     self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
                     "Authorization": f"Bearer {session.access_token}",
                 },
-                timeout=httpx.Timeout(10.0),
+                timeout=httpx2.Timeout(10.0),
             )
-        except httpx.RequestError:
+        except httpx2.RequestError:
             logger.warning("Module token refresh could not reach Eneo", exc_info=True)
             return self._retry_later(session)
         if eneo_is_unavailable(upstream.status_code):

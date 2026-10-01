@@ -1,7 +1,7 @@
 import time
 import unittest
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
@@ -171,7 +171,7 @@ class EneoProxyAuthTests(unittest.TestCase):
         self.assertEqual(self.proxy_client.calls, [])
 
     def test_a_control_character_or_a_backslash_in_a_segment_is_refused_not_a_500(self) -> None:
-        # %00 and %0D make httpx raise InvalidURL, which is not a RequestError; a backslash would go upstream
+        # %00 and %0D make httpx2 raise InvalidURL, which is not a RequestError; a backslash would go upstream
         # literally. %250D decodes to the text %0D, which a URL parser would decode once more.
         for segment in ("a%00b", "a%0Db", "a%09b", "a%1Fb", "a%7Fb", "a%5Cb", "..%5C", "a%250Db"):
             with self.subTest(segment=segment):
@@ -204,7 +204,7 @@ class EneoProxyAuthTests(unittest.TestCase):
     def test_a_cookie_from_eneo_never_reaches_the_browser(self) -> None:
         # Several would be merged into one line, and one named like the module's session would replace it.
         session = self.client.cookies.get(SESSION_COOKIE)
-        self.proxy_client.response_headers = httpx.Headers(
+        self.proxy_client.response_headers = httpx2.Headers(
             [
                 ("content-type", "application/json"),
                 ("set-cookie", f"{SESSION_COOKIE}=ENEO-SET; Path=/"),
@@ -365,7 +365,7 @@ class EneoProxyAuthTests(unittest.TestCase):
 
     def test_the_proxy_answers_502_when_eneo_cannot_be_reached(self) -> None:
         async def unreachable(**_):
-            raise httpx.ConnectError("unreachable")
+            raise httpx2.ConnectError("unreachable")
 
         self.proxy_client.request = unreachable
 

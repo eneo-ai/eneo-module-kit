@@ -112,6 +112,15 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
 - The kit is carved from one module. The template is a working fixture, not proof that the abstraction fits a
   different module. Versions stay 0.x until speech-to-text runs on the kit and a second module has used it.
 - The BFF package declares dependency ranges with security floors, not exact pins (a library; the pins copied from speech-to-text carried 14 known advisories). CI runs the suite at the floors and at the newest versions, with `pip-audit` on both; a module pins and locks its own.
+- The HTTP client is `httpx2`, not `httpx` (decided 2026-10-01, with measurements). `httpx` has had no release since
+  0.28.1 (2024-12), still builds a request with both `Content-Length` and `Transfer-Encoding`, still lets a line break
+  in a file's content type inject a multipart part header (both reproduced; `httpx2` fixed them in 2.11.0), and
+  Starlette's test client deprecates it. `httpx2` (`pydantic/httpx2`, 16 releases since May 2026) passes the same
+  suite and the same adversary scripts with identical output. Against a slow fake Eneo, peak memory stays flat at
+  64-65 MB through a 1 GB upload on both clients, and event-loop latency and 20 concurrent Range streams are the same
+  within noise (11 runs each). The floor `>=2.12.0` is where its five advisories are all fixed. It pins `httpcore2`
+  to its own version, and it uses the operating system's trust store (`truststore`) instead of `certifi`: a module that
+  calls Eneo over HTTPS with a private CA installs that CA in its image.
 - The session store is process-local: one replica. Scaling out needs sticky sessions or a shared store, decided
   when a module needs it.
 - Astryx is pre-1.0. Menus and pickers are not anchored to their trigger on Safari before 26 and Firefox before 147.

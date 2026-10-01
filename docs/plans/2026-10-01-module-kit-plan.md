@@ -6,7 +6,7 @@
 
 **Architecture:** One repository. `packages/bff` and `packages/ui` are imported by modules; `template/` is copied. The UI is a static Vite app served by the BFF in one process. The BFF is extracted from `eneo-ai/eneo-mod-speech-to-text` with its tests; behaviour is carried over, not redesigned.
 
-**Tech stack:** Python 3.12, FastAPI 0.142, Starlette 1.3, uvicorn 0.54, httpx 0.28, itsdangerous 2.2, python-multipart 0.0.31, unittest. Node >= 22.13, Vite 8, React 19.2, TypeScript, `@astryxdesign/core` 0.6.3, `@astryxdesign/cli` 0.6.3, `@stylexjs/stylex` 0.19.1, Playwright.
+**Tech stack:** Python 3.12, FastAPI 0.142, Starlette 1.3, uvicorn 0.54, httpx2 2.12, itsdangerous 2.2, python-multipart 0.0.31, unittest. Node >= 22.13, Vite 8, React 19.2, TypeScript, `@astryxdesign/core` 0.6.3, `@astryxdesign/cli` 0.6.3, `@stylexjs/stylex` 0.19.1, Playwright.
 
 **Spec:** `docs/design.md`. Read it in full before starting.
 
@@ -21,7 +21,7 @@
 - The proxy denies by default. The kit ships no allowlist entries. Routes for uploads and files are the module's; the kit ships the functions they call.
 - Out of the kit entirely: the live transcription relay (`STT/backend/app/main.py` from "Live transcription preview" down), `tests/test_live_relay.py`, artifact download naming (`_eneo_filename`, `_content_disposition`, `eneo_run_artifact_content`), `/api/config` and `FlowListScope`.
 - No import-time application state in `packages/bff`: no module-level `settings`, `app`, `http_client` or caches. Everything hangs off the app the factory returns.
-- Python: the package is a library, so it declares ranges with security floors, not exact pins: `fastapi>=0.142.2,<1`, `starlette>=1.3.1,<2`, `uvicorn[standard]>=0.54,<1`, `httpx>=0.28,<1`, `itsdangerous>=2.2,<3`, `python-multipart>=0.0.31,<1`. Speech-to-text's pins (`fastapi==0.115.0`, `python-multipart==0.0.12`, Starlette 0.38.6) carry 14 known advisories (`pip-audit`, 2026-10-01: multipart parser denial of service, unbounded multipart buffering, form limits ignored), and an exact-pinned library forces every module onto one stack. The floors are the fixed versions. Exact pins and a lock belong to the application (the template, Phase 3). The suite must pass at the floors and at the newest versions, and `pip-audit` must report nothing on both. No new runtime dependency without a line in `docs/design.md`.
+- Python: the package is a library, so it declares ranges with security floors, not exact pins: `fastapi>=0.142.2,<1`, `starlette>=1.3.1,<2`, `uvicorn[standard]>=0.54,<1`, `httpx2>=2.12.0,<3`, `itsdangerous>=2.2,<3`, `python-multipart>=0.0.31,<1`. Speech-to-text's pins (`fastapi==0.115.0`, `python-multipart==0.0.12`, Starlette 0.38.6) carry 14 known advisories (`pip-audit`, 2026-10-01: multipart parser denial of service, unbounded multipart buffering, form limits ignored), and an exact-pinned library forces every module onto one stack. The floors are the fixed versions. Exact pins and a lock belong to the application (the template, Phase 3). The suite must pass at the floors and at the newest versions, and `pip-audit` must report nothing on both. No new runtime dependency without a line in `docs/design.md`.
 - JavaScript: `@astryxdesign/core` `0.6.3`, `@astryxdesign/cli` `0.6.3`, `@stylexjs/stylex` `0.19.1`, exact. Run the Astryx CLI only as `npm run astryx -- <command>`. Read `npm run astryx -- component <Name>` before using a component; never guess a prop.
 - No Next.js, no Tailwind, no second UI library, no Hono. No ejected Astryx component, no authored StyleX.
 - The UI package imports nothing from a router or a meta-framework, and nothing from the template.
@@ -138,7 +138,7 @@ dependencies = [
   "fastapi>=0.142.2,<1",
   "starlette>=1.3.1,<2",
   "uvicorn[standard]>=0.54,<1",
-  "httpx>=0.28,<1",
+  "httpx2>=2.12.0,<3",
   "itsdangerous>=2.2,<3",
   "python-multipart>=0.0.31,<1",
 ]
@@ -256,7 +256,7 @@ class ModuleSession(BaseModel):          # the source's EneoSsoSession, without 
 class ModuleSessionStore: create, get, replace, delete, clear   # unchanged
 
 class ModuleAuth:
-    def __init__(self, *, settings: Settings, http_client: httpx.AsyncClient) -> None: ...
+    def __init__(self, *, settings: Settings, http_client: httpx2.AsyncClient) -> None: ...
     router: APIRouter                      # GET /login, GET /callback, POST /logout, GET /status
     sessions: ModuleSessionStore
     async def require_session(self, connection: HTTPConnection, session_id: str | None) -> ModuleSession: ...
@@ -332,11 +332,11 @@ def create_app(
     routers: Sequence[APIRouter] = (),       # the module's own routes, Task 1.9
     proxy_rules: Sequence[ProxyRule] = (),   # Task 1.5
     static_dir: Path | None = None,          # Task 1.7
-    http_client: httpx.AsyncClient | None = None,   # tests inject one; otherwise the lifespan owns one
+    http_client: httpx2.AsyncClient | None = None,   # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI: ...
 ```
 
-The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. Routes match in registration order: the kit's own, then `routers`, then the proxy, then the static app, so a module's route wins over the proxy and the page and cannot replace a route of the kit (Task 1.9). When no client is given, `create_app` creates `httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
+The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. Routes match in registration order: the kit's own, then `routers`, then the proxy, then the static app, so a module's route wins over the proxy and the page and cannot replace a route of the kit (Task 1.9). When no client is given, `create_app` creates `httpx2.AsyncClient(timeout=httpx2.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
 
 - [ ] **Step 1:** `test_app.py`: health on both paths; `app.state` holds the three objects; a client created by the lifespan is closed after shutdown (use `with TestClient(app):`); an injected client is not closed. `test_branding.py`: carry over from the source, building the app with `create_app(Settings(...), http_client=…)`.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Implement `branding.py` (the two routes, copied, reading `request.app.state.settings`) and `app.py`. **Step 4:** Replace the helper in `test_auth.py` with `create_app`. Run everything, `OK`.

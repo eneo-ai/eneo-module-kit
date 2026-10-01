@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
@@ -512,7 +512,7 @@ class FakeEneo:
 
     async def request(self, **kwargs):
         self.proxied.append(kwargs)
-        return httpx.Response(200, json={"items": []})
+        return httpx2.Response(200, json={"items": []})
 
 
 class FakeClock:
@@ -564,7 +564,7 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
     def test_due_token_is_refreshed_before_the_request_is_proxied(self) -> None:
         session_id = self.sign_in_with_due_token()
         eneo = self.use_eneo(
-            httpx.Response(200, json=token_payload("refreshed-token", expires_in=900))
+            httpx2.Response(200, json=token_payload("refreshed-token", expires_in=900))
         )
         before = int(time.time())
 
@@ -599,10 +599,10 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
 
     def test_refused_refresh_ends_the_session(self) -> None:
         refusals = {
-            "expired or past the ceiling": httpx.Response(401),
-            "key no longer bound": httpx.Response(403),
-            "module removed": httpx.Response(404),
-            "another user's token": httpx.Response(
+            "expired or past the ceiling": httpx2.Response(401),
+            "key no longer bound": httpx2.Response(403),
+            "module removed": httpx2.Response(404),
+            "another user's token": httpx2.Response(
                 200, json=token_payload("other-token", user_id="other-user")
             ),
         }
@@ -622,7 +622,7 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
                 )
 
     def test_unavailable_eneo_keeps_the_still_valid_token(self) -> None:
-        for refresh in (httpx.Response(503), httpx.ConnectError("unreachable")):
+        for refresh in (httpx2.Response(503), httpx2.ConnectError("unreachable")):
             with self.subTest(refresh=refresh):
                 session_id = self.sign_in_with_due_token()
                 eneo = self.use_eneo(refresh)
@@ -656,7 +656,7 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
         # The browser polls the status while it records, which sends no other request.
         session_id = self.sign_in_with_due_token()
         eneo = self.use_eneo(
-            httpx.Response(200, json=token_payload("refreshed-token", expires_in=900))
+            httpx2.Response(200, json=token_payload("refreshed-token", expires_in=900))
         )
 
         status = self.client.get("/api/auth/status")
@@ -672,7 +672,7 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
 
         async def refresh(**_):
             clock.now += 6  # Eneo answers only after the token has expired.
-            return httpx.Response(503)
+            return httpx2.Response(503)
 
         with patch("eneo_module_bff.auth.time", clock):
             session_id = self.sign_in_with_due_token(expires_in=5)
@@ -693,7 +693,7 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
 
         async def refresh(**_):
             token = f"token-{next(renewals)}"
-            return httpx.Response(200, json=token_payload(token, expires_in=60))
+            return httpx2.Response(200, json=token_payload(token, expires_in=60))
 
         with patch("eneo_module_bff.auth.time", clock):
             now = int(clock.now)
@@ -721,9 +721,9 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
 
 
 class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioTestCase):
-    async def get_flows(self, session_id: str) -> httpx.Response:
-        transport = httpx.ASGITransport(app=self.app)
-        async with httpx.AsyncClient(
+    async def get_flows(self, session_id: str) -> httpx2.Response:
+        transport = httpx2.ASGITransport(app=self.app)
+        async with httpx2.AsyncClient(
             transport=transport, base_url="http://module.test"
         ) as client:
             return await client.get(
@@ -741,7 +741,7 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
             if token == "stalled-token":
                 started.set()
                 await release.wait()
-            return httpx.Response(200, json=token_payload(f"renewed-{token}"))
+            return httpx2.Response(200, json=token_payload(f"renewed-{token}"))
 
         eneo = self.use_eneo(refresh)
         waiting = asyncio.create_task(self.get_flows(stalled))
@@ -777,7 +777,7 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
 
         async def refresh(**_):
             await asyncio.sleep(0.05)  # still in flight while the others arrive
-            return httpx.Response(503)
+            return httpx2.Response(503)
 
         eneo = self.use_eneo(refresh)
 

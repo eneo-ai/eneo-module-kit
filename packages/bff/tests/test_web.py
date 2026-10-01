@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Response
 from fastapi.testclient import TestClient
 
@@ -55,7 +55,7 @@ class WebTests(unittest.TestCase):
         self.client = self.build()
 
     def build(self, **kwargs: object) -> TestClient:
-        http = httpx.AsyncClient()
+        http = httpx2.AsyncClient()
         self.addCleanup(lambda: asyncio.run(http.aclose()))
         return TestClient(create_app(make_settings(), static_dir=self.root, http_client=http, **kwargs))
 
@@ -139,7 +139,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("frame-ancestors 'none'", CONTENT_SECURITY_POLICY)
 
     def test_a_route_that_sets_its_own_header_keeps_it(self) -> None:
-        app = create_app(make_settings(), http_client=httpx.AsyncClient())
+        app = create_app(make_settings(), http_client=httpx2.AsyncClient())
 
         @app.get("/api/preview")
         async def preview() -> Response:
@@ -162,7 +162,7 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(response.headers[name], value)
 
     def test_without_a_static_dir_the_app_serves_no_page(self) -> None:
-        client = TestClient(create_app(make_settings(), http_client=httpx.AsyncClient()))
+        client = TestClient(create_app(make_settings(), http_client=httpx2.AsyncClient()))
 
         self.assertEqual(client.get("/").status_code, 404)
         self.assertEqual(client.get("/health").json(), {"ok": True})

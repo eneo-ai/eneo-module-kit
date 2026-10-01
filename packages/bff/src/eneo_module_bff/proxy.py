@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 from urllib.parse import unquote
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
@@ -88,10 +88,10 @@ def leaves_route(path: str) -> bool:
     """True if ``path`` could reach another upstream route than the one authorized.
 
     The allowlist matches on the decoded path, but a percent-encoded dot
-    segment such as ``%2E%2E`` still satisfies ``[^/]+`` and would let httpx
+    segment such as ``%2E%2E`` still satisfies ``[^/]+`` and would let httpx2
     resolve ``a/../b/`` to a different upstream path, and a decoded
     ``?`` or ``#`` would move the rest of the path into a query or fragment.
-    A control character (``%00``, ``%0D``) makes httpx raise InvalidURL, which is
+    A control character (``%00``, ``%0D``) makes httpx2 raise InvalidURL, which is
     not a request error and would answer 500, and a backslash would go upstream
     literally; both are refused, in the path as decoded and in what a URL parser
     would decode from it once more.
@@ -152,7 +152,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
                 content=body if body else None,
                 headers=fwd_headers,
             )
-        except httpx.RequestError:
+        except httpx2.RequestError:
             logger.exception(
                 "Upstream request failed: method=%s url=%s",
                 request.method,

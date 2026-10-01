@@ -1,7 +1,7 @@
 import time
 import unittest
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends, FastAPI, Request, WebSocket
 from fastapi.routing import APIRoute, APIWebSocketRoute
 from fastapi.testclient import TestClient
@@ -25,7 +25,7 @@ def build_app(module_public_url: str = MODULE_ORIGIN) -> tuple[FastAPI, ModuleAu
         session_secret="x" * 48,
         cookie_secure=False,
     )
-    auth = ModuleAuth(settings=settings, http_client=httpx.AsyncClient())
+    auth = ModuleAuth(settings=settings, http_client=httpx2.AsyncClient())
     app = FastAPI()
     app.state.module_auth = auth
 

@@ -1,7 +1,7 @@
 import time
 import unittest
 
-import httpx
+import httpx2
 from fastapi import Depends, File, Request, Response, UploadFile
 from fastapi.testclient import TestClient
 
@@ -192,7 +192,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(client.timeout.read, 120.0)
 
     def test_proxy_upload_maps_upstream_timeout_to_504(self) -> None:
-        self.build(RaisingHttpClient(httpx.TimeoutException("stalled")))
+        self.build(RaisingHttpClient(httpx2.TimeoutException("stalled")))
 
         with self.assertLogs("eneo_proxy", level="ERROR"):
             response = self.upload_file()
@@ -200,7 +200,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(response.status_code, 504)
 
     def test_proxy_upload_maps_upstream_request_error_to_502(self) -> None:
-        self.build(RaisingHttpClient(httpx.ConnectError("unreachable")))
+        self.build(RaisingHttpClient(httpx2.ConnectError("unreachable")))
 
         with self.assertLogs("eneo_proxy", level="ERROR"):
             response = self.upload_file()
@@ -208,7 +208,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(response.status_code, 502)
 
     def test_an_upload_path_that_leaves_its_route_is_refused_before_eneo_is_called(self) -> None:
-        client = RaisingHttpClient(httpx.ConnectError("must not be called"))
+        client = RaisingHttpClient(httpx2.ConnectError("must not be called"))
         self.build(client)
 
         # %2E%2E decodes to a dot segment; a decoded "?" or "#" would move the rest of the path into a query.
@@ -219,7 +219,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(client.calls, 0)
 
     def test_a_control_character_or_a_backslash_in_an_upload_id_is_refused_before_eneo_is_called(self) -> None:
-        client = RaisingHttpClient(httpx.ConnectError("must not be called"))
+        client = RaisingHttpClient(httpx2.ConnectError("must not be called"))
         self.build(client)
 
         for flow_id in ("a%00b", "a%0Db", "a%0Ab", "a%7Fb", "a%5Cb"):
@@ -228,7 +228,7 @@ class UploadProxyTests(TransportFixture, unittest.TestCase):
         self.assertEqual(client.calls, 0)
 
     def test_an_upload_needs_a_session_and_the_modules_origin(self) -> None:
-        client = RaisingHttpClient(httpx.ConnectError("must not be called"))
+        client = RaisingHttpClient(httpx2.ConnectError("must not be called"))
         self.build(client)
 
         cross_origin = self.upload_file(headers={"Origin": "https://attacker.example.test"})
@@ -253,7 +253,7 @@ class FakeSignedUrlResponse:
 class FakeStreamResponse:
     def __init__(self, status_code: int, headers: dict[str, str], body: bytes) -> None:
         self.status_code = status_code
-        self.headers = httpx.Headers(headers)
+        self.headers = httpx2.Headers(headers)
         self._body = body
         self.closed = False
 
@@ -270,7 +270,7 @@ class FakeStreamResponse:
 class FakeAudioClient:
     def __init__(self) -> None:
         self.signed_url_calls: list[dict[str, object]] = []
-        self.stream_requests: list[httpx.Request] = []
+        self.stream_requests: list[httpx2.Request] = []
         self.stream_responses: list[FakeStreamResponse] = []
         self.mint_status = 200
         self.stream_status = 200
@@ -286,7 +286,7 @@ class FakeAudioClient:
         return FakeSignedUrlResponse(self.mint_status)
 
     def build_request(self, method, url, headers=None):
-        return httpx.Request(method, url, headers=headers)
+        return httpx2.Request(method, url, headers=headers)
 
     async def send(self, request, stream=False):
         self.stream_requests.append(request)
@@ -550,13 +550,13 @@ class SignedFileStreamTests(TransportFixture, unittest.TestCase):
         self.assertEqual(self.app.state.signed_urls, {})
 
     def test_eneo_not_answering_is_a_502_when_minting_and_when_streaming(self) -> None:
-        self.fake.mint_error = httpx.ConnectError("unreachable")
+        self.fake.mint_error = httpx2.ConnectError("unreachable")
         with self.assertLogs("eneo_proxy", level="ERROR"):
             minting = self.client.get(AUDIO)
         self.assertEqual((minting.status_code, minting.json()), (502, {"detail": "Eneo could not be reached."}))
 
         self.fake.mint_error = None
-        self.fake.stream_error = httpx.ReadTimeout("stalled")
+        self.fake.stream_error = httpx2.ReadTimeout("stalled")
         with self.assertLogs("eneo_proxy", level="ERROR"):
             streaming = self.client.get(AUDIO)
         self.assertEqual(

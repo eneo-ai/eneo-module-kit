@@ -6,7 +6,7 @@ from collections.abc import Iterable, Sequence
 from typing import NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
-import httpx
+import httpx2
 from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
@@ -21,14 +21,14 @@ logger = logging.getLogger("eneo_proxy")
 MIN_UPLOAD_PROXY_TIMEOUT_SECONDS = 60.0
 
 
-def _upload_timeout(settings: Settings, timeout_seconds: float | None = None) -> httpx.Timeout:
+def _upload_timeout(settings: Settings, timeout_seconds: float | None = None) -> httpx2.Timeout:
     effective_timeout = settings.upload_proxy_timeout_seconds
     if timeout_seconds is not None:
         effective_timeout = min(
             settings.upload_proxy_timeout_seconds,
             max(MIN_UPLOAD_PROXY_TIMEOUT_SECONDS, timeout_seconds),
         )
-    return httpx.Timeout(
+    return httpx2.Timeout(
         connect=10.0,
         read=effective_timeout,
         write=effective_timeout,
@@ -49,7 +49,7 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
 
 # Uploads bypass the catch-all proxy because forwarding
 # the browser's raw multipart bytes triggers ReadError from Eneo's load balancer.
-# We re-parse and rebuild the multipart with httpx instead.
+# We re-parse and rebuild the multipart with httpx2 instead.
 async def forward_upload(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
     """Re-post one multipart file to {ENEO_BACKEND_URL}/api/v1/{upstream_path} with both credentials.
 
@@ -78,7 +78,7 @@ async def forward_upload(request: Request, upstream_path: str, upload_file: Uplo
             },
             timeout=_upload_timeout(settings, _requested_upload_timeout_seconds(request)),
         )
-    except httpx.TimeoutException:
+    except httpx2.TimeoutException:
         logger.exception("Upload timed out: url=%s", upstream_url)
         return JSONResponse(
             status_code=504,
@@ -87,7 +87,7 @@ async def forward_upload(request: Request, upstream_path: str, upload_file: Uplo
                 "detail": "Eneo did not complete the upload before the timeout.",
             },
         )
-    except httpx.RequestError:
+    except httpx2.RequestError:
         logger.exception("Upload failed: url=%s", upstream_url)
         return JSONResponse(
             status_code=502,
@@ -198,7 +198,7 @@ async def _signed_url(request: Request, key: tuple[str, str], unavailable: str) 
             },
             headers=upstream_auth_headers(request),
         )
-    except httpx.RequestError:
+    except httpx2.RequestError:
         logger.exception("Signed URL request failed: path=%s", mint_path)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
     if upstream.status_code >= 400:
@@ -244,7 +244,7 @@ async def stream_signed(
     upstream_request = http_client.build_request("GET", url, headers=fwd_headers)
     try:
         upstream = await http_client.send(upstream_request, stream=True)
-    except httpx.RequestError:
+    except httpx2.RequestError:
         logger.exception("File stream request failed: path=%s", mint_path)
         return JSONResponse(
             status_code=502,
@@ -261,7 +261,7 @@ async def stream_signed(
         detail: object = unavailable
         if upstream.headers.get("content-type", "").startswith("application/json"):
             try:
-                detail = httpx.Response(200, content=body).json()
+                detail = httpx2.Response(200, content=body).json()
             except ValueError:
                 pass
         raise HTTPException(status_code=upstream.status_code, detail=detail)
