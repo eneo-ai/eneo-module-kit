@@ -2,6 +2,9 @@
 # Against a real Eneo, drop the stub and set the variables in .env to Eneo's.
 services:
   module:
+    # Until the packages are released the image is built with the kit's `kit` build context and tagged as below
+    # (see README.md); after, `docker compose up --build` builds it.
+    image: eneo-module
     build: .
     env_file: .env
     ports:

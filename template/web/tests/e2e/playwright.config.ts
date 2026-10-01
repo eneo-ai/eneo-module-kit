@@ -13,7 +13,8 @@ const STUB = Number(process.env.E2E_STUB_PORT ?? 8011);
 const external = process.env.E2E_EXTERNAL_URL;
 
 const template = resolve(import.meta.dirname, "../../..");
-// The kit's checkout has a virtual environment at its root; a module made from the template has its own python3.
+// PYTHON, if set, is an absolute path (the backend runs from another folder, so a relative one fails). The kit's checkout has a
+// virtual environment at its root; a module made from the template has its own python3.
 const kitPython = resolve(template, "../.venv/bin/python");
 const python = process.env.PYTHON ?? (existsSync(kitPython) ? kitPython : "python3");
 

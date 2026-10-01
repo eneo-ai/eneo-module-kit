@@ -39,3 +39,4 @@ where they differ, these win.
 
 - Backend: `python -m unittest discover -s backend/tests -t backend` (from the module's folder).
 - Web: `npm run lint`, `npm run build`, and `npm run test:e2e` (builds first; starts the stub Eneo and the backend itself).
+  `PYTHON`, if you set it for `test:e2e`, must be an absolute path to a python that has `eneo-module-bff`: a relative one fails.
