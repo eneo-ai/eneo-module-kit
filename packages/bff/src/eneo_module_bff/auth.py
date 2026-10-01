@@ -497,6 +497,12 @@ class ModuleAuth:
                 self.sessions.delete(session_id)
             else:
                 self.sessions.replace(session_id, refreshed)
+        except Exception:
+            # Not an answer from Eneo, so not a reason to end the session: keep the token, which is still valid,
+            # and ask again shortly, as when Eneo cannot answer. Left alone, the error would reach every request
+            # of the session as a 500. (Not BaseException: a cancelled refresh stays cancelled.)
+            logger.exception("Module token refresh failed unexpectedly")
+            self.sessions.replace(session_id, self._retry_later(session))
         finally:
             self._refreshes.pop(session_id, None)
 

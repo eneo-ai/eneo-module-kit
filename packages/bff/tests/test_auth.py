@@ -636,6 +636,22 @@ class ModuleTokenRefreshTests(TokenRefreshFixture, unittest.TestCase):
                 )
                 self.assertIsNotNone(self.auth.sessions.get(session_id))
 
+    def test_an_unexpected_error_while_refreshing_keeps_the_token_and_asks_again_later(self) -> None:
+        # Not an answer from Eneo (a bug, or a library error): it must not become a 500 on every request.
+        session_id = self.sign_in_with_due_token()
+        eneo = self.use_eneo(RuntimeError("boom"))
+
+        with self.assertLogs("eneo_module_auth", level="ERROR"):
+            response = self.client.get("/resource")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(eneo.proxied[0]["headers"]["Authorization"], "Bearer module-user-token")
+        self.assertIsNotNone(self.auth.sessions.get(session_id))
+        # It asks again shortly, not on the very next request.
+        self.assertEqual(self.client.get("/resource").status_code, 200)
+        self.assertEqual(len(eneo.refresh_calls), 1)
+        self.assertEqual(self.auth._refreshes, {})
+
     def test_status_check_refreshes_an_idle_session(self) -> None:
         # The browser polls the status while it records, which sends no other request.
         session_id = self.sign_in_with_due_token()
@@ -739,6 +755,22 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
         )
         release.set()
         self.assertEqual((await waiting).status_code, 200)
+
+    async def test_concurrent_requests_share_one_unexpected_failure(self) -> None:
+        session_id = self.sign_in_with_due_token()
+
+        async def refresh(**_):
+            await asyncio.sleep(0.05)  # still in flight while the others arrive
+            raise RuntimeError("boom")
+
+        eneo = self.use_eneo(refresh)
+
+        with self.assertLogs("eneo_module_auth", level="ERROR"):
+            responses = await asyncio.gather(*(self.get_flows(session_id) for _ in range(8)))
+
+        self.assertEqual([r.status_code for r in responses], [200] * 8)
+        self.assertEqual(len(eneo.refresh_calls), 1)
+        self.assertEqual(self.auth._refreshes, {})
 
     async def test_concurrent_requests_share_one_failed_renewal(self) -> None:
         session_id = self.sign_in_with_due_token()
