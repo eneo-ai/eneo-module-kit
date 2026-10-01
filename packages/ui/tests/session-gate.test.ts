@@ -398,3 +398,19 @@ test("the window a login ends in tells the module's tabs and closes itself; a re
   assert.equal(closed.length, 1);
   listener.close();
 });
+
+test("a refusal is read from the address the login window lands on", async () => {
+  const { refusalOf } = await import("../src/session/SignedInAgain.js");
+  assert.equal(refusalOf("?fel=annan-anvandare"), "annan-anvandare");
+  assert.equal(refusalOf("?x=1&fel=utgangen"), "utgangen");
+  assert.equal(refusalOf("?fel=nagot-annat"), null);
+  assert.equal(refusalOf(""), null);
+});
+
+test("when onIdentity fails the page stays closed: someone else's data is not shown on a failed clean-up", async (t) => {
+  backend(t, () => json(signedIn()));
+  const { act, container } = await gate({ onIdentity: () => Promise.reject(new Error("could not clear")) });
+  await act(async () => settle());
+  assert.doesNotMatch(container.textContent ?? "", /Sidan/);
+  assert.match(container.textContent ?? "", /Kunde inte kontakta modulen/);
+});

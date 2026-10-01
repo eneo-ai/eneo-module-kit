@@ -38,7 +38,54 @@ createRoot(document.getElementById("root")!).render(
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the
-brand's mark, forced-colour edges, no ring on a programmatically focused heading).
+brand's mark, forced-colour edges, no ring on a programmatically focused heading, and the session cover that hides the
+page while the login has ended).
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.
+
+## The session client: `@eneo-ai/module-kit/session`
+
+The login of a page that can outlive its login. SSO only: it talks to the BFF's `GET /api/auth/status`
+(`{authenticated, user, session_ends_in, refresh_in}`), `GET /api/auth/login?next=&renew=` and the
+`X-Auth-Required: session` mark on a 401.
+
+```tsx
+<RequireSession
+  productName="Tal till text"
+  signInTitle="Gör samtal och filer till text"
+  onIdentity={(user) => keepOnlyDraftsOf(user.id)}          // awaited before the page is shown
+  signedOutControls={<RecordingControls />}                  // stays reachable in the sign-in dialog
+  signedOutNote="en inspelning fortsätter och sparas på enheten."
+>
+  <Routes />   {/* and a route at /inloggad that renders <SignedInAgain productName="Tal till text" /> */}
+</RequireSession>
+
+const response = await fetchWithSession("/api/eneo/flows/");   // instead of fetch
+```
+
+| Export | What it is |
+|---|---|
+| `RequireSession` | The gate. Signed out: the sign-in screen (`signIn` replaces it; `navigate` with `signInPath` sends the person to a route of the app's own). Signed in: `children`, the keepalive (the backend's `refresh_in`), a status read when the page is seen and when a login window says it is done, the warning five minutes before the end, and, when the login has ended, the cover and the sign-in dialog. |
+| `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable (a recording's Pausa and Stoppa) into. |
+| `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. Answers are returned as they came. |
+| `createSessionState()`, `sessionState`, `createFetchWithSession(state)` | The state (one instance per page, shared by the gate and `fetchWithSession`), and a way to build both over another one (tests). |
+| `SessionExpiredError`, `isSessionEndedAnswer(status, header)` | For a transport that is not `fetch` (an upload by XMLHttpRequest): refuse when `sessionState.signedOut`, call `sessionState.ended()` on a 401 with `X-Auth-Required: session`. |
+| `SignInScreen`, `SignedInAgain`, `refusalOf`, `SESSION_CHANNEL` | The sign-in screen; the page the login window lands on (it tells the module's tabs through `SESSION_CHANNEL` and closes itself, or says why a renewal was refused: `?fel=annan-anvandare`, `?fel=utgangen`); route it at `signedInAgainPath` (default `/inloggad`). |
+| `sessionUser`, `userDisplayName`, `userInitial` | The identity of a status; the name and the initial an account menu shows. |
+
+What the cover promises, proved in a browser (Chromium and Firefox; WebKit with the exception below): while the login has
+ended the page stays mounted with all it holds, hidden and out of reach (`inert`, and out of the accessibility tree),
+under a native modal dialog with an opaque backdrop that nothing but the new login closes (not Escape, not a click beside
+it; opened as a modal again if something closes it); only the page's own user signing in again lifts it (someone else's
+login says so, and whom to sign in as); a screen of 320 x 200 scrolls the dialog as a whole; the focus goes back to where it
+was.
+
+**A native dialog of the page is the module's to close while signed out**: `isOpen={open && !useSignedOut()}`, with its state
+above the dialog, so it is back as it was after the new login. A native dialog escapes an inert ancestor; the opaque
+backdrop hides one that is left open, but in WebKit a dialog left open stays reachable by Tab. Render page dialogs in place,
+inside the children of `RequireSession`: one portalled to `body` is outside the cover and stays in the accessibility tree.
+
+Not in the package: the leave question (a native `AlertDialog` opened after the sign-in dialog stacks above it, so the
+module's own works unchanged), anything about recordings or drafts, a second login mode. The Swedish words are in
+`src/session/messages.ts`; the module's own sentence is `signedOutNote`.
