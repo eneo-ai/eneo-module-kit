@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import re
+import secrets
 import time
 import unittest
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from eneo_module_bff.auth import (
     ModuleUser,
     SESSION_COOKIE,
     STATE_COOKIE,
+    with_query,
 )
 from eneo_module_bff.deps import require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
@@ -309,6 +311,43 @@ class ModuleAuthTests(unittest.TestCase):
                 )
 
                 self.assertEqual(callback.headers["location"], "/flows")
+
+    def test_a_next_above_512_characters_falls_back_to_the_home_path(self) -> None:
+        # 6 000 characters make a state cookie of 8 KB, which browsers drop: the login would fail as invalid_state.
+        for length, lands_on_next in ((512, True), (513, False), (6000, False)):
+            with self.subTest(length=length):
+                # Random, because the signed state is compressed: a repeated character would hide the size.
+                long_next = "/" + secrets.token_urlsafe(length)[: length - 1]
+                login = self.client.get("/api/auth/login", params={"next": long_next})
+                state_cookie = next(h for h in login.headers.get_list("set-cookie") if h.startswith(f"{STATE_COOKIE}="))
+                self.assertLess(len(state_cookie), 4096)
+                state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+
+                callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+                self.assertEqual(callback.headers["location"], long_next if lands_on_next else "/flows")
+
+    def test_the_signal_for_the_page_goes_before_a_fragment(self) -> None:
+        self.assertEqual(with_query("/page", "fel=x"), "/page?fel=x")
+        self.assertEqual(with_query("/page?a=1", "fel=x"), "/page?a=1&fel=x")
+        self.assertEqual(with_query("/page#top", "fel=x"), "/page?fel=x#top")
+        self.assertEqual(with_query("/page?a=1#top", "fel=x"), "/page?a=1&fel=x#top")
+
+    def test_a_renewal_by_another_user_signals_the_page_even_when_next_has_a_fragment(self) -> None:
+        self.sign_in()
+        response = self.client.get("/api/auth/login", params={"renew": "1", "next": "/inloggad#top"})
+        state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+        self.exchange_client.response = FakeResponse(user_id="someone-else")
+        self.exchange_client.validation_response = FakeResponse(user_id="someone-else")
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "other-user", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/inloggad?fel=annan-anvandare#top")
+
+    def test_a_refused_renewal_signals_the_page_even_when_next_has_a_fragment(self) -> None:
+        response = self.client.get("/api/auth/login", params={"renew": "1", "next": "/inloggad#top"})
+
+        self.assertEqual(response.headers["location"], "/inloggad?fel=utgangen#top")
 
     def sign_in(self) -> str:
         state, _ = self.start_login()

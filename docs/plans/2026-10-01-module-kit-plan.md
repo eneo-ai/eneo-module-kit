@@ -266,7 +266,7 @@ class ModuleAuth:
 Changes from the source, and only these:
 - Removed: `AccessCodeSession`, `AccessCodeLoginRequest`, `login_with_access_code`, the `POST /login` route, `_require_auth_mode` and its calls, the `auth_mode` key in `status` and the `session.auth_mode != …` check in `_live_session`.
 - `EneoSsoSession` is renamed `ModuleSession`; `ModuleSession = EneoSsoSession | AccessCodeSession` goes away; `isinstance(session, EneoSsoSession)` branches become unconditional.
-- `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`; `PendingLogin.next` has no default and is always set.
+- `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`, and falls back to it for a `next` above 512 characters (the state cookie carries it, and browsers drop a cookie of 8 KB); `PendingLogin.next` has no default and is always set. `with_query` puts the query before a `#` fragment, so `/page#top` becomes `/page?fel=...#top`, which the page can read.
 - `status` returns `{"authenticated": bool, "user": {...} | None, "session_ends_in": int, "refresh_in": int}` (the last two only when authenticated, `refresh_in` only when a refresh is still possible).
 - The Swedish query values `fel=utgangen` and `fel=annan-anvandare` stay as they are: the UI package reads them.
 

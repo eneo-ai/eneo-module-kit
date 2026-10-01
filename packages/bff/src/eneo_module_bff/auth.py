@@ -8,7 +8,7 @@ import threading
 import time
 from datetime import datetime
 from typing import Annotated, Literal
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import (
@@ -104,12 +104,24 @@ class PendingLogin(BaseModel):
 
 
 def with_query(path: str, query: str) -> str:
-    return f"{path}{'&' if '?' in path else '?'}{query}"
+    """``path`` with ``query`` added, before any fragment so that the page still reads it."""
+    parts = urlsplit(path)
+    return urlunsplit(parts._replace(query=f"{parts.query}&{query}" if parts.query else query))
+
+
+# The state cookie carries ``next``; a long one makes a cookie that browsers drop, and the login fails.
+MAX_NEXT_LENGTH = 512
 
 
 def module_path(value: str | None, home_path: str) -> str:
-    """``value`` when it is a path on the module's own origin, else ``home_path`` (Settings.home_path)."""
-    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+    """``value`` when it is a short path on the module's own origin, else ``home_path`` (Settings.home_path)."""
+    if (
+        value
+        and len(value) <= MAX_NEXT_LENGTH
+        and value.startswith("/")
+        and not value.startswith("//")
+        and "\\" not in value
+    ):
         return value
     return home_path
 
