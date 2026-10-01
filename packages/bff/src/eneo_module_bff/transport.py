@@ -17,8 +17,9 @@ from starlette.types import Receive, Scope, Send
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .limits import allow_upload, declared_length, too_large
-from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_url, uri_too_long
+from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_too_large, upstream_url, uri_too_long
 from .settings import Settings, has_control_character
+from .upstream import SMALL_ANSWER, SMALL_ANSWER_BYTES, STREAMED, UnboundedAnswer
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -113,6 +114,9 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
         )
     except httpx2.InvalidURL:
         raise uri_too_long() from None
+    except UnboundedAnswer:
+        logger.error("Eneo's answer to an upload is past the bound: url=%s", url)
+        return upstream_too_large()
     except httpx2.TimeoutException:
         logger.exception("Upload timed out: url=%s", url)
         return JSONResponse(
@@ -256,9 +260,13 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
                 "content_disposition": "inline",
             },
             headers=upstream_auth_headers(request),
+            extensions=SMALL_ANSWER,
         )
     except httpx2.InvalidURL:
         raise uri_too_long() from None
+    except UnboundedAnswer:
+        logger.error("Signed URL answer is past the bound: path=%s", mint_path)
+        raise _InvalidMintAnswer from None
     except httpx2.RequestError:
         logger.exception("Signed URL request failed: path=%s", mint_path)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
@@ -330,6 +338,19 @@ async def stream_signed(
             slots.release()
 
 
+async def _read_small(upstream: httpx2.Response) -> bytes:
+    """The body of a streamed answer that is an error, closed; empty if it is longer than an error is."""
+    body = bytearray()
+    try:
+        async for chunk in upstream.aiter_raw():
+            body += chunk
+            if len(body) > SMALL_ANSWER_BYTES:
+                return b""
+    finally:
+        await upstream.aclose()
+    return bytes(body)
+
+
 async def _stream_file(
     request: Request,
     slots: asyncio.Semaphore,
@@ -351,7 +372,7 @@ async def _stream_file(
             content={"error": "upstream_invalid", "detail": "Eneo answered with something the module cannot use."},
         )
 
-    upstream_request = http_client.build_request("GET", url, headers=fwd_headers)
+    upstream_request = http_client.build_request("GET", url, headers=fwd_headers, extensions=STREAMED)
     try:
         upstream = await http_client.send(upstream_request, stream=True)
     except httpx2.RequestError:
@@ -371,12 +392,9 @@ async def _stream_file(
     if upstream.status_code >= 400:
         # A rejected token is not worth keeping around; the next request mints anew.
         sessions.forget_signed_url(session_id, mint_path)
-        try:
-            body = await upstream.aread()
-        finally:
-            await upstream.aclose()
+        body = await _read_small(upstream)
         detail: object = unavailable
-        if upstream.headers.get("content-type", "").startswith("application/json"):
+        if body and upstream.headers.get("content-type", "").startswith("application/json"):
             try:
                 detail = httpx2.Response(200, content=body).json()
             except ValueError:

@@ -75,6 +75,18 @@ class SettingsTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, f"{name} must be an integer greater than zero"):
                         load_settings()
 
+    def test_the_response_bound_defaults_to_32_mib_and_is_configurable(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertEqual(load_settings().max_response_bytes, 32 * 1024 * 1024)
+        with patch.dict(os.environ, valid_environment() | {"MAX_RESPONSE_BYTES": "65536"}, clear=True):
+            self.assertEqual(load_settings().max_response_bytes, 65536)
+
+    def test_rejects_an_invalid_response_bound(self) -> None:
+        for raw in ("0", "-5", "big", "1.5", ""):
+            with self.subTest(raw=raw), patch.dict(os.environ, valid_environment() | {"MAX_RESPONSE_BYTES": raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "MAX_RESPONSE_BYTES must be an integer greater than zero"):
+                    load_settings()
+
     def test_home_path_is_where_the_callback_lands_without_a_next(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             self.assertEqual(load_settings().home_path, "/")

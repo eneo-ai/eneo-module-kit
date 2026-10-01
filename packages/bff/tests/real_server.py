@@ -28,7 +28,7 @@ def start(test: unittest.TestCase, code: str) -> tuple[subprocess.Popen, int]:
     port = free_port()
     process = subprocess.Popen([sys.executable, "-c", code.replace("PORT", str(port))], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     test.addCleanup(stop, process)
-    for _ in range(100):
+    for _ in range(300):  # 30 s: a loaded machine takes several seconds to import the app
         try:
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
             connection.request("GET", "/nope")

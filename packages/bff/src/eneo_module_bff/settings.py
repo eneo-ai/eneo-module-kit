@@ -72,6 +72,9 @@ class Settings(BaseModel):
     max_body_bytes: int = 10 * 1024 * 1024
     # The most one upload may declare (forward_upload).
     max_upload_bytes: int = 1024 * 1024 * 1024
+    # The most of an answer from Eneo the module reads (upstream.py), decoded: a larger one is a 502. Not for a file
+    # that streams (stream_signed), and the answers that carry a token or a URL have a bound of their own.
+    max_response_bytes: int = 32 * 1024 * 1024
     # How many files may stream at once (stream_signed). The shared client keeps 100 connections, and a file holds
     # one for as long as it streams: this leaves the rest for the API.
     max_concurrent_streams: int = 64
@@ -280,6 +283,7 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
+        max_response_bytes=_positive_int("MAX_RESPONSE_BYTES", 32 * 1024 * 1024),
         max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
         session_max_age_seconds=session_minutes * 60,
         home_path=home_path,

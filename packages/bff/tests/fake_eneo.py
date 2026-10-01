@@ -82,14 +82,17 @@ def session(user_id: str = "u") -> ModuleSession:
 class Module:
     """A module on the kit whose Eneo is ``eneo``; ``test`` closes what it opens."""
 
-    def __init__(self, test, eneo: FakeEneo, *, routers: tuple[APIRouter, ...] = (), proxy_rules: tuple[ProxyRule, ...] = (), **overrides) -> None:
+    def __init__(
+        self, test, eneo: FakeEneo | None = None, *, transport: httpx2.AsyncBaseTransport | None = None,
+        routers: tuple[APIRouter, ...] = (), proxy_rules: tuple[ProxyRule, ...] = (), **overrides,
+    ) -> None:
         self.test = test
         self.eneo = eneo
         self.settings = Settings(
             eneo_backend_url="http://eneo.test", eneo_public_url="http://eneo.example", module_public_url=ORIGIN,
             module_key="fake", eneo_api_key="service-key", session_secret="x" * 48, cookie_secure=False, **overrides,
         )
-        self.upstream = make_client(transport=httpx2.ASGITransport(app=eneo))
+        self.upstream = make_client(self.settings, transport=transport or httpx2.ASGITransport(app=eneo))
         test.addAsyncCleanup(self.upstream.aclose)
         self.app = create_app(self.settings, routers=routers, proxy_rules=proxy_rules, http_client=self.upstream)
 

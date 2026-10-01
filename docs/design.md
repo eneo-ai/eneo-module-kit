@@ -171,6 +171,13 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
 - The client the kit builds (`upstream.make_client`) keeps no cookies: one client serves every user, so a cookie Eneo
   sets on one user's call would otherwise be sent with the next user's. Every call to Eneo is authorised by its
   headers alone. A module that passes its own `http_client` to `create_app` owns that policy.
+- What Eneo answers is bounded as it arrives, like what the browser sends. The kit's client (`upstream.make_client`) asks
+  for no encoding, refuses an encoded answer (a few KB of gzip decode to gigabytes, and the decoded size is what is
+  held), and stops at `max_response_bytes` (32 MiB; 502 `upstream_too_large`, the answer closed): the proxy and
+  uploads. The answers that carry a token or a URL (ticket exchange, session check, refresh, signed URL) stop at 1 MiB
+  and the body of a failed file answer is read to 1 MiB and dropped past it. Only a file that streams is unbounded. A
+  proxied answer is still held whole until it is sent, so `MAX_RESPONSE_BYTES` times the proxy's concurrency is its
+  memory bound; a module that serves large downloads uses `stream_signed`, not the proxy.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a
