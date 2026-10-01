@@ -237,7 +237,7 @@ Look at: the nesting of providers, top to bottom. The kit's UI package supplies 
 ```mermaid
 flowchart TB
   main["main.tsx: five stylesheets in order, then render"] --> router["BrowserRouter: the module's"]
-  router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, links"]
+  router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, toasts, links"]
   mp --> bp["BrandingProvider: asks /api/branding once"]
   bp --> app["App: the module's routes"]
   app --> rs["RequireSession, from the session client: asks /api/auth/status"]

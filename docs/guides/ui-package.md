@@ -74,7 +74,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 
 | Name | What it is |
 |---|---|
-| `ModuleProviders({ children, linkComponent? })` | The colour mode, Astryx's `<Theme>` with the built Eneo theme, Astryx's own words in Swedish (`sv-SE`), and, with `linkComponent`, Astryx's `LinkProvider`. |
+| `ModuleProviders({ children, linkComponent? })` | The colour mode, Astryx's `<Theme>` with the built Eneo theme, Astryx's own words in Swedish (`sv-SE`), the place Astryx's toasts (`useToast`) appear (a `LayerProvider` inside the theme: without it `useToast` mounts a root of its own that speaks English), and, with `linkComponent`, Astryx's `LinkProvider`. |
 | `ColorModeProvider` | The colour mode alone. `ModuleProviders` has one; use it directly only outside `ModuleProviders`. |
 | `useColorMode()` | `{ mode, resolved, setMode }`. `mode` is the choice (`light`, `dark`, `system`), `resolved` is what is shown (the operating system's for `system`), `setMode(next)` applies and stores it. Throws outside a `ColorModeProvider`. |
 | `readStoredColorMode(storage?)` | The stored choice, or `system` when there is none, it is not one of the three, or storage throws. |
