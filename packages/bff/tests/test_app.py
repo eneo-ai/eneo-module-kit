@@ -97,6 +97,7 @@ class AppFactoryTests(unittest.TestCase):
 
         self.assertIsNot(first.state.module_auth, second.state.module_auth)
         self.assertIsNot(first.state.module_auth.sessions, second.state.module_auth.sessions)
+        self.assertIsNot(first.state.signed_urls, second.state.signed_urls)
 
 
 if __name__ == "__main__":

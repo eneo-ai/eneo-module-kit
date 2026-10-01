@@ -46,6 +46,8 @@ def create_app(
     app = FastAPI(title=title, lifespan=lifespan)
     app.state.settings = settings
     app.state.http = http_client
+    # Signed file URLs by session and mint path (transport.stream_signed); process-local, like the sessions.
+    app.state.signed_urls = {}
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
     app.include_router(branding.router)
