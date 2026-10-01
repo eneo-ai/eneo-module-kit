@@ -25,3 +25,80 @@ jobs:
       - run: uv pip install --python bff-venv/bin/python --resolution ${{ matrix.resolution }} -e "packages/bff[test]"
       - run: bff-venv/bin/python -m unittest discover -s packages/bff/tests -t packages/bff
       - run: pip-audit --path bff-venv/lib/python3.12/site-packages
+
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run -w packages/ui lint
+      - run: npm test -w packages/ui
+      - run: npm run -w packages/ui build
+      # The built theme is generated and committed, in its own folder: a change to the theme source without a rebuild
+      # shows up as a diff here and fails.
+      - run: npm run -w packages/ui theme:build
+      - run: git diff --exit-code -- packages/ui/src/theme/built
+
+  # K1: the template is built against the packages of this commit, not published ones, so it always proves that the
+  # two packages work together.
+  template-backend:
+    name: template backend (this commit's BFF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The template pins the BFF to a commit until its first release; here the workspace copy stands in for it.
+      - run: pip install -e packages/bff
+      - run: python -m unittest discover -s template/backend/tests -t template/backend
+      - run: python -m unittest discover -s template/stub-eneo
+
+  template-web:
+    name: template web (this commit's UI and BFF, three browsers, the accessibility gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: pip install -e packages/bff
+      - run: npm ci
+      - run: npm run -w packages/ui build
+      - run: npx playwright install --with-deps chromium webkit firefox
+      # Builds the template's app against the workspace UI package, serves it with the workspace BFF over the stub
+      # Eneo, and runs the browser tests and the gate.
+      - run: npm run -w template/web test:e2e
+
+  template-image:
+    name: template image (this commit's UI and BFF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run -w packages/ui build
+      # The `kit` build context: the packed UI package and a copy of the BFF, which the Dockerfile uses in place of the
+      # published ones.
+      - run: |
+          mkdir kit-context
+          npm pack -w packages/ui --pack-destination kit-context
+          cp -R packages/bff kit-context/bff
+      - run: docker build --build-context kit=kit-context -t template template
+      - run: |
+          docker run -d --name template -p 3001:3001 --env-file template/.env.example template
+          for i in $(seq 1 20); do curl -fsS http://localhost:3001/health && exit 0; sleep 1; done
+          docker logs template
+          exit 1
