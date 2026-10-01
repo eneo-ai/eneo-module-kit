@@ -3,7 +3,7 @@
  * get there, against the stub Eneo. A new page of the module adds its states here.
  */
 import { expect, type Page } from "@playwright/test";
-import { signIn, stubFlows } from "./fixtures";
+import { signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
 
 export interface State {
   name: string;
@@ -50,6 +50,38 @@ export const STATES: State[] = [
       await stubFlows(page, "error");
       await signIn(page);
       await expect(page.getByText("Flödena kunde inte visas.")).toBeVisible();
+    },
+  },
+  {
+    // Five minutes before the login ends: the warning is open over the page.
+    name: "session-warning",
+    go: async (page) => {
+      await stubFlows(page, "normal");
+      await stubControl(page, "session?ends_in=200");
+      await signIn(page);
+      await stubDefaults(page);
+      await expect(page.getByRole("alertdialog", { name: "Du loggas snart ut" })).toBeVisible();
+    },
+  },
+  {
+    // The login has ended while the page was open: the page is covered by the sign-in dialog.
+    name: "signed-out",
+    go: async (page) => {
+      await stubFlows(page, "normal");
+      await stubControl(page, "session?token_seconds=4");
+      await signIn(page);
+      await stubDefaults(page);
+      await stubControl(page, "end-session");
+      const dialog = page.getByRole("alertdialog", { name: "Du behöver logga in igen" });
+      await expect
+        .poll(
+          async () => {
+            await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+            return dialog.isVisible();
+          },
+          { timeout: 20_000, intervals: [500] },
+        )
+        .toBe(true);
     },
   },
 ];

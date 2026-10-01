@@ -46,3 +46,15 @@ export async function signIn(page: Page) {
   await page.getByRole("link", { name: "Logga in med Eneo" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Välj ett flöde" })).toBeVisible();
 }
+
+/** A control route of the stub Eneo (template/stub-eneo/server.py). */
+export async function stubControl(page: Page, route: string) {
+  const response = await page.request.post(`http://127.0.0.1:${STUB}/__stub/${route}`);
+  expect(response.ok(), `stub ${route}`).toBe(true);
+}
+
+/** The logins made from now on are the stub's defaults again: a long session, Erik Lund. */
+export async function stubDefaults(page: Page) {
+  await stubControl(page, "session?ends_in=reset&token_seconds=reset");
+  await stubControl(page, "login-as?user=erik");
+}

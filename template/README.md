@@ -23,3 +23,14 @@ and `@eneo-ai/module-kit` gives the theme, colour mode, shell and brand. One pro
 - **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
   release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
 - **Rules for people and agents:** `AGENTS.md`.
+- **The stub Eneo** (`stub-eneo/server.py`, development and tests only) signs everyone in as Erik Lund and answers what the backend
+  asks of Eneo. Control routes, all `POST`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses every token
+  from now on: the module's session ends at its next token refresh); `/__stub/session?ends_in=S&token_seconds=T` (the logins made
+  after it end S seconds after the login, with tokens of T seconds the backend refreshes at half: `token_seconds=4` makes
+  `end-session` take seconds, `ends_in=200` opens the five-minute warning at once; `reset` restores 28800 and 900);
+  `/__stub/login-as?user=erik|sara` (who the next logins are, to see a renewal that signs in someone else);
+  `/__stub/flows?mode=normal|empty|error`. `web/tests/e2e/session-cover.spec.ts` uses them.
+- **Sessions:** `RequireSession` (from `@eneo-ai/module-kit/session`) shows the sign-in screen, keeps the login, warns five
+  minutes before its end and, when it has ended, covers the page with a dialog that asks for a new login in a window of its
+  own (`/inloggad`, route in `App.tsx`). Call the backend with `fetchWithSession`; close a dialog of the page while
+  `useSignedOut()` is true (`web/src/pages/Flows.tsx` shows both).

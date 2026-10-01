@@ -35,7 +35,7 @@ test("every file the package exports is one the build writes", () => {
   for (const [name, target] of Object.entries<string | { default: string }>(manifest.exports)) {
     const file = (typeof target === "string" ? target : target.default).replace("./dist/", "");
     if (file.endsWith(".css")) assert.ok(built.includes(`"dist/${file}"`), `${name}: ${file} is copied by the build`);
-    else assert.equal(file, "index.js", `${name}: the code is tsc's`);
+    else assert.match(file, /^(?:session\/)?index\.js$/, `${name}: the code is tsc's`);
   }
 });
 

@@ -20,3 +20,10 @@ if (missing.length > 0) {
   console.error(`dist/index.js does not export ${missing.join(", ")}`);
   process.exit(1);
 }
+const session = await import(new URL("../dist/session/index.js", import.meta.url).href);
+const expectedSession = ["RequireSession", "SESSION_CHANNEL", "SessionExpiredError", "SignInScreen", "SignedInAgain", "createFetchWithSession", "createSessionState", "fetchWithSession", "isSessionEndedAnswer", "refusalOf", "sessionState", "sessionUser", "useSessionUser", "useSignedOut", "useSignedOutSlot", "userDisplayName", "userInitial"];
+const missingSession = expectedSession.filter((name) => !(name in session));
+if (missingSession.length > 0) {
+  console.error(`dist/session/index.js does not export ${missingSession.join(", ")}`);
+  process.exit(1);
+}

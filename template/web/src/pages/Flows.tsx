@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading, Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { HStack } from "@astryxdesign/core/HStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useSessionUser, useSignedOut } from "@eneo-ai/module-kit/session";
 import { Frame } from "../Frame";
 import { AccountMenu } from "../AccountMenu";
-import { ApiError, getJson, type User } from "../session";
+import { getJson } from "../session";
 
 interface Flow {
   id: string;
@@ -17,13 +21,19 @@ interface Flow {
   description: string | null;
 }
 
-type Load = { state: "loading" } | { state: "failed" } | { state: "ended" } | { state: "done"; flows: Flow[] };
+type Load = { state: "loading" } | { state: "failed" } | { state: "done"; flows: Flow[] };
 
 /**
  * The module's one page: the flows the user can run in Eneo, through the backend's proxy (/api/eneo/flows/, the one
  * route its allowlist names), and a greeting from the module's own route (/api/example).
  */
-export function Flows({ user }: { user: User }) {
+export function Flows() {
+  const user = useSessionUser();
+  // A dialog of the page is native, so it must be closed while the login has ended (the cover cannot reach it); what is
+  // typed in it lives here, above the dialog, so it is back as it was after the new login.
+  const signedOut = useSignedOut();
+  const [noting, setNoting] = useState(false);
+  const [note, setNote] = useState("");
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [greeting, setGreeting] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -36,7 +46,7 @@ export function Flows({ user }: { user: User }) {
     let current = true;
     getJson<{ items: Flow[] }>("/api/eneo/flows/")
       .then((body) => current && setLoad({ state: "done", flows: body.items }))
-      .catch((error) => current && setLoad(error instanceof ApiError && error.status === 401 ? { state: "ended" } : { state: "failed" }));
+      .catch(() => current && setLoad({ state: "failed" }));
     return () => {
       current = false;
     };
@@ -52,11 +62,6 @@ export function Flows({ user }: { user: User }) {
     };
   }, []);
 
-  // The login ended while the page was open: back to the sign-in page, which returns here afterwards.
-  useEffect(() => {
-    if (load.state === "ended") window.location.assign("/api/auth/login?next=%2Fflows");
-  }, [load.state]);
-
   return (
     <Frame brandHref="/flows" end={<AccountMenu user={user} />}>
       <VStack gap={6} paddingBlockStart={4}>
@@ -65,6 +70,9 @@ export function Flows({ user }: { user: User }) {
           <Text as="p" color="secondary">
             {greeting ?? `Inloggad som ${user.username ?? user.email}.`}
           </Text>
+          <HStack>
+            <Button label="Anteckning" onClick={() => setNoting(true)} />
+          </HStack>
         </VStack>
         {load.state === "failed" ? (
           <Banner
@@ -100,6 +108,15 @@ export function Flows({ user }: { user: User }) {
           </>
         )}
       </VStack>
+      <Dialog isOpen={noting && !signedOut} onOpenChange={setNoting} purpose="form" aria-label="Anteckning">
+        <DialogHeader title="Anteckning" onOpenChange={setNoting} />
+        <VStack gap={3} padding={4}>
+          <TextInput label="Anteckning" value={note} onChange={setNote} />
+          <HStack hAlign="end">
+            <Button label="Klar" variant="primary" onClick={() => setNoting(false)} />
+          </HStack>
+        </VStack>
+      </Dialog>
     </Frame>
   );
 }

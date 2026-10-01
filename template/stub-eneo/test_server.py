@@ -85,6 +85,42 @@ class StubEneoTests(unittest.TestCase):
         self.call("POST", "/__stub/end-session")
         self.assertEqual(self.call("GET", "/api/v1/flows/", both)[0].status, 401, "Eneo has ended the login")
 
+    def test_the_session_control_sets_how_long_the_next_logins_last_and_a_refresh_keeps_the_end(self) -> None:
+        response, body = self.call("POST", "/__stub/session?ends_in=200&token_seconds=4")
+        self.assertEqual((response.status, body["ends_in"], body["token_seconds"]), (200, 200, 4))
+        login, first = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
+        self.assertEqual(first["expires_in"], 4)
+        both = {**self.KEY, "Authorization": f"Bearer {first['access_token']}"}
+        _, refreshed = self.call("POST", f"/api/v1/module-auth/{server.MODULE_KEY}/token/refresh/", both)
+        self.assertEqual(refreshed["session_expires_at"], first["session_expires_at"], "a refresh does not move the session's end")
+        self.assertEqual(refreshed["expires_in"], 4)
+        # The end is about 200 seconds ahead of a login made now.
+        from datetime import datetime, timezone
+
+        ahead = (datetime.fromisoformat(first["session_expires_at"]) - datetime.now(timezone.utc)).total_seconds()
+        self.assertTrue(190 < ahead <= 200, ahead)
+        self.call("POST", "/__stub/session?ends_in=reset&token_seconds=reset")
+        _, later = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
+        self.assertEqual(later["expires_in"], server.TOKEN_SECONDS)
+        bad, _ = self.call("POST", "/__stub/session?ends_in=0")
+        self.assertEqual(bad.status, 400)
+        bad, _ = self.call("POST", "/__stub/session?token_seconds=soon")
+        self.assertEqual(bad.status, 400)
+
+    def test_the_login_control_chooses_who_the_next_logins_are_and_a_refresh_keeps_the_user(self) -> None:
+        self.call("POST", "/__stub/login-as?user=sara")
+        _, first = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
+        self.assertEqual(first["user"]["username"], "Sara Holm")
+        both = {**self.KEY, "Authorization": f"Bearer {first['access_token']}"}
+        self.call("POST", "/__stub/login-as?user=erik")
+        _, refreshed = self.call("POST", f"/api/v1/module-auth/{server.MODULE_KEY}/token/refresh/", both)
+        self.assertEqual(refreshed["user"]["username"], "Sara Holm", "a refresh is the same login")
+        _, who = self.call("GET", f"/api/v1/module-auth/{server.MODULE_KEY}/session/", {**self.KEY, "Authorization": f"Bearer {refreshed['access_token']}"})
+        self.assertEqual(who["user"]["username"], "Sara Holm")
+        _, next_login = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
+        self.assertEqual(next_login["user"]["username"], "Erik Lund")
+        self.assertEqual(self.call("POST", "/__stub/login-as?user=nobody")[0].status, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,13 +4,14 @@ import { DropdownMenu, DropdownMenuDivider, DropdownMenuItem, DropdownMenuRadioG
 import { Item } from "@astryxdesign/core/Item";
 import { Text } from "@astryxdesign/core/Text";
 import { useColorMode, type ColorMode } from "@eneo-ai/module-kit";
-import { signOut, type User } from "./session";
+import type { SessionUser } from "@eneo-ai/module-kit/session";
+import { signOut } from "./session";
 
 /**
  * Who is signed in, the colour mode, and signing out: one icon-only button in the top bar, which keeps the bar short
  * enough for a 320 px screen (the design system's bar never shrinks the brand beside it).
  */
-export function AccountMenu({ user }: { user: User }) {
+export function AccountMenu({ user }: { user: SessionUser }) {
   const { mode, setMode } = useColorMode();
   const [leaving, setLeaving] = useState(false);
   const name = user.username?.trim() || user.email;
