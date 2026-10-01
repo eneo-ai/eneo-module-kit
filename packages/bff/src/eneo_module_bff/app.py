@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from . import branding
 from .auth import ModuleAuth
 from .proxy import ProxyRule, proxy_router
 from .settings import Settings, load_settings
+from .web import add_security_headers, serve_web
 
 
 def create_app(
@@ -17,6 +19,8 @@ def create_app(
     *,
     title: str = "Eneo module",
     proxy_rules: Sequence[ProxyRule] = (),  # the routes under /api/eneo; none by default
+    static_dir: Path | None = None,  # the built UI, served last
+    security_headers: dict[str, str] | None = None,  # replaces defaults, e.g. Permissions-Policy microphone=(self)
     http_client: httpx.AsyncClient | None = None,  # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI:
     """The module's app: auth under /api/auth, health, branding. Everything hangs off ``app.state``.
@@ -51,6 +55,7 @@ def create_app(
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
     app.include_router(branding.router)
+    add_security_headers(app, security_headers)
     app.include_router(proxy_router(proxy_rules))
 
     @app.get("/api/healthz")
@@ -58,4 +63,6 @@ def create_app(
     async def health() -> dict[str, bool]:
         return {"ok": True}
 
+    if static_dir is not None:
+        serve_web(app, static_dir)
     return app
