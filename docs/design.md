@@ -79,12 +79,14 @@ No content type is exempt: FastAPI reads a body whatever the content type says, 
 would otherwise buy an unbounded read. Only `forward_upload` lifts the limit, to `max_upload_bytes`, for its own
 request, after the route's dependencies and its own checks; the bytes that arrive are counted, so a Content-Length
 that lies, or a chunked body, gets no further. What this does not do: an unauthenticated request can still make the
-BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run. Measured, a body of
-that size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight, so a
-module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default.
+BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run. What that costs in memory is in section 6, so a module that is public to the
+internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default.
+A Content-Length that is not a length (not ASCII digits, longer than 19 characters, or 2**63 or more) is a 400
+`Invalid Content-Length`, whatever the route: uvicorn's httptools parser lets a zero-padded one of any length through,
+and `int()` refuses more than 4300 digits, so it would otherwise be a 500.
 A body that passes the limit while a response is already streaming ends the response, as if the client had gone.
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
-http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
+http(s) or that the client refuses (a NUL, over 65,536 characters), an `expires_at` that is not a finite number or is too big for one) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
 At most `max_concurrent_streams` (64) files stream at once: a stream holds one of the shared client's 100
 connections for as long as it runs, so the next one is a 503 with `Retry-After` at once, and the API keeps its
@@ -154,9 +156,21 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   an upload's own budget): there is no total deadline per request. One is added when a module needs it.
 - `serve()` stops within 8 s of SIGTERM, with files still streaming (`timeout_graceful_shutdown`), because Docker
   kills the container after 10 s.
-- At the Starlette floor (1.3.1) the temporary file of an upload that is cut off is closed when garbage is collected,
-  not at once (13 open files at rest, 27 after 175 cut-off uploads in a test, then steady); from 1.7 it is closed
-  at once. Raising the floor to 1.7 removes the delay.
+- The Starlette floor is 1.7.0 (FastAPI's own floor stays 0.142.2: every FastAPI release from 0.138 to 0.142.2 declares
+  only `starlette>=0.46.0`, and the suite passes on 1.7.0). The first release with no known advisory (1.3.1) was not enough. From 1.3.1 to 1.6 a
+  multipart body the parser cannot read (a bare CR in a file name, a part header of 20 KB, garbage before the first
+  boundary, no boundary at all) is a 500, because the parser's own error is not turned into a response, and the
+  temporary file of an upload that is cut off is closed when garbage is collected, not at once (13 open files at rest,
+  27 after 175 cut-off uploads, then steady). From 1.7.0 those are a 400 and the file is closed at once.
+  The "a malformed body is a 400, never a 500" claim therefore holds at the floor, and a library that is used with
+  the newest stack gains nothing from a lower one.
+- The memory bound is per request, not total. Measured on a 10 MiB body: one request raises the process's peak by
+  about 21 MiB (`request.body()`) or 42 MiB (a JSON model), and 50 at once raise it by 13 to 16 MiB or 17 to 26 MiB
+  each. A module multiplies that by the requests it expects in flight; the cap bounds a request, not their sum, and
+  no global byte budget is built.
+- The client the kit builds (`upstream.make_client`) keeps no cookies: one client serves every user, so a cookie Eneo
+  sets on one user's call would otherwise be sent with the next user's. Every call to Eneo is authorised by its
+  headers alone. A module that passes its own `http_client` to `create_app` owns that policy.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

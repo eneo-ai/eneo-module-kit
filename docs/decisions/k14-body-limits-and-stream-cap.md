@@ -13,6 +13,7 @@ FastAPI reads a body before it runs a route's dependencies and whatever the cont
 ## Decision
 
 - A pure-ASGI middleware caps every request body of every route at `MAX_BODY_BYTES` (default 10 MiB): 413 at once when the declared length is above it, otherwise as soon as the stream passes it. It looks at no session, so it holds for a module's deliberately public routes too. No content type is exempt.
+- A `Content-Length` that is not a length (not ASCII digits, longer than 19 characters, or 2**63 or more) is a 400 `Invalid Content-Length` on every route, before anything is read.
 - Only `forward_upload` lifts the limit, to `MAX_UPLOAD_BYTES` (default 1 GiB), for its own request, after the route's dependencies and its own checks. The bytes that arrive are counted, so a `Content-Length` that lies, or a chunked body, gets no further.
 - At most `MAX_CONCURRENT_STREAMS` (default 64) files stream at once; the next is a 503 with `Retry-After` at once, so the API keeps its connections.
 - The shared client waits at most 5 s for a free connection (`pool=5`), so a busy pool is a quick 502.
@@ -23,5 +24,5 @@ FastAPI reads a body before it runs a route's dependencies and whatever the cont
 - An unauthenticated request can still make the BFF buffer up to `MAX_BODY_BYTES` of a body, once per request, before a route's dependencies run (on a route that declares a body parameter).
 - A module may not read a body past the cap except through `forward_upload`.
 - A body that passes the limit while a response is already streaming ends the response, as if the client had gone: a 413 can no longer be sent.
-- Measured, a body of the cap's size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight. A module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body.
+- Measured on a 10 MiB body: one request raises the process's peak by about 21 MiB (`request.body()`) or 42 MiB (a JSON model), and 50 at once raise it by 13 to 16 MiB or 17 to 26 MiB each. A module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body.
 - `serve()` stops within 8 s of SIGTERM with files still streaming, because Docker kills the container after 10 s.

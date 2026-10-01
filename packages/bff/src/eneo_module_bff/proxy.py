@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import NamedTuple
+from urllib.parse import quote
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 
 from .deps import require_same_origin, require_session, upstream_auth_headers
+from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -20,27 +23,6 @@ logger = logging.getLogger("eneo_proxy")
 # ``create_app(forward_request_headers=...)``.
 FORWARDED_REQUEST_HEADERS = frozenset(
     {"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"}
-)
-
-# Not even a module may add these: the credentials (the module checks the browser's origin itself, and Eneo
-# refuses any origin it does not list) and the headers that frame the request.
-_NEVER_FORWARDED_REQUEST_HEADERS = frozenset(
-    {
-        "authorization",
-        "cookie",
-        "origin",
-        "referer",
-        "x-api-key",
-        "proxy-authorization",
-        "host",
-        "content-length",
-        "transfer-encoding",
-        "connection",
-        "keep-alive",
-        "te",
-        "trailer",
-        "upgrade",
-    }
 )
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
@@ -70,7 +52,6 @@ def upstream_redirect() -> JSONResponse:
         },
     )
 
-FORWARDED_REQUEST_HEADERS = frozenset({"accept", "accept-language", "content-type", "idempotency-key", "if-match", "if-none-match"})
 RESOURCE_ID = r"[^/]+"
 
 
@@ -130,6 +111,34 @@ def leaves_route(path: str) -> bool:
     )
 
 
+def upstream_url(base_url: str, path: str) -> str:
+    """``{base_url}/api/v1/{path}``, with ``path`` encoded as the logical path it is.
+
+    ``path`` is the path as the module authorised it, already decoded once: a ``%2F`` in it is the three characters
+    of an id, not a separator. httpx2 sends an escape it finds as it is, and Eneo decodes it once more, so
+    ``things/a%2Fexport/`` would arrive as ``things/a/export/``, a route the allowlist never saw. Every character
+    that is not a letter, a digit, ``_.-~`` or the ``/`` between segments is encoded here, ``%`` included.
+    """
+    return f"{base_url}/api/v1/{quote(path, safe='/')}"
+
+
+def uri_too_long() -> HTTPException:
+    """What an ``httpx2.InvalidURL`` from a path or query the client will not write is answered with."""
+    return HTTPException(status_code=414, detail="Request URI too long")
+
+
+def forwarded_headers(headers: Headers, allowed: Collection[str], *, skip: str = "") -> dict[str, str]:
+    """The request ``headers`` whose lower-case name is in ``allowed`` (but not ``skip``).
+
+    A value that is not ASCII is a 400: httpx2 writes a str value as ASCII and raises UnicodeEncodeError for any
+    other, which would be a 500 for something a client sent.
+    """
+    forwarded = {name: value for name, value in headers.items() if name.lower() in allowed and name.lower() != skip}
+    if not all(value.isascii() for value in forwarded.values()):
+        raise HTTPException(status_code=400, detail="A request header holds characters that cannot be forwarded")
+    return forwarded
+
+
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
@@ -137,9 +146,9 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
     """
     rules = tuple(rules)
     added = {name.lower() for name in forward_request_headers}
-    if refused := sorted(added & _NEVER_FORWARDED_REQUEST_HEADERS):
+    if refused := sorted(added & CREDENTIAL_AND_FRAMING_HEADERS):
         raise ValueError(f"forward_request_headers cannot include credential or framing headers: {', '.join(refused)}")
-    forwarded_headers = FORWARDED_REQUEST_HEADERS | added
+    allowed_headers = FORWARDED_REQUEST_HEADERS | added
     router = APIRouter()
 
     @router.api_route(
@@ -155,15 +164,10 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         http_client = request.app.state.http
         if leaves_route(path) or not _proxy_route_is_allowed(rules, request.method, path):
             raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
-        upstream_url = f"{settings.eneo_backend_url}/api/v1/{path}"
+        url = upstream_url(settings.eneo_backend_url, path)
         # Forward the allowlisted request headers, and set the credentials from the module-auth session. The
         # header that carries the service key is configured, so it is excluded here, not by name above.
-        key_header = settings.eneo_api_key_header_name.lower()
-        fwd_headers = {
-            name: value
-            for name, value in request.headers.items()
-            if name.lower() in forwarded_headers and name.lower() != key_header
-        }
+        fwd_headers = forwarded_headers(request.headers, allowed_headers, skip=settings.eneo_api_key_header_name.lower())
         fwd_headers.update(upstream_auth_headers(request))
 
         body = await request.body()  # at most Settings.max_body_bytes: the body limit counts it as it arrives
@@ -171,16 +175,18 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         try:
             upstream = await http_client.request(
                 method=request.method,
-                url=upstream_url,
+                url=url,
                 params=request.query_params,
                 content=body if body else None,
                 headers=fwd_headers,
             )
+        except httpx2.InvalidURL:
+            raise uri_too_long() from None
         except httpx2.RequestError:
             logger.exception(
                 "Upstream request failed: method=%s url=%s",
                 request.method,
-                upstream_url,
+                url,
             )
             return JSONResponse(
                 status_code=502,
@@ -194,7 +200,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             logger.error(
                 "Eneo answered with a redirect: method=%s url=%s status=%s",
                 request.method,
-                upstream_url,
+                url,
                 upstream.status_code,
             )
             return upstream_redirect()

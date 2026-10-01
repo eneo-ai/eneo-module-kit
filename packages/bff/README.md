@@ -71,7 +71,7 @@ async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
 
-The request must declare its `Content-Length` (else 411), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (else 400). The name is forwarded as it came, a path included: Eneo owns where a file lands. Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
+The request must declare its `Content-Length` (else 411; one that is not a length is a 400), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (else 400). The name is forwarded as it came, a path included: Eneo owns where a file lands. Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
 
 ## A module's own routes
 
@@ -88,7 +88,7 @@ Stable for the UI package and for any other frontend.
 | `GET /api/auth/callback?ticket=&state=` | Finishes it: 303 to `next` with the session cookie set, or to `/?auth_error=<code>` |
 | `POST /api/auth/logout` | Ends the session (same origin required) |
 | `GET /api/auth/status` | `{"authenticated": false, "user": null}`, or `{authenticated, user, session_ends_in, refresh_in}` (`refresh_in` only while a refresh is still possible) |
-| `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. |
+| `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. `logo` is `"custom"` (served here), `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it) or null (the name as text). |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
@@ -98,10 +98,13 @@ Stable for the UI package and for any other frontend.
 | Status | When | Body |
 |---|---|---|
 | 400 | An upload is not exactly one file named `upload_file`, or has a control character or line separator in its file name or content type | `{"detail": ...}` |
+| 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |
+| 400 | A forwarded request header (the proxy's, or `Range`, `If-Range`, `Accept` of a file stream) whose value is not ASCII | `{"detail": ...}` |
 | 411 | An upload without `Content-Length` | `{"detail": ...}` |
+| 414 | A path and query that, as sent to Eneo, are longer than the HTTP client writes (65,536 characters) | `{"detail": "Request URI too long"}` |
 | 413 | A body over its limit. Header `Connection: close` | `{"detail": "Request body too large"}`, or `"Upload too large"` |
 | 502 | Eneo cannot be reached | `{"error": "upstream_unreachable", ...}` |
 | 502 | Eneo answered with 301, 302, 303, 307 or 308 | `{"error": "upstream_redirect", ...}` |

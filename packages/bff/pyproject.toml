@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 # Ranges with security floors, not exact pins: this is a library. A module's own requirements pin and lock them.
 dependencies = [
   "fastapi>=0.142.2,<1",
-  "starlette>=1.3.1,<2",
+  "starlette>=1.7.0,<2",
   "uvicorn[standard]>=0.54,<1",
   "httpx2>=2.12.0,<3",
   "itsdangerous>=2.2,<3",

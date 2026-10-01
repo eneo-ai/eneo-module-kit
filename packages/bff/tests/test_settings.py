@@ -104,6 +104,31 @@ class SettingsTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "SESSION_MAX_AGE_MINUTES"):
                         load_settings()
 
+    def test_the_upload_timeout_defaults_to_30_minutes_and_is_configurable(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertEqual(load_settings().upload_proxy_timeout_seconds, 1800.0)
+        with patch.dict(os.environ, valid_environment() | {"UPLOAD_PROXY_TIMEOUT_SECONDS": "90.5"}, clear=True):
+            self.assertEqual(load_settings().upload_proxy_timeout_seconds, 90.5)
+
+    def test_rejects_an_upload_timeout_that_is_not_a_number_above_zero(self) -> None:
+        # Not a ValueError from float(): like every other setting, a RuntimeError that names the variable.
+        for raw in ("abc", "", "1m", "0", "-5", "nan", "inf", "-inf"):
+            with self.subTest(raw=raw), patch.dict(os.environ, valid_environment() | {"UPLOAD_PROXY_TIMEOUT_SECONDS": raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "UPLOAD_PROXY_TIMEOUT_SECONDS must be a number greater than zero"):
+                    load_settings()
+
+    def test_rejects_a_service_key_header_the_module_would_overwrite_or_that_frames_the_request(self) -> None:
+        # The bearer token is set as Authorization after the key, so a key sent under that name would never arrive.
+        for name in ("Authorization", "authorization", "Proxy-Authorization", "Cookie", "Host", "Content-Length", "Transfer-Encoding", "Connection", "TE"):
+            with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {"ENEO_API_KEY_HEADER_NAME": name}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "ENEO_API_KEY_HEADER_NAME .*credential or framing"):
+                    load_settings()
+
+    def test_the_default_and_a_custom_service_key_header_are_accepted(self) -> None:
+        for name in ("X-API-Key", "x-api-key", "X-Eneo-Module-Key"):
+            with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {"ENEO_API_KEY_HEADER_NAME": name}, clear=True):
+                self.assertEqual(load_settings().eneo_api_key_header_name, name)
+
     def test_loads_custom_api_key_header_name(self) -> None:
         environment = valid_environment()
         environment["ENEO_API_KEY_HEADER_NAME"] = "X-Eneo-Module-Key"

@@ -11,7 +11,7 @@ import time
 import unittest
 
 import httpx2
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.datastructures import Headers
@@ -253,29 +253,39 @@ class DeclaredLengthTests(unittest.TestCase):
 
     def test_a_plain_length_is_read(self) -> None:
         self.assertEqual((self.length("0"), self.length("5"), self.length("0005"), self.length("10485761")), (0, 5, 5, 10485761))
+        self.assertEqual(self.length("9223372036854775807"), 2**63 - 1)
 
-    def test_no_length_or_a_length_that_is_not_a_number_is_none(self) -> None:
-        for value in (None, "", "abc", "-1", "+5", "5.0", "0x10", "5, 5", "\u00b2"):
-            with self.subTest(value=value):
-                self.assertIsNone(self.length(value))
+    def test_no_length_is_none(self) -> None:
+        self.assertIsNone(self.length(None))
 
-    def test_a_very_long_length_is_neither_an_error_nor_a_small_number(self) -> None:
-        # int() refuses a string of more than 4300 digits, and the server's own parser lets zero-padded ones through.
-        self.assertEqual(self.length("0" * 5000 + "5"), 5)
-        self.assertEqual(self.length("0" * 5000), 0)
-        for digits in (19, 21, 300, 5000):
-            with self.subTest(digits=digits):
-                self.assertGreater(self.length("9" * digits), 1 << 62)
+    def test_a_length_that_is_not_a_plain_number_that_fits_is_a_400_never_an_error(self) -> None:
+        # int() refuses a string of more than 4300 digits (uvicorn's httptools parser lets zero-padded ones through),
+        # and a length of 2**63 or more is not one a request can have.
+        for value in ("", "abc", "-1", "+5", "5.0", "0x10", "5, 5", "\u00b2", "9223372036854775808", "9" * 20, "0" * 21 + "5", "0" * 5000 + "5", "9" * 5001):
+            with self.subTest(value=value[:30] + ("..." if len(value) > 30 else "")):
+                with self.assertRaises(HTTPException) as caught:
+                    self.length(value)
+                self.assertEqual((caught.exception.status_code, caught.exception.detail), (400, "Invalid Content-Length"))
 
 
-class LongLengthTests(Case):
-    async def test_a_zero_padded_length_of_5000_digits_is_read_not_a_500(self) -> None:
-        small = await self.post("/api/public", Lazy(0, head=b'{"text": "hi"}'), authenticated=False, declare_length=False,
-                                headers={"Content-Length": "0" * 5000 + "14"})
-        huge = await self.post("/api/public", Lazy(1), authenticated=False, declare_length=False, headers={"Content-Length": "9" * 5000})
+class InvalidLengthTests(Case):
+    async def test_a_length_that_is_not_valid_is_a_400_on_every_route_and_the_body_is_not_read(self) -> None:
+        for value in ("0" * 5000 + "14", "9" * 5000, "abc", "9223372036854775808"):
+            for path in ("/api/public", "/api/things", "/api/nonexistent"):
+                with self.subTest(value=value[:12], path=path):
+                    body = Lazy(1)
 
-        self.assertEqual(small.status_code, 200)
-        self.assertEqual(huge.status_code, 413)
+                    response = await self.post(path, body, authenticated=False, declare_length=False, headers={"Content-Length": value})
+
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.json(), {"detail": "Invalid Content-Length"})
+                    self.assertEqual(response.headers["connection"], "close")
+                    self.assertEqual(body.taken, 0)
+
+    async def test_a_valid_length_still_works(self) -> None:
+        response = await self.post("/api/public", Lazy(0, head=b'{"text": "hi"}'), authenticated=False, declare_length=False, headers={"Content-Length": "14"})
+
+        self.assertEqual(response.status_code, 200)
 
 
 class StreamingResponseTests(Case):
@@ -430,6 +440,22 @@ class UploadTests(Case):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.eneo.calls, [])
+
+    async def test_a_multipart_body_the_parser_cannot_read_is_a_400_never_a_500(self) -> None:
+        # Below Starlette 1.7 these three were a 500: the parser's own error was not turned into a response.
+        cases = {
+            "a bare CR in the file name": Lazy(1, multipart_head(filename="a\rb.webm"), MULTIPART_TAIL),
+            "a part header of 20 KB": Lazy(1, multipart_head(content_type="x/" + "a" * 20_000), MULTIPART_TAIL),
+            "garbage before the first boundary": Lazy(1, b"garbage\r\n" + multipart_head(), MULTIPART_TAIL),
+            "no boundary at all": Lazy(1, b"not multipart at all"),
+        }
+        for label, body in cases.items():
+            with self.subTest(label):
+                response = await self.upload(body)
+
+                self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.eneo.calls, [])
+        self.assertEqual(os.listdir(self.temporary), [])
 
     async def test_a_control_character_in_the_file_name_or_content_type_is_a_400_and_is_never_forwarded(self) -> None:
         # What a browser cannot send but an attacker can, and what Starlette hands on: a line break in the quoted

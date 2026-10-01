@@ -106,7 +106,8 @@ proxy_rules = [
 
 - `RESOURCE_ID` is `[^/]+`: one path segment.
 - The pattern is matched with `fullmatch`, and a trailing slash counts: `flows/` and `flows` are different paths.
-- A path with a `.` or `..` segment (written or percent-encoded), `?`, `#`, a control character or a backslash is refused before any rule is tried.
+- A path with a `.` or `..` segment (written or percent-encoded), `?`, `#`, a control character or a backslash is refused before any rule is tried. What a rule matched is sent to Eneo encoded as that one path (a literal `%` in an id is sent as `%25`), so an id can never become a separator upstream.
+- A forwarded header whose value is not ASCII is a 400, and a URL longer than the HTTP client writes (65,536 characters once the path is encoded for Eneo) is a 414, on the proxy, uploads and file streams: Eneo hears nothing of either.
 - The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. Add more with `create_app(forward_request_headers=["X-Thing"])`. A credential or framing header (`Authorization`, `Cookie`, `Origin`, `Referer`, `X-API-Key`, `Proxy-Authorization`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`) is a `ValueError` when the app is built. The service key and the module-user token are always set by the module, whatever the browser sent.
 - Eneo's `Set-Cookie` and `Location` never reach the browser. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
@@ -129,6 +130,7 @@ The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multi
 | Request | Answer |
 |---|---|
 | No `Content-Length` | 411 |
+| A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more) | 400 |
 | Above `MAX_UPLOAD_BYTES` | 413 |
 | Not exactly one file named `upload_file`, or a control character (C0, DEL, C1) or a line or paragraph separator in its file name or content type | 400 |
 | The path leaves its route | 403 |
