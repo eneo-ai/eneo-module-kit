@@ -162,17 +162,19 @@ Look at: the order of the checks. Nothing reaches Eneo until the session, the or
 
 ```mermaid
 flowchart TB
-  r["Browser: GET, POST or PATCH /api/eneo/path"] --> l{"Content-Length above the cap?"}
-  l -->|"yes"| e413["413"]
+  r["Browser: GET, POST or PATCH /api/eneo/path"] --> l{"Content-Length not a length, or above the cap?"}
+  l -->|"yes"| e413["400 or 413"]
   l -->|"no"| s{"Valid session?"}
   s -->|"no"| e401["401, X-Auth-Required: session"]
   s -->|"yes"| o{"Origin is the module's? Only checked for writes"}
   o -->|"no"| e403a["403 Invalid request origin"]
   o -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
   a -->|"no"| e403b["403 Eneo resource is not exposed"]
-  a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token"]
+  a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token. A value that is not ASCII is a 400"]
   h --> b["Read the body, at most MAX_BODY_BYTES: 413 when the stream passes it"]
-  b --> up["Call Eneo at ENEO_BACKEND_URL/api/v1/path with the query string"]
+  b --> up["Call Eneo at ENEO_BACKEND_URL/api/v1/path, the path encoded as the one the rule matched, with the query string"]
+  up -->|"a URL the client will not write"| e414["414"]
+  up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
   up -->|"any other status"| resp["Same status and body. Set-Cookie and Location dropped. Cache-Control private, no-store if Eneo sent none"]
@@ -219,7 +221,7 @@ sequenceDiagram
   S->>K: signed URL for this session and mint path?
   K-->>S: the URL, or none
   S->>A: POST mint path with both credentials, if none or within 60 s of its end
-  A-->>S: JSON with url and expires_at, else 502 upstream_invalid
+  A-->>S: JSON of at most 1 MiB with url and expires_at, else 502 upstream_invalid
   S->>K: remember it, only while the session lives
   S->>A: GET the signed URL on ENEO_BACKEND_URL with Range, If-Range, Accept, no credentials
   A-->>S: 200 or 206 stream
