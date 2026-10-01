@@ -111,7 +111,7 @@ Stable for the UI package and for any other frontend.
 | 502 | Eneo answered with 301, 302, 303, 307 or 308 | `{"error": "upstream_redirect", ...}` |
 | 502 | The answer to the signed-URL request cannot be used | `{"error": "upstream_invalid", ...}` |
 | 503 | No free stream slot. Header `Retry-After: 2` | `{"error": "streams_busy", ...}` |
-| 504 | Eneo did not finish an upload in time | `{"error": "upstream_upload_timeout", ...}` |
+| 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
 | other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
 
 A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid`. Two Swedish query values are read by the UI package: `fel=utgangen` and `fel=annan-anvandare`.

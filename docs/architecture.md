@@ -199,10 +199,10 @@ sequenceDiagram
   F->>F: not exactly one file named upload_file, or a control or line-separator character in its name or type 400
   F->>A: POST /api/v1/upstream_path with one file and both credentials
   A-->>F: status and body
-  F-->>B: same status, body and Content-Type. 504 on timeout, 502 if unreachable or redirected
+  F-->>B: same status, body and Content-Type. 504 when a read or write timeout runs out, 502 if unreachable or redirected
 ```
 
-Source: `transport.py` (`forward_upload`) and `limits.py`. The time budget is `UPLOAD_PROXY_TIMEOUT_SECONDS`, lowered (never below 60 s) by the request's `X-Upload-Timeout-Seconds` header.
+Source: `transport.py` (`forward_upload`) and `limits.py`. The read timeout and the write timeout of the call to Eneo are each `UPLOAD_PROXY_TIMEOUT_SECONDS`, lowered (never below 60 s) by the request's `X-Upload-Timeout-Seconds` header. They are per phase, as for every call: no total deadline bounds an upload.
 
 ## Signed files
 

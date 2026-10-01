@@ -65,9 +65,10 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
     (400: a line break in either would be written into the part headers sent to Eneo). Nothing is left behind if
     the upload is cut off or refused.
 
-    The time budget is settings.upload_proxy_timeout_seconds, lowered (never below 60 s) by the request's
-    X-Upload-Timeout-Seconds header. 504 on timeout, 502 when Eneo cannot be reached, 403 for a path that
-    leaves its route.
+    The call to Eneo has a read timeout and a write timeout of settings.upload_proxy_timeout_seconds each, lowered
+    (never below 60 s) by the request's X-Upload-Timeout-Seconds header: per phase, as for every call, so no
+    total deadline bounds the upload. 504 when one of them runs out, 502 when Eneo cannot be reached, 403 for a path
+    that leaves its route.
     """
     settings = request.app.state.settings
     # Upstream URLs are built from decoded path params; a "." / ".." segment or
