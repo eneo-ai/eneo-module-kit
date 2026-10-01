@@ -49,3 +49,14 @@ brand's mark, forced-colour edges, no ring on a programmatically focused heading
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.
+
+## Node
+
+Two different things, kept apart:
+
+- **Using the package** (a module's build): Node `>=22.13.0`, the Astryx CLI's own minimum (`package.json` `engines`). The
+  package is browser code and needs no Node at run time.
+- **Developing the package** (this repository: `npm ci`, the tests, the build): Node `^22.22.2 || ^24.15.0 || >=26.0.0`, the
+  root `package.json`'s `engines`. It is what the locked development tools require together (jsdom 30 and its dependencies
+  need 22.22.2 or 24.15), checked by `npm ci --engine-strict` on 22.13.0 (refused) and 22.22.2 (installs; lint, tests and build
+  pass), and by a test that fails when a bumped dependency asks for more.
