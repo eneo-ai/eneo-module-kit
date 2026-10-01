@@ -25,3 +25,21 @@ jobs:
       - run: uv pip install --python bff-venv/bin/python --resolution ${{ matrix.resolution }} -e "packages/bff[test]"
       - run: bff-venv/bin/python -m unittest discover -s packages/bff/tests -t packages/bff
       - run: pip-audit --path bff-venv/lib/python3.12/site-packages
+
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run -w packages/ui lint
+      - run: npm test -w packages/ui
+      - run: npm run -w packages/ui build
+      # The built theme is generated and committed, in its own folder: a change to the theme source without a rebuild
+      # shows up as a diff here and fails.
+      - run: npm run -w packages/ui theme:build
+      - run: git diff --exit-code -- packages/ui/src/theme/built
