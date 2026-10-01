@@ -1,0 +1,121 @@
+# eneo-module-kit: design
+
+Design record, 2026-10-01. Status: proposed, nothing built. The plan that carries it out is
+`docs/plans/2026-10-01-module-kit-plan.md`.
+
+The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
+design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
+`docs/plans/2026-10-01-module-platform-design.md`.
+
+## 1. Goal
+
+A new Eneo module should start connected to Eneo, themed, accessible and deployable, by copying one small template
+and importing two packages. Shared code is fixed in one place and arrives in modules as a version bump.
+
+## 2. The module contract with Eneo
+
+Eneo is the installation's only login. Its side of the contract is in `eneo-ai/eneo`:
+`docs/deployment/MODULES.md` (operators) and the "Module Authentication" page of the docs site (engineers).
+
+What a module must do:
+
+| Step | Module side |
+|---|---|
+| Start login | Create an unpredictable one-time `state`, bind it to the browser in an HttpOnly, SameSite=Lax cookie scoped to the callback path, redirect to `{ENEO_PUBLIC_URL}/module-login?module_key&redirect_uri&state`. |
+| Callback | Reject a missing, reused or mismatched `state` before anything else. Exchange the ticket server-side: `POST {ENEO_BACKEND_URL}/api/v1/module-auth/token/` with the service key. Check the returned `module_key`, expiry and identity, then confirm them with `GET /api/v1/module-auth/{module_key}/session/` using both credentials. Redirect to a clean URL with `Referrer-Policy: no-referrer`. |
+| Session | Keep the module-user token in a server-side session. The browser holds only an opaque HttpOnly cookie. The session ends at `min(module maximum, Eneo's session_expires_at)`. |
+| Refresh | At half the token's lifetime: `POST /api/v1/module-auth/{module_key}/token/refresh/` with both credentials, one refresh in flight per session. On 401/403 end the session. When Eneo cannot answer (408, 429, 5xx, network), keep the valid token and ask again shortly. |
+| Resource calls | Send both the service key (header name configurable, default `X-API-Key`) and `Authorization: Bearer <module-user token>` on every call. Never forward the browser's `Cookie`, `Authorization`, `Origin` or `Referer`. |
+| Renewal | A login renewed before the end may only renew the same user in the same tenant. |
+| Deployment | One container on `module_net`, port 3001, `/health`, no outbound internet. |
+
+## 3. Decisions
+
+**K1. One repository, three parts.** `packages/ui` (npm), `packages/bff` (Python), `template/` (copied by new
+modules). One CI builds the template against both packages on every commit, so the template is always proven to
+work with the current packages.
+
+**K2. One stack.** Vite + React + Astryx for the UI, FastAPI for the BFF, one process and one container. The kit is
+not framework-agnostic. It does not force its stack on the other half either: the UI package imports nothing from a
+router, and the BFF's HTTP surface is documented (section 5).
+
+**K3. FastAPI, not Hono.** The login and proxy code exists in speech-to-text with about 2,800 lines of tests, and it
+is the security boundary. Hono could do the job and would give one language; that is a reason to revisit, not to
+rewrite now.
+
+**K4. The UI is a static app served by the BFF.** No server rendering, no proxy hop in front of uploads and
+WebSockets. Verified in a trial on 2026-10-01: a Vite 8 build with Astryx 0.6.3 and the built Eneo theme, served by
+FastAPI, ran in Chromium and WebKit with no console or CSP errors under
+`script-src 'self'; style-src 'self'` (no `unsafe-inline` at all). A deep link returned the page; a missing asset
+and an unknown `/api/*` path returned 404, not HTML.
+
+**K5. SSO only.** Speech-to-text's temporary access-code login is not part of the kit. Local development uses a
+stub Eneo that implements the handoff.
+
+**K6. Deny by default.** The proxy exposes nothing until the module names a route. The kit ships the mechanism;
+each module ships its own allowlist.
+
+**K7. Primitives, not routes, for uploads and files.** Forwarding a multipart upload and streaming a signed file
+with Range are functions the module calls from its own routes. Which Eneo paths they point at is the module's.
+
+**K8. An application factory.** `create_app(...)` builds the app from settings and owns its HTTP client through
+the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.
+
+**K9. Colour mode is the UI package's own.** A static app has no server render, so the stored choice is read
+before React renders and passed to Astryx's `<Theme mode>` directly. The storage key is `theme` with values
+`light`, `dark`, `system`, the same key and values next-themes uses, so speech-to-text's saved preferences carry
+over. An inline script is not needed, which keeps the strict CSP.
+
+**K10. Branding without templating.** The page asks `/api/branding` before its first render and shows no
+organisation mark until it has the answer. Nothing is injected into `index.html`.
+
+**K11. Astryx is pinned to an exact version** in the UI package and the template. The house bar above its defaults
+(44 px touch targets, a measured focus ring, a readable dark-mode error label) is met once, in the theme.
+
+**K12. For agents: `AGENTS.md`, the pinned Astryx CLI, and the UI package as an Astryx integration.** No custom MCP
+server and no skill.
+
+## 4. What stays out
+
+- Each module's proxy allowlist and its own routes.
+- Speech-to-text's live transcription relay, recording identifiers, transcript routes.
+- Draft retention, recovery copy, flow configuration.
+- The access-code login.
+- A WebSocket relay helper, until a second module needs one.
+- Upgrade codemods, and public `testing` and `a11y` exports, until a second module needs them.
+
+## 5. The BFF's HTTP surface
+
+Stable for the UI package and for any other frontend:
+
+| Route | Purpose |
+|---|---|
+| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET /api/auth/login?next=&renew=` | Start the handoff |
+| `GET /api/auth/callback?ticket=&state=` | Finish it |
+| `POST /api/auth/logout` | End the session (same-origin) |
+| `GET /api/auth/status` | `{authenticated, user, session_ends_in, refresh_in}` |
+| `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation |
+| `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
+| anything else | The static app; unknown assets and unknown `/api/*` are 404 |
+
+A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
+
+## 6. Limits to be honest about
+
+- The kit is carved from one module. The template is a working fixture, not proof that the abstraction fits a
+  different module. Versions stay 0.x until speech-to-text runs on the kit and a second module has used it.
+- The session store is process-local: one replica. Scaling out needs sticky sessions or a shared store, decided
+  when a module needs it.
+- Astryx is pre-1.0. Menus and pickers are not anchored to their trigger on Safari before 26 and Firefox before 147.
+- Speech-to-text can only adopt the UI package once it is a static app too (its Plan B), because the package's
+  colour mode and providers assume no server render.
+
+## 7. Open decisions for the owner
+
+| Question | Default |
+|---|---|
+| Packages public (npm `@eneo-ai/module-kit`, PyPI `eneo-module-bff`) or private? | Public. Until the first release the template pins the BFF to a commit. |
+| Does `eneo-ai` own the `@eneo-ai` scope on npm? | To be checked before the first release. |
+| Licence for this repository? | None yet; the module repositories have none either. |
+| Router for the template? | `react-router`, library mode. The UI package does not depend on it. |

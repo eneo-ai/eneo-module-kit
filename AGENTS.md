@@ -1,17 +1,18 @@
 # Agent instructions: eneo-module-kit
 
 The starter for Eneo modules. Read `README.md` first: it states what the kit contains, what stays in each module,
-and the choices already made. Nothing is built yet.
+and the choices already made.
 
 ## Before writing code
 
-- There is no implementation plan in this repository yet. The first task is to write it; do not scaffold packages or
-  a template ahead of it.
-- The source to extract from is `eneo-ai/eneo-mod-speech-to-text`: `backend/app/` and `backend/tests/` for the BFF,
-  `frontend/kit/` for the theme and providers. Its design record is `docs/plans/2026-10-01-module-platform-design.md`
-  (section 8 covers this kit) in that repository.
-- Work order and status belong in Beads in this repository (`br init --prefix kit` when the plan is written), not in
-  the speech-to-text board.
+- Design: `docs/design.md`. Plan: `docs/plans/2026-10-01-module-kit-plan.md`. Read "Global Constraints" and "How to
+  work" in the plan every time.
+- Work order and status live in Beads in this repository (prefix `kit`): `br ready --json`, claim, close with
+  evidence. Each bead names the files it may touch and what is out of scope. Do not start a bead that is not ready.
+- The source to extract from is `eneo-ai/eneo-mod-speech-to-text` at commit `f81a7dd`, cloned beside this
+  repository: `backend/app/` and `backend/tests/` for the BFF. The verified Astryx foundation (theme, providers,
+  test shims, gate changes) is in `docs/reference/astryx-phase0-reference.patch`.
+- Never change the speech-to-text repository from here. This repository copies from it.
 
 ## Rules that are already decided
 

@@ -100,4 +100,4 @@ the source of truth.
 | UI package: shell and session screens | When speech-to-text's first ported phase is merged |
 | Speech-to-text running on the kit | After its Astryx port, on a released kit version |
 
-The design record behind these choices is in the speech-to-text repository under `docs/plans/`.
+The design is in `docs/design.md` and the implementation plan in `docs/plans/2026-10-01-module-kit-plan.md`. Work is tracked in Beads (`.beads/`, prefix `kit`).
