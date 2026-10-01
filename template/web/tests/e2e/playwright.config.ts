@@ -19,7 +19,7 @@ const touch = (width: number, height: number): Use => ({ viewport: { width, heig
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
 
 const flow = /flow\.spec\.ts/;
-const gate = /(a11y|harness)\.spec\.ts/;
+const gate = /(a11y|harness|header-fit)\.spec\.ts/;
 
 export default defineConfig({
   testDir: ".",
@@ -66,6 +66,10 @@ export default defineConfig({
         SESSION_SECRET: "a-secret-of-at-least-32-characters-for-tests",
         COOKIE_SECURE: "false",
         STATIC_DIR: resolve(template, "web/dist"),
+        // An organisation with a logo for each colour mode, to show the lockup the deployment configures.
+        ORGANIZATION_NAME: "Exempelkommunen",
+        ORGANIZATION_LOGO: resolve(import.meta.dirname, "fixtures/logo-light.svg"),
+        ORGANIZATION_LOGO_DARK: resolve(import.meta.dirname, "fixtures/logo-dark.svg"),
       },
     },
   ],

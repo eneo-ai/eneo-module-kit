@@ -24,7 +24,8 @@ test("sign in through the stub Eneo, see the shell and the flows, call the modul
   await expect(page.locator('[role="main"], main')).toHaveCount(1);
   await expect(page.getByRole("link", { name: "Hoppa till innehåll" })).toBeAttached();
 
-  await page.getByRole("button", { name: "Logga ut" }).click();
+  await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+  await page.getByRole("menuitem", { name: "Logga ut" }).click();
   await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
   const status = await page.request.get("/api/auth/status");
   expect(await status.json()).toMatchObject({ authenticated: false });
@@ -59,6 +60,32 @@ test("the page's strict Content Security Policy is the backend's, on the page an
   expect(policy).toContain("style-src 'self'");
   expect(policy).not.toContain("unsafe-inline");
   expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+});
+
+test.describe("the organisation's mark", () => {
+  test("a logo for each colour mode: the light one in light, the dark one in dark, never both", async ({ page }) => {
+    await page.goto("/");
+    const light = page.locator('img[data-brand-logo="light"]');
+    const dark = page.locator('img[data-brand-logo="dark"]');
+    await expect(light).toBeVisible();
+    await expect(light).toHaveAttribute("alt", "Exempelkommunen");
+    await expect(light).toHaveAttribute("src", "/api/branding/logo/light");
+    await expect(dark).toBeHidden();
+    await page.evaluate(() => localStorage.setItem("theme", "dark"));
+    await page.reload();
+    await expect(dark).toBeVisible();
+    await expect(light).toBeHidden();
+  });
+});
+
+test("the account menu chooses the colour mode, which is stored for the next visit", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+  await page.getByRole("menuitemradio", { name: "Mörkt" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe("dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
 test.describe("colour mode", () => {

@@ -8,7 +8,8 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Frame } from "../Frame";
-import { ApiError, getJson, signOut, type User } from "../session";
+import { AccountMenu } from "../AccountMenu";
+import { ApiError, getJson, type User } from "../session";
 
 interface Flow {
   id: string;
@@ -57,7 +58,7 @@ export function Flows({ user }: { user: User }) {
   }, [load.state]);
 
   return (
-    <Frame brandHref="/flows" end={<Button label="Logga ut" variant="secondary" onClick={() => void signOut()} />}>
+    <Frame brandHref="/flows" end={<AccountMenu user={user} />}>
       <VStack gap={6} paddingBlockStart={4}>
         <VStack gap={1}>
           <Heading level={1}>Välj ett flöde</Heading>
