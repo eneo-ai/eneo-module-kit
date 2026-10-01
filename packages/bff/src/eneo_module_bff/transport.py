@@ -18,7 +18,7 @@ from starlette.types import Receive, Scope, Send
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .limits import allow_upload, declared_length, too_large
-from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect
+from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect, upstream_url
 from .settings import Settings
 
 logger = logging.getLogger("eneo_proxy")
@@ -102,11 +102,11 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
 async def _post_file(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
     settings = request.app.state.settings
     http_client = request.app.state.http
-    upstream_url = f"{settings.eneo_backend_url}/api/v1/{upstream_path}"
+    url = upstream_url(settings.eneo_backend_url, upstream_path)
     await upload_file.seek(0)
     try:
         upstream = await http_client.post(
-            upstream_url,
+            url,
             headers=upstream_auth_headers(request),
             files={
                 "upload_file": (
@@ -118,7 +118,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
             timeout=_upload_timeout(settings, _requested_upload_timeout_seconds(request)),
         )
     except httpx2.TimeoutException:
-        logger.exception("Upload timed out: url=%s", upstream_url)
+        logger.exception("Upload timed out: url=%s", url)
         return JSONResponse(
             status_code=504,
             content={
@@ -127,7 +127,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
             },
         )
     except httpx2.RequestError:
-        logger.exception("Upload failed: url=%s", upstream_url)
+        logger.exception("Upload failed: url=%s", url)
         return JSONResponse(
             status_code=502,
             content={
@@ -137,7 +137,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
         )
 
     if upstream.status_code in REDIRECT_STATUSES:
-        logger.error("Upload was answered with a redirect: url=%s status=%s", upstream_url, upstream.status_code)
+        logger.error("Upload was answered with a redirect: url=%s status=%s", url, upstream.status_code)
         return upstream_redirect()
 
     return Response(
@@ -246,7 +246,7 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
 
     try:
         upstream = await http_client.post(
-            f"{settings.eneo_backend_url}/api/v1/{mint_path}",
+            upstream_url(settings.eneo_backend_url, mint_path),
             json={
                 "expires_in": _SIGNED_URL_TTL_SECONDS,
                 "content_disposition": "inline",

@@ -4,6 +4,7 @@ import logging
 import re
 from collections.abc import Iterable, Sequence
 from typing import NamedTuple
+from urllib.parse import quote
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -129,6 +130,17 @@ def leaves_route(path: str) -> bool:
     )
 
 
+def upstream_url(base_url: str, path: str) -> str:
+    """``{base_url}/api/v1/{path}``, with ``path`` encoded as the logical path it is.
+
+    ``path`` is the path as the module authorised it, already decoded once: a ``%2F`` in it is the three characters
+    of an id, not a separator. httpx2 sends an escape it finds as it is, and Eneo decodes it once more, so
+    ``things/a%2Fexport/`` would arrive as ``things/a/export/``, a route the allowlist never saw. Every character
+    that is not a letter, a digit, ``_.-~`` or the ``/`` between segments is encoded here, ``%`` included.
+    """
+    return f"{base_url}/api/v1/{quote(path, safe='/')}"
+
+
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
@@ -154,7 +166,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         http_client = request.app.state.http
         if leaves_route(path) or not _proxy_route_is_allowed(rules, request.method, path):
             raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
-        upstream_url = f"{settings.eneo_backend_url}/api/v1/{path}"
+        url = upstream_url(settings.eneo_backend_url, path)
         # Forward the allowlisted request headers, and set the credentials from the module-auth session. The
         # header that carries the service key is configured, so it is excluded here, not by name above.
         key_header = settings.eneo_api_key_header_name.lower()
@@ -170,7 +182,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         try:
             upstream = await http_client.request(
                 method=request.method,
-                url=upstream_url,
+                url=url,
                 params=request.query_params,
                 content=body if body else None,
                 headers=fwd_headers,
@@ -179,7 +191,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             logger.exception(
                 "Upstream request failed: method=%s url=%s",
                 request.method,
-                upstream_url,
+                url,
             )
             return JSONResponse(
                 status_code=502,
@@ -193,7 +205,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             logger.error(
                 "Eneo answered with a redirect: method=%s url=%s status=%s",
                 request.method,
-                upstream_url,
+                url,
                 upstream.status_code,
             )
             return upstream_redirect()

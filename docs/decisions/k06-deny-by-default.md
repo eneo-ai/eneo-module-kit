@@ -20,5 +20,6 @@ Deny by default, for paths and for headers.
 ## Consequences
 
 - A path that could reach another Eneo route (`.` or `..` segments, written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
+- The path Eneo receives is the path the rule matched, encoded as that one logical path: a `%2F` that the browser wrote as `%252F` is an id, and goes on as `%252F`, so Eneo does not decode it into a separator. This holds for the proxy, uploads and signed-URL requests.
 - Every module has to write its allowlist, as narrow as it can be.
 - A header a module needs and the list lacks is added with `create_app(forward_request_headers=[...])`.
