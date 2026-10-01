@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -9,6 +9,9 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { Brand } from "../branding.js";
 import { ModuleShell } from "../ModuleShell.js";
 import { messages } from "./messages.js";
+
+// Signing in leaves the app for Eneo's login: a plain link, not the router's (a `linkComponent` of ModuleProviders).
+const Anchor = (props: AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} />;
 
 /**
  * The sign-in screen: one button that starts Eneo's login (the backend's `/api/auth/login`) and, when the callback
@@ -36,7 +39,6 @@ export function SignInScreen({
   next?: string;
   children?: ReactNode;
 }) {
-  const [submitting, setSubmitting] = useState(false);
   const [failed, setFailed] = useState(false);
 
   // The callback sends a failed login to the home page with `auth_error`; it is said once and taken off the address.
@@ -49,12 +51,9 @@ export function SignInScreen({
     window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
   }, []);
 
-  function startLogin() {
-    setSubmitting(true);
-    const target = next ?? `${window.location.pathname}${window.location.search}`;
-    const query = target === "/" ? "" : `?next=${encodeURIComponent(target)}`;
-    window.location.assign(`${loginPath}${query}`);
-  }
+  // The login returns to `next`, or to the page the person is on.
+  const target = next ?? `${window.location.pathname}${window.location.search}`;
+  const href = `${loginPath}${target === "/" ? "" : `?next=${encodeURIComponent(target)}`}`;
 
   return (
     <ModuleShell label={productName} heading={<Brand productName={productName} />}>
@@ -73,12 +72,7 @@ export function SignInScreen({
               {unreachable ? (
                 <Button label={messages.tryAgain} onClick={() => window.location.reload()} />
               ) : (
-                <Button
-                  label={submitting ? messages.signingIn : messages.signIn}
-                  variant="primary"
-                  isLoading={submitting}
-                  onClick={startLogin}
-                />
+                <Button as={Anchor} href={href} label={messages.signIn} variant="primary" size="lg" />
               )}
             </HStack>
             {children}

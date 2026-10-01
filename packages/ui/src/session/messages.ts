@@ -9,7 +9,6 @@ export const messages = {
   loading: "Laddar",
   signInHint: "Logga in via Eneo för att fortsätta.",
   signIn: "Logga in med Eneo",
-  signingIn: "Öppnar Eneo…",
   signInFailed: "Inloggningen kunde inte slutföras. Försök igen.",
   unreachable: "Kunde inte kontakta modulen. Försök igen.",
   tryAgain: "Försök igen",

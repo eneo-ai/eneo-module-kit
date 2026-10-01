@@ -77,7 +77,9 @@ test("a login that cannot be read says so and offers to try again; one that is n
   backend(t, () => json(signedOutStatus));
   const out = await gate({ signInTitle: "Gör möten till text" });
   await out.act(async () => settle());
-  assert.ok(button(out.container, "Logga in med Eneo"));
+  const login = out.container.querySelector<HTMLAnchorElement>('a[href^="/api/auth/login"]');
+  assert.equal(login?.textContent?.trim(), "Logga in med Eneo", "a link: it takes the person to another page");
+  assert.equal(login?.getAttribute("href"), `/api/auth/login?next=${encodeURIComponent(window.location.pathname)}`.replace("?next=%2F", ""), "back to the page the person was on");
   assert.match(out.container.textContent ?? "", /Gör möten till text/);
   assert.doesNotMatch(out.container.textContent ?? "", /Sidan/);
 });
@@ -98,7 +100,7 @@ test("an app with a route of its own for signing in is sent there, and shows no 
   const { act, container } = await gate({ navigate: (path: string) => went.push(path), signInPath: "/logga-in" });
   await act(async () => settle());
   assert.deepEqual(went, ["/logga-in"]);
-  assert.equal(button(container, "Logga in med Eneo"), null);
+  assert.ok(!/Logga in med Eneo/.test(container.textContent ?? ""), "no sign-in screen");
 });
 
 test("five minutes before the end the warning opens once and renews in a window of its own, bound to this user", async (t) => {
