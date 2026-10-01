@@ -102,7 +102,9 @@ Stable for the UI package and for any other frontend.
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |
+| 400 | A forwarded request header (the proxy's, or `Range`, `If-Range`, `Accept` of a file stream) whose value is not ASCII | `{"detail": ...}` |
 | 411 | An upload without `Content-Length` | `{"detail": ...}` |
+| 414 | A path and query that, as sent to Eneo, are longer than the HTTP client writes (65,536 characters) | `{"detail": "Request URI too long"}` |
 | 413 | A body over its limit. Header `Connection: close` | `{"detail": "Request body too large"}`, or `"Upload too large"` |
 | 502 | Eneo cannot be reached | `{"error": "upstream_unreachable", ...}` |
 | 502 | Eneo answered with 301, 302, 303, 307 or 308 | `{"error": "upstream_redirect", ...}` |

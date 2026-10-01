@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from typing import NamedTuple
 from urllib.parse import quote
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 
 from .deps import require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
@@ -121,6 +122,23 @@ def upstream_url(base_url: str, path: str) -> str:
     return f"{base_url}/api/v1/{quote(path, safe='/')}"
 
 
+def uri_too_long() -> HTTPException:
+    """What an ``httpx2.InvalidURL`` from a path or query the client will not write is answered with."""
+    return HTTPException(status_code=414, detail="Request URI too long")
+
+
+def forwarded_headers(headers: Headers, allowed: Collection[str], *, skip: str = "") -> dict[str, str]:
+    """The request ``headers`` whose lower-case name is in ``allowed`` (but not ``skip``).
+
+    A value that is not ASCII is a 400: httpx2 writes a str value as ASCII and raises UnicodeEncodeError for any
+    other, which would be a 500 for something a client sent.
+    """
+    forwarded = {name: value for name, value in headers.items() if name.lower() in allowed and name.lower() != skip}
+    if not all(value.isascii() for value in forwarded.values()):
+        raise HTTPException(status_code=400, detail="A request header holds characters that cannot be forwarded")
+    return forwarded
+
+
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
@@ -130,7 +148,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
     added = {name.lower() for name in forward_request_headers}
     if refused := sorted(added & CREDENTIAL_AND_FRAMING_HEADERS):
         raise ValueError(f"forward_request_headers cannot include credential or framing headers: {', '.join(refused)}")
-    forwarded_headers = FORWARDED_REQUEST_HEADERS | added
+    allowed_headers = FORWARDED_REQUEST_HEADERS | added
     router = APIRouter()
 
     @router.api_route(
@@ -149,12 +167,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         url = upstream_url(settings.eneo_backend_url, path)
         # Forward the allowlisted request headers, and set the credentials from the module-auth session. The
         # header that carries the service key is configured, so it is excluded here, not by name above.
-        key_header = settings.eneo_api_key_header_name.lower()
-        fwd_headers = {
-            name: value
-            for name, value in request.headers.items()
-            if name.lower() in forwarded_headers and name.lower() != key_header
-        }
+        fwd_headers = forwarded_headers(request.headers, allowed_headers, skip=settings.eneo_api_key_header_name.lower())
         fwd_headers.update(upstream_auth_headers(request))
 
         body = await request.body()  # at most Settings.max_body_bytes: the body limit counts it as it arrives
@@ -167,6 +180,8 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
                 content=body if body else None,
                 headers=fwd_headers,
             )
+        except httpx2.InvalidURL:
+            raise uri_too_long() from None
         except httpx2.RequestError:
             logger.exception(
                 "Upstream request failed: method=%s url=%s",

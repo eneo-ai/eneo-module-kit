@@ -17,7 +17,7 @@ from starlette.types import Receive, Scope, Send
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .limits import allow_upload, declared_length, too_large
-from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect, upstream_url
+from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_url, uri_too_long
 from .settings import Settings, has_control_character
 
 logger = logging.getLogger("eneo_proxy")
@@ -111,6 +111,8 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
             },
             timeout=_upload_timeout(settings, _requested_upload_timeout_seconds(request)),
         )
+    except httpx2.InvalidURL:
+        raise uri_too_long() from None
     except httpx2.TimeoutException:
         logger.exception("Upload timed out: url=%s", url)
         return JSONResponse(
@@ -255,6 +257,8 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
             },
             headers=upstream_auth_headers(request),
         )
+    except httpx2.InvalidURL:
+        raise uri_too_long() from None
     except httpx2.RequestError:
         logger.exception("Signed URL request failed: path=%s", mint_path)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
@@ -337,6 +341,8 @@ async def _stream_file(
     http_client = request.app.state.http
     sessions = request.app.state.module_auth.sessions
     session_id = request.cookies.get(SESSION_COOKIE) or ""
+    # Before anything is asked of Eneo: a header httpx2 cannot write is the client's mistake, not a reason to mint.
+    fwd_headers = forwarded_headers(request.headers, _STREAM_FORWARD_REQUEST_HEADERS)
     try:
         url = await _signed_url(request, session_id, mint_path, unavailable)
     except _InvalidMintAnswer:
@@ -345,11 +351,6 @@ async def _stream_file(
             content={"error": "upstream_invalid", "detail": "Eneo answered with something the module cannot use."},
         )
 
-    fwd_headers = {
-        name: value
-        for name, value in request.headers.items()
-        if name.lower() in _STREAM_FORWARD_REQUEST_HEADERS
-    }
     upstream_request = http_client.build_request("GET", url, headers=fwd_headers)
     try:
         upstream = await http_client.send(upstream_request, stream=True)
