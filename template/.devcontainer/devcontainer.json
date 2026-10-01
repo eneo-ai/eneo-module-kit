@@ -1,0 +1,8 @@
+{
+  "name": "Eneo module",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": { "ghcr.io/devcontainers/features/node:1": { "version": "22" } },
+  "postCreateCommand": "pip install -r backend/requirements.txt && (cd web && npm install)",
+  "forwardPorts": [3001, 5173, 8411],
+  "customizations": { "vscode": { "extensions": ["ms-playwright.playwright"] } }
+}
