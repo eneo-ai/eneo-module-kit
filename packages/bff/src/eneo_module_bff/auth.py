@@ -268,13 +268,17 @@ class ModuleAuth:
             str | None,
             Cookie(alias=STATE_COOKIE),
         ] = None,
+        held_session_id: Annotated[
+            str | None,
+            Cookie(alias=SESSION_COOKIE),
+        ] = None,
     ) -> RedirectResponse:
         pending = self._load_pending_login(pending_cookie)
         if (
             ticket is None
             or state is None
             or pending is None
-            or not secrets.compare_digest(state, pending.state)
+            or not secrets.compare_digest(state.encode(), pending.state.encode())
         ):
             return self._auth_error("invalid_state")
 
@@ -374,6 +378,9 @@ class ModuleAuth:
         self._set_session_cookie(
             response, session=session, max_age=session_expires_at - now
         )
+        # The new cookie replaces the browser's old one, so the old session ends with it: a login, or a
+        # renewal by the same user, must not leave two sessions alive for one browser.
+        self.sessions.delete(held_session_id)
         self._delete_state_cookie(response)
         self._secure_callback_response(response)
         return response

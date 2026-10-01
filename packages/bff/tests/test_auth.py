@@ -235,6 +235,48 @@ class ModuleAuthTests(unittest.TestCase):
         self.assertEqual(second.headers["location"], "/?auth_error=invalid_state")
         self.assertEqual(len(self.exchange_client.calls), 2)
 
+    def test_a_state_that_is_not_ascii_is_refused_not_a_500(self) -> None:
+        self.start_login()
+
+        callback = self.client.get(
+            "/api/auth/callback",
+            params={"ticket": "one-time-ticket", "state": "tillstånd"},
+        )
+
+        self.assertEqual(callback.status_code, 303)
+        self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
+        self.assertEqual(self.exchange_client.calls, [])
+
+    def test_a_second_login_ends_the_session_the_browser_already_holds(self) -> None:
+        first = self.sign_in()
+        state, _ = self.start_login()
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "second", "state": state})
+
+        second = callback.cookies[SESSION_COOKIE]
+        self.assertNotEqual(second, first)
+        self.assertIsNone(self.auth.sessions.get(first), "two sessions must not stay alive for one browser")
+        self.assertIsNotNone(self.auth.sessions.get(second))
+
+    def test_a_renewal_by_the_same_user_ends_the_old_session(self) -> None:
+        first = self.sign_in()
+        state = self.start_renewal()
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "again", "state": state})
+
+        self.assertIsNone(self.auth.sessions.get(first))
+        self.assertIsNotNone(self.auth.sessions.get(callback.cookies[SESSION_COOKIE]))
+
+    def test_a_login_that_fails_leaves_the_session_the_browser_holds(self) -> None:
+        first = self.sign_in()
+        state, _ = self.start_login()
+        self.exchange_client.response = FakeResponse(status_code=401)
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "bad", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/?auth_error=exchange_failed")
+        self.assertIsNotNone(self.auth.sessions.get(first))
+
     def test_status_says_when_the_session_ends(self) -> None:
         state, _ = self.start_login()
         self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
