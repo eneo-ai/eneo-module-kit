@@ -33,6 +33,8 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: pip install --require-hashes --no-deps -r backend/requirements.lock
       - run: pip install --no-deps -r backend/requirements.txt
+      # Before the kit's first release the lock finds @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md): put the
+      # packed UI package there first. After the release `npm ci` needs nothing else.
       - run: npm ci
         working-directory: web
       - run: npx playwright install --with-deps chromium webkit firefox

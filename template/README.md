@@ -20,4 +20,6 @@ and `@eneo-ai/module-kit` gives the theme, colour mode, shell and brand. One pro
 - **Add a page:** a route in `web/src/App.tsx` inside `RequireSession`; its states in `web/tests/e2e/screens.ts`.
 - **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm run test:e2e` (browsers and the accessibility
   gate; builds first). If you set `PYTHON` for it, give an absolute path to a python that has `eneo-module-bff`.
+- **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
+  release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
 - **Rules for people and agents:** `AGENTS.md`.

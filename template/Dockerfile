@@ -2,23 +2,27 @@
 #
 # One image, one process: the module's backend serves the built UI on port 3001. No Node and no supervisor at run time.
 #
-#   docker build -t my-module .          a module made from the template: the versions its package.json and
-#                                        requirements.txt pin
+#   docker build -t my-module .          a module made from the template: the versions its package-lock.json and
+#                                        requirements.lock lock (and requirements.txt pins for the BFF)
 #
 # Inside the kit's own repository the image is built against the workspace packages instead (CI does this, K1). Give the
 # build a context named `kit`: a folder with the packed UI package (npm pack -w packages/ui) and a copy of packages/bff.
 #   docker build --build-context kit=kit-context -t template template
 FROM scratch AS kit
 
-# ---- the UI, built to static files
+# ---- the UI, built to static files, from web/package-lock.json (npm ci). Before the kit's first release the lock finds
+# @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md): given a `kit` context, the packed UI package is put there.
 FROM node:22-slim AS web
 WORKDIR /app/web
 COPY web/ ./
 RUN --mount=from=kit,target=/kit \
     set -e; \
     pack="$(ls /kit/eneo-ai-module-kit-*.tgz 2>/dev/null | head -n 1 || true)"; \
-    if [ -n "$pack" ]; then npm pkg set "dependencies.@eneo-ai/module-kit=file:$pack"; fi; \
-    if [ -f package-lock.json ] && [ -z "$pack" ]; then npm ci; else npm install; fi; \
+    if [ -n "$pack" ]; then \
+      target="$(node -p "(require('./package-lock.json').packages['node_modules/@eneo-ai/module-kit'].resolved || '').replace(/^file:/, '')")"; \
+      case "$target" in vendor/*) mkdir -p vendor && cp "$pack" "$target" ;; esac; \
+    fi; \
+    npm ci; \
     npm run build
 
 # ---- the backend's packages: what the kit's BFF depends on, locked with hashes (backend/requirements.lock), then the BFF
