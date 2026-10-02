@@ -183,6 +183,10 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   the joins do not all coincide). A module plans for about 2.5 times `MAX_RESPONSE_BYTES` per answer in flight, times
   the answers it expects at once, and sets `MAX_RESPONSE_BYTES` for its largest real answer; one that serves large
   downloads uses `stream_signed`, not the proxy.
+- No log record carries a URL with a query. httpx2 logs every request's full URL at INFO, and a signed file URL carries
+  its bearer token in the query string (a proxied call carries the user's query), so `create_app` holds the `httpx2` and
+  `httpcore2` loggers at WARNING, whatever the application's root logger says. The kit's own records name a path template
+  or a status. A module that logs the URLs of its own calls to Eneo carries that rule itself.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a

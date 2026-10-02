@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from http.cookiejar import Cookie, CookieJar, CookiePolicy
 from urllib.request import Request
@@ -17,6 +18,17 @@ LIMIT = "eneo_module_bff.max_response_bytes"
 SMALL_ANSWER_BYTES = 1024 * 1024
 SMALL_ANSWER = {LIMIT: SMALL_ANSWER_BYTES}
 STREAMED = {LIMIT: None}
+
+
+def hold_http_loggers_at_warning() -> None:
+    """Keep httpx2 and httpcore2 from logging at INFO, whatever the application's root logger says.
+
+    httpx2 logs every request's full URL at INFO ("HTTP Request: GET <url>"): a signed file URL carries its bearer
+    token in the query string, and a proxied call carries the user's own query. The kit's records name a path
+    template or a status, never a URL with a query.
+    """
+    for name in ("httpx2", "httpcore2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 class UnboundedAnswer(httpx2.TransportError):
