@@ -48,7 +48,12 @@ export interface SessionState {
    * login is ended.
    */
   ended(question?: Question): boolean;
-  /** A login window of the module says it is done: the first status read asked from now confirms a renewal. */
+  /**
+   * A login window of the module says it is done. The backend has replaced the cookie and deleted the old session by then,
+   * so from this word on everything asked before it, and the deadline of the old login, is about a login that is gone: the
+   * revision moves now, not when the status read that confirms the renewal is back. That read, the first one asked from now,
+   * is the one that confirms it.
+   */
   loginWindowDone(): void;
   /** True once signed in again; false at once where no signed-in page waits, or when `signal` ends the wait. */
   whenRenewed(signal?: AbortSignal | null): Promise<boolean>;
@@ -69,9 +74,10 @@ export function createSessionState(): SessionState {
   let endTimer: ReturnType<typeof setTimeout> | undefined;
   // When the last answer said the login ends (ms), once one has; the timer for it runs while a page holds the login.
   let endsAtMs: number | null = null;
-  // The one revision of the login: it changes whenever the login does (ended, signed in again, someone else's, a renewal
-  // confirmed). A question's answer counts only under the revision it was asked in, and only if no later question has been
-  // answered: so a late answer never undoes what a newer one, or the end itself, has settled.
+  // The one revision of the login: it changes whenever the login does (ended, signed in again, someone else's, a login
+  // window's word that a renewal has replaced it). A question's answer counts only under the revision it was asked in, and
+  // only if no later question has been answered: so a late answer never undoes what a newer one, or the end itself, has
+  // settled. A page beginning or ending is no change of the login: a first read must still count.
   let revision = 0;
   let asked = 0;
   let answered = 0;
@@ -96,15 +102,18 @@ export function createSessionState(): SessionState {
     if (!next) settle(true);
     listeners.forEach((listener) => listener());
   };
-  const ended = (question?: Question) => {
-    if (question && question.revision !== revision) return false;
+  const endedUnder = (since?: number) => {
+    if (since !== undefined && since !== revision) return false;
     if (pages > 0) setSignedOut(true);
     return true;
   };
-  // The login ends at its time whatever the page does; only a new login moves it. No page, no timer to leak.
+  const ended = (question?: Question) => endedUnder(question?.revision);
+  // The login ends at its time whatever the page does; only a new login moves it. No page, no timer to leak. The deadline
+  // is the login's as it was when the timer was set: once the login has changed, the old deadline ends nothing.
   const arm = () => {
     clearTimeout(endTimer);
-    if (pages > 0 && endsAtMs !== null) endTimer = setTimeout(() => ended(), Math.max(0, endsAtMs - Date.now()));
+    const armed = revision;
+    if (pages > 0 && endsAtMs !== null) endTimer = setTimeout(() => endedUnder(armed), Math.max(0, endsAtMs - Date.now()));
   };
   const ask = (): Question => ({ revision, order: ++asked });
 
@@ -160,11 +169,9 @@ export function createSessionState(): SessionState {
       if (confirmed) windowDoneAt = null;
       const back = signedOut;
       setSignedOut(false);
-      // A new login of the page's user: one that follows the end, or that a login window announced.
-      if (back || confirmed) {
-        renewals += 1;
-        revision += 1;
-      }
+      // A new login of the page's user: one that follows the end, or that a login window announced (whose word has already
+      // moved the revision, so what was asked since is still taken).
+      if (back || confirmed) renewals += 1;
       endsAtMs = status.session_ends_in === undefined ? null : Date.now() + status.session_ends_in * 1000;
       arm();
       return true;
@@ -172,6 +179,7 @@ export function createSessionState(): SessionState {
     ended,
     loginWindowDone() {
       windowDoneAt = asked;
+      revision += 1;
     },
     whenRenewed(signal) {
       if (pages === 0 || signal?.aborted) return Promise.resolve(false);
