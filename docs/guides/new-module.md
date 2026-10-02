@@ -87,7 +87,7 @@ python3.12 -m venv .venv
 # .venv/bin/pip install --no-deps -r backend/requirements.txt              # after replacing <full sha>
 ```
 
-`backend/requirements.lock` is generated, not edited: its header holds the `uv pip compile` command, and `--exclude-newer` fixes the index's state so the same command gives the same file. After the release, a module lists `eneo-module-bff==x.y.z` and its own packages in a `requirements.in` and compiles its own lock.
+`backend/requirements.lock` is generated, not edited: its header holds the `uv pip compile` command, and `--exclude-newer` fixes the index's state so the same command gives the same file. `requirements.txt` stays: Docker, CI and the devcontainer install it after the lock, and it is where the BFF's version is pinned (after the release its one line is `eneo-module-bff==x.y.z`). After the release a module lists `eneo-module-bff==x.y.z` and its own packages in a `requirements.in` and compiles its own lock.
 
 ## 3. Set the environment
 
