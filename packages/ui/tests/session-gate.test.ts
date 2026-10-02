@@ -416,3 +416,92 @@ test("when onIdentity fails the page stays closed: someone else's data is not sh
   assert.doesNotMatch(container.textContent ?? "", /Sidan/);
   assert.match(container.textContent ?? "", /Kunde inte kontakta modulen/);
 });
+
+const seen = () => {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+  document.dispatchEvent(new Event("visibilitychange"));
+};
+
+test("a status read begun before a request found the login ended does not uncover the page with its late answer", async (t) => {
+  const late: Array<(response: Response) => void> = [];
+  let status = 0;
+  const browserFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    if (String(url) === "/api/auth/status") {
+      status += 1;
+      return status === 1 ? json(signedIn()) : new Promise<Response>((resolve) => late.push(resolve));
+    }
+    // The module's own route: the backend says the login has ended.
+    return new Response("{}", { status: 401, headers: { "X-Auth-Required": "session" } });
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = browserFetch;
+  });
+  const { createFetchWithSession } = await import("../src/session/request.js");
+  const { act, state } = await gate();
+  await act(async () => settle());
+  const fetchWithSession = createFetchWithSession(state);
+
+  await act(async () => seen()); // a status question is out, its answer held
+  assert.equal(late.length, 1);
+  await act(async () => {
+    void fetchWithSession("/api/eneo/runs/", { method: "POST" }).catch(() => undefined);
+    await settle();
+  });
+  assert.equal(state.signedOut, true, "a request found the login ended");
+  assert.ok(dialog()?.hasAttribute("open"), "and the page is covered");
+
+  await act(async () => {
+    late[0](json(signedIn())); // the answer to the earlier question: signed in
+    await settle();
+  });
+  assert.equal(state.signedOut, true, "it is about the login before: the page stays covered");
+  assert.ok(dialog()?.hasAttribute("open"));
+});
+
+test("a renewal between two short sessions resets the dialog: the warning of the new end, not the words of the ended one", async (t) => {
+  let answer: () => Response = () => json(signedIn(anna, 30));
+  backend(t, () => answer());
+  const { act, state } = await gate();
+  await act(async () => settle(50));
+  assert.match(dialog()?.textContent ?? "", /Du loggas snart ut/, "30 seconds left: the warning is open");
+  await act(async () => state.observe(signedOutStatus));
+  assert.match(dialog()?.textContent ?? "", /Du behöver logga in igen/);
+
+  // The new login lives 45 seconds: its end is under a minute from the old one, which the page's smoothing keeps.
+  answer = () => json(signedIn(anna, 45));
+  await act(async () => {
+    seen();
+    await settle(60);
+  });
+  assert.equal(state.signedOut, false);
+  assert.match(dialog()?.textContent ?? "", /Du loggas snart ut/, "the warning for the new session");
+  assert.doesNotMatch(dialog()?.textContent ?? "", /Du behöver logga in igen/, "the ended latch is gone");
+});
+
+test("a renewal before the end that the login window announced resets the warning, though its end moved by under a minute", async (t) => {
+  let endsIn = 200;
+  backend(t, () => json(signedIn(anna, endsIn)));
+  const nodeChannel = globalThis.BroadcastChannel;
+  globalThis.BroadcastChannel = FakeChannel as unknown as typeof BroadcastChannel;
+  t.after(() => {
+    globalThis.BroadcastChannel = nodeChannel;
+  });
+  t.mock.method(window, "open", () => null);
+  const { act } = await gate();
+  await act(async () => settle(50));
+  await act(async () => button(dialog()!, "Fortsätt arbeta")!.click());
+  assert.match(dialog()?.textContent ?? "", /Fönstret kunde inte öppnas/, "the popup was blocked: said in the warning");
+
+  endsIn = 230;
+  const { SESSION_CHANNEL } = await import("../src/session/SignedInAgain.js");
+  const other = new FakeChannel(SESSION_CHANNEL);
+  await act(async () => {
+    other.postMessage("signed-in");
+    await settle(60);
+  });
+  other.close();
+  await act(async () => settle(30)); // the warning is set again for the new end on a timer of its own
+  assert.ok(dialog()?.hasAttribute("open"), "the new end is inside the five minutes too: the warning is there for it");
+  assert.doesNotMatch(dialog()?.textContent ?? "", /Fönstret kunde inte öppnas/, "the old warning's problem is gone with the renewal");
+});

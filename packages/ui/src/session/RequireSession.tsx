@@ -10,7 +10,7 @@ import { SessionDialog } from "./SessionDialog.js";
 import { SignedOutCover } from "./SignedOutCover.js";
 import { SESSION_CHANNEL } from "./SignedInAgain.js";
 import { SignInScreen } from "./SignInScreen.js";
-import { sessionState, type SessionState } from "./state.js";
+import { sessionState, type Question, type SessionState } from "./state.js";
 import type { SessionStatus, SessionUser } from "./types.js";
 import { sessionUser } from "./user.js";
 
@@ -102,8 +102,8 @@ export function RequireSession({
 }) {
   const [phase, setPhase] = useState<"loading" | "out" | "failed" | "in">("loading");
   const [user, setUser] = useState<SessionUser | null>(null);
-  // When the login ends, and how a new login moves that.
-  const [endsAt, setEndsAt] = useState<number | null>(null);
+  // When the login ends, and the renewal it was read under: a confirmed renewal starts the dialog over, however near the old end.
+  const [end, setEnd] = useState<{ at: number | null; renewal: number }>({ at: null, renewal: 0 });
   const [controls, setControls] = useState<HTMLElement | null>(null);
   const focusBack = useRef<((before: HTMLElement | null) => void) | null>(null);
   const onIdentityRef = useRef(onIdentity);
@@ -117,26 +117,27 @@ export function RequireSession({
     let channel: BroadcastChannel | null = null;
     let endPage: (() => void) | undefined;
 
-    const observe = (s: SessionStatus) => {
+    // False when the state refused the answer: it is about a login that has changed since the question was asked.
+    const observe = (s: SessionStatus, question: Question): boolean => {
+      const before = state.renewals;
       // Signed in, until when, or signed out: the page asks for a new login in place, never navigates.
-      state.observe(s);
+      if (!state.observe(s, question)) return false;
       if (s.authenticated && s.session_ends_in !== undefined) {
         const next = Date.now() + s.session_ends_in * 1000;
-        // The same end read again moves by the request's second or so; only a new login moves it far.
-        setEndsAt((current) => (current !== null && Math.abs(next - current) < 60_000 ? current : next));
+        const renewal = state.renewals;
+        setEnd((current) =>
+          // The same end read again moves by the request's second or so; only a new login moves it far, or says it is one.
+          renewal === before && current.at !== null && Math.abs(next - current.at) < 60_000 ? current : { at: next, renewal },
+        );
       }
+      return true;
     };
-    // Answers can come back out of order (a slow check, then a renewal's): only an answer to a later question than the
-    // last one used moves the end or the keepalive. A stopped keepalive's answers count the same way.
-    let asked = 0;
-    let used = 0;
+    // The state orders the answers (a slow check, then a renewal's; a check begun before the end): one that it refuses
+    // moves nothing, neither the end nor the keepalive. A stopped keepalive's answers count the same way.
     const read = async (): Promise<SessionStatus | null> => {
-      const question = ++asked;
+      const question = state.ask();
       const s = await readStatus();
-      if (cancelled || question <= used) return null;
-      used = question;
-      observe(s);
-      return s;
+      return !cancelled && observe(s, question) ? s : null;
     };
     // The token keepalive follows the latest status: a renewed login brings a token of its own to refresh, after the
     // old one's keepalive stopped at the old end.
@@ -167,7 +168,10 @@ export function RequireSession({
         keepAlive(s);
         // From here a login renewed in its own window (or another tab) moves the end for this page too.
         channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(SESSION_CHANNEL);
-        channel?.addEventListener("message", recheck);
+        channel?.addEventListener("message", () => {
+          state.loginWindowDone();
+          recheck();
+        });
         document.addEventListener("visibilitychange", onVisible);
       })
       .catch(() => {
@@ -207,7 +211,8 @@ export function RequireSession({
         {children}
       </SignedOutCover>
       <SessionDialog
-        endsAt={endsAt}
+        endsAt={end.at}
+        renewal={end.renewal}
         signedOut={signedOut}
         owner={user}
         otherUser={otherUser}
