@@ -23,7 +23,8 @@ function replayable(init: RequestInit): boolean {
 /**
  * `fetch` for a page whose login can end. Signed out (or someone else signed in here), nothing but `/api/auth/*`
  * leaves the page: a request that is safe to send twice waits for the new login and is sent once more, any other
- * fails with `SessionExpiredError`. A 401 with `X-Auth-Required: session` ends the login and is handled the same way.
+ * fails with `SessionExpiredError`. A 401 with `X-Auth-Required: session` ends the login and is handled the same way, unless
+ * a renewal came between the request and its refusal.
  * Any other answer is returned as it came: parsing it is the module's.
  */
 export function createFetchWithSession(state: SessionState) {
@@ -34,9 +35,12 @@ export function createFetchWithSession(state: SessionState) {
         if (replayable(init) && (await state.whenRenewed(init.signal))) return send(again);
         throw new SessionExpiredError();
       }
+      const question = state.ask();
       const res = await fetch(path, { ...init, credentials: "include" });
       if (isSessionEndedAnswer(res.status, res.headers.get("X-Auth-Required")) && !path.startsWith("/api/auth/")) {
-        state.ended();
+        // A refusal that comes after a renewal belongs to the login before it: it covers nothing, and a request that is
+        // safe to send twice goes once under the login now (which waits, if that one has ended too).
+        state.ended(question);
         if (!again && replayable(init) && (await state.whenRenewed(init.signal))) return send(true);
         throw new SessionExpiredError();
       }

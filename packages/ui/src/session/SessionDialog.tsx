@@ -21,6 +21,7 @@ export const WARN_BEFORE_MS = 5 * 60_000;
  */
 export function SessionDialog({
   endsAt,
+  renewal,
   signedOut,
   owner,
   otherUser,
@@ -32,6 +33,8 @@ export function SessionDialog({
 }: {
   /** When the login ends, as the page's clock has it; null until the first answer. */
   endsAt: number | null;
+  /** How many renewals have been confirmed: one starts the warning over even when the end it brings is the old one's neighbour. */
+  renewal: number;
   /** The login has ended: nothing on the page is within reach until the new login. */
   signedOut: boolean;
   /** The page's user, the one to sign in as. */
@@ -56,7 +59,8 @@ export function SessionDialog({
   // Where the focus was when the warning opened: the page's, once the dialog has covered an ended login.
   const returnFocus = useRef<HTMLElement | null>(null);
 
-  // A later end (a renewed login) takes the warning away and sets it again for the new end.
+  // A later end, or a renewal confirmed (a new login whose end may be near the old one), takes the warning and what it said
+  // away and sets it again for the new end.
   useEffect(() => {
     setOpen(false);
     setProblem(null);
@@ -66,7 +70,7 @@ export function SessionDialog({
       setOpen(true);
     }, Math.max(0, endsAt - WARN_BEFORE_MS - Date.now()));
     return () => clearTimeout(timer);
-  }, [endsAt]);
+  }, [endsAt, renewal]);
 
   function renewInWindow() {
     // Before the end, `renew` binds the new login to the user signed in now. After it the backend has nobody to bind
