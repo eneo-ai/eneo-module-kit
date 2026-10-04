@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import gzip
 import logging
 import re
 from collections.abc import Collection, Iterable, Sequence
@@ -14,6 +16,7 @@ from starlette.datastructures import Headers
 from .deps import require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 from .upstream import UnboundedAnswer
+from .web import NO_STORE
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -28,7 +31,9 @@ FORWARDED_REQUEST_HEADERS = frozenset(
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
 # several would be merged into one line, and one named like the module's session would replace it. Its Location
-# names Eneo's own host, which the browser cannot reach and which says how the network is laid out.
+# names Eneo's own host, which the browser cannot reach and which says how the network is laid out. Its caching and
+# policy headers speak for Eneo's origin, not the module's: the module's own (``web.SECURITY_HEADERS``, ``NO_STORE``)
+# stand, and a page that Eneo's policy let be framed, or its answer kept, would be the module's.
 _UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
@@ -37,7 +42,16 @@ _UNFORWARDED_RESPONSE_HEADERS = {
     "content-length",
     "set-cookie",
     "location",
+    "cache-control",
+    "content-security-policy",
+    "x-frame-options",
+    "permissions-policy",
+    "referrer-policy",
 }
+
+# A JSON answer of the proxy of at least this many bytes is gzipped for a client that accepts it. Smaller ones cost more
+# to compress than they save.
+_COMPRESS_MIN_BYTES = 1024
 
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
 # error, not an answer for the browser. (304 is not one: If-None-Match is forwarded, and a conditional read gets it.)
@@ -150,6 +164,56 @@ def forwarded_headers(headers: Headers, allowed: Collection[str], *, skip: str =
     return forwarded
 
 
+def _accepted_encodings(accept_encoding: str | None) -> set[str]:
+    """The content codings a client names with a quality above zero (``gzip`` is one, ``gzip;q=0`` is not)."""
+    accepted = set()
+    for part in (accept_encoding or "").split(","):
+        name, *parameters = (piece.strip() for piece in part.split(";"))
+        quality = 1.0
+        for parameter in parameters:
+            key, _, value = parameter.partition("=")
+            if key.strip().lower() == "q":
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+        if name and quality > 0:
+            accepted.add(name.lower())
+    return accepted
+
+
+def _is_json(content_type: str | None) -> bool:
+    media_type = (content_type or "").split(";")[0].strip().lower()
+    return media_type == "application/json" or (media_type.startswith("application/") and media_type.endswith("+json"))
+
+
+async def _compress_json(request: Request, upstream: httpx2.Response, headers: dict[str, str]) -> bytes:
+    """The body to send for a proxied answer: Eneo's content, gzipped when that is allowed, with ``headers`` changed to say so.
+
+    Only a whole JSON answer (2xx but not 204 or 206, no Content-Range, to a request without a Range) of at least
+    ``_COMPRESS_MIN_BYTES`` is compressed, and only for a client that accepts gzip. An answer that could be gzipped
+    gets ``Vary: Accept-Encoding`` either way. The compression runs off the event loop (zlib lets go of the GIL): a
+    WebSocket relay or a file stream of the module shares it.
+    """
+    content = upstream.content
+    if (
+        not 200 <= upstream.status_code < 300
+        or upstream.status_code in {204, 206}
+        or len(content) < _COMPRESS_MIN_BYTES
+        or not _is_json(upstream.headers.get("content-type"))
+        or "content-range" in upstream.headers
+        or "range" in request.headers
+    ):
+        return content
+    headers["Vary"] = "Accept-Encoding"
+    if "gzip" not in _accepted_encodings(request.headers.get("accept-encoding")):
+        return content
+    headers["Content-Encoding"] = "gzip"
+    for name in [name for name in headers if name.lower() == "etag" and not headers[name].startswith("W/")]:
+        headers[name] = "W/" + headers[name]  # another body of the same resource: no longer a strong validator
+    return await asyncio.to_thread(gzip.compress, content, 6)
+
+
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
@@ -224,12 +288,12 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             for k, v in upstream.headers.items()
             if k.lower() not in _UNFORWARDED_RESPONSE_HEADERS
         }
-        # A response is one user's: no cache keeps it unless Eneo said how it may be kept.
-        if not any(name.lower() == "cache-control" for name in resp_headers):
-            resp_headers["Cache-Control"] = "private, no-store"
+        # A response is one user's: no cache keeps it, whatever Eneo said.
+        resp_headers["Cache-Control"] = NO_STORE
+        content = await _compress_json(request, upstream, resp_headers)
 
         return Response(
-            content=upstream.content,
+            content=content,
             status_code=upstream.status_code,
             headers=resp_headers,
             media_type=upstream.headers.get("content-type"),

@@ -1,3 +1,5 @@
+import gzip
+import json
 import random
 import time
 import timeit
@@ -13,6 +15,7 @@ from eneo_module_bff.auth import ModuleSession, ModuleUser, SESSION_COOKIE
 from eneo_module_bff.deps import require_same_origin, require_session
 from eneo_module_bff.proxy import FORWARDED_REQUEST_HEADERS, RESOURCE_ID, leaves_route, rule
 from eneo_module_bff.settings import Settings
+from eneo_module_bff.web import SECURITY_HEADERS
 
 # The kit ships no rules; these are what the test module allows.
 PROXY_RULES = [
@@ -46,12 +49,15 @@ class FakeProxyClient:
         self.calls: list[dict[str, object]] = []
         self.response_headers = None
         self.response_status = None
+        self.response_content = None
 
     async def request(self, **kwargs):
         self.calls.append(kwargs)
         response = FakeResponse()
         if self.response_headers is not None:
-            response.headers = self.response_headers
+            response.headers = httpx2.Headers(self.response_headers)
+        if self.response_content is not None:
+            response.content = self.response_content
         if self.response_status is not None:
             response.status_code = self.response_status
         return response
@@ -270,12 +276,98 @@ class EneoProxyAuthTests(unittest.TestCase):
 
         self.assertEqual(self.client.get("/api/eneo/flows/", headers={"If-None-Match": '"v1"'}).status_code, 304)
 
-    def test_a_proxied_response_is_not_cached_unless_eneo_says_how(self) -> None:
+    def test_a_proxied_response_is_never_cached_whatever_eneo_says(self) -> None:
         self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "private, no-store")
 
-        self.proxy_client.response_headers = {"content-type": "application/json", "Cache-Control": "max-age=60"}
+        self.proxy_client.response_headers = {"content-type": "application/json", "Cache-Control": "public, max-age=3600"}
 
-        self.assertEqual(self.client.get("/api/eneo/flows/").headers["cache-control"], "max-age=60")
+        self.assertEqual(self.client.get("/api/eneo/flows/").headers.get_list("cache-control"), ["private, no-store"])
+
+    def test_eneos_policy_headers_never_reach_the_browser_and_the_modules_stand_in_their_place(self) -> None:
+        eneo = {
+            "Content-Security-Policy": "default-src *",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Permissions-Policy": "camera=*",
+            "Referrer-Policy": "unsafe-url",
+        }
+        self.proxy_client.response_headers = {"content-type": "application/json", **eneo}
+
+        response = self.client.get("/api/eneo/flows/")
+
+        for name in eneo:
+            self.assertEqual(response.headers.get_list(name), [SECURITY_HEADERS[name]], name)
+
+    BIG_JSON = json.dumps({"items": [{"id": n, "name": f"flow number {n}", "published": True} for n in range(200)]}).encode()
+
+    def eneo_answers(self, content: bytes = BIG_JSON, status: int = 200, **headers: str) -> None:
+        self.proxy_client.response_content = content
+        self.proxy_client.response_status = status
+        self.proxy_client.response_headers = {"content-type": "application/json", **headers}
+
+    def test_a_large_json_answer_is_gzipped_for_a_client_that_accepts_it(self) -> None:
+        self.eneo_answers(ETag='"v1"')
+
+        response = self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": "gzip"})
+
+        self.assertEqual(response.headers["content-encoding"], "gzip")
+        self.assertEqual(response.headers["vary"], "Accept-Encoding")
+        self.assertEqual(response.content, self.BIG_JSON, "the client decodes what the module sent")
+        self.assertLess(int(response.headers["content-length"]), len(self.BIG_JSON) // 4)
+        self.assertEqual(response.headers["etag"], 'W/"v1"', "another body of the same resource is not a strong validator")
+        self.assertEqual(response.headers["cache-control"], "private, no-store")
+
+    def test_a_json_answer_is_not_gzipped_for_a_client_that_does_not_accept_it(self) -> None:
+        for accept in ("identity", "gzip;q=0", "br, deflate", ""):
+            with self.subTest(accept=accept):
+                self.eneo_answers(ETag='"v1"')
+
+                response = self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": accept})
+
+                self.assertNotIn("content-encoding", response.headers)
+                self.assertEqual(response.headers["vary"], "Accept-Encoding", "the answer could have been gzipped")
+                self.assertEqual(response.headers["content-length"], str(len(self.BIG_JSON)))
+                self.assertEqual(response.headers["etag"], '"v1"')
+
+    def test_only_a_whole_json_answer_worth_compressing_is_gzipped(self) -> None:
+        cases = {
+            "small": dict(content=b'{"items": []}'),
+            "just under the threshold": dict(content=b" " * 1023),
+            "not JSON": dict(content=b"id,name\n" * 500, **{"content-type": "text/csv"}),
+            "an error": dict(status=500),
+            "no content": dict(content=b"", status=204),
+            "a part of it": dict(status=206, **{"Content-Range": "bytes 0-9/100"}),
+        }
+        for label, answer in cases.items():
+            with self.subTest(label):
+                content = answer.pop("content", self.BIG_JSON)
+                self.eneo_answers(content, **answer)
+
+                response = self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": "gzip"})
+
+                self.assertNotIn("content-encoding", response.headers)
+                self.assertNotIn("vary", response.headers)
+        with self.subTest("a Range was asked for"):
+            self.eneo_answers()
+
+            response = self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": "gzip", "Range": "bytes=0-9"})
+
+            self.assertNotIn("content-encoding", response.headers)
+
+    def test_a_json_media_type_with_a_suffix_or_a_charset_is_json(self) -> None:
+        for media_type in ("application/json; charset=utf-8", "application/problem+json", "APPLICATION/JSON"):
+            with self.subTest(media_type):
+                self.eneo_answers(**{"content-type": media_type})
+
+                response = self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": "gzip"})
+
+                self.assertEqual(response.headers["content-encoding"], "gzip")
+
+    def test_gzip_is_the_same_bytes_gzip_makes(self) -> None:
+        self.eneo_answers()
+        with self.client.stream("GET", "/api/eneo/flows/", headers={"Accept-Encoding": "gzip"}) as response:
+            raw = b"".join(response.iter_raw())
+
+        self.assertEqual(gzip.decompress(raw), self.BIG_JSON)
 
     def test_leaves_route_answers_as_it_did_before_it_was_compiled(self) -> None:
         pieces = ["a", "b", "/", "/", ".", "..", "...", "%2e", "%2E", "%2f", "%5c", "\\", "\x00", "\n", "\r", "\x7f", "?", "#", "%00",

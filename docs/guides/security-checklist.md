@@ -19,6 +19,8 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Nothing is proxied until named | Rules match method and whole path; a path that could reach another Eneo route is a 403 first | `proxy.py` |
 | The browser chooses no credential and no framing header | A short request-header allowlist; the credentials come from the session | `proxy.py` |
 | Eneo's `Set-Cookie` and `Location` stay with the module; a redirect is an error | 502 `upstream_redirect` for the proxy, uploads and files | `proxy.py`, `transport.py` |
+| Eneo's policy and caching headers do not speak for the module's origin | `Cache-Control`, `Content-Security-Policy`, `X-Frame-Options`, `Permissions-Policy` and `Referrer-Policy` are not passed on by the proxy; the module's own stand | `proxy.py`, `web.py` |
+| One user's answer is kept by no cache | The proxy and file streams answer `Cache-Control: private, no-store`; so does any answer under `/api` that sets no `Cache-Control` | `proxy.py`, `transport.py`, `web.py` |
 | No body is read before auth or past a limit | A body cap on every route; uploads read after the route's guards, counted as they arrive | `limits.py`, `transport.py` |
 | File streams cannot starve the API | At most `MAX_CONCURRENT_STREAMS` at once; a quick 503; a 5 s wait for a free connection | `transport.py`, `app.py` |
 | A stream's connection and slot come back however it ends | Eneo's answer is closed in a `finally` around the whole response, shielded and bounded at 2 s; the slot is returned after the close | `transport.py` |

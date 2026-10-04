@@ -111,7 +111,9 @@ proxy_rules = [
 - Never allow a route that mints a signed URL (or returns any other bearer credential): the proxy hands Eneo's body to the browser as it is. A signed file URL belongs to `stream_signed` (section 7), which mints it, keeps it in the session and streams the file, so the URL never leaves the module.
 - The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. Add more with `create_app(forward_request_headers=["X-Thing"])`. A credential or framing header (`Authorization`, `Cookie`, `Origin`, `Referer`, `X-API-Key`, `Proxy-Authorization`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`) is a `ValueError` when the app is built. The service key and the module-user token are always set by the module, whatever the browser sent.
-- Eneo's `Set-Cookie` and `Location` never reach the browser. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
+- Eneo's `Set-Cookie`, `Location`, `Cache-Control`, `Content-Security-Policy`, `X-Frame-Options`, `Permissions-Policy` and `Referrer-Policy` never reach the browser: the answer carries the module's security headers and `Cache-Control: private, no-store`. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
+- A JSON answer of 1 KiB or more (a whole `2xx` one, not `204` or `206`, to a request without `Range`) is gzipped for a browser that accepts gzip, with `Vary: Accept-Encoding` and a weak `ETag`.
+- A route of the module under `/api` that sets no `Cache-Control` is `private, no-store`; one that sets its own keeps it.
 
 ## 6. Forward an upload
 

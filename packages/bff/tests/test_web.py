@@ -132,6 +132,29 @@ class WebTests(unittest.TestCase):
             for name, value in SECURITY_HEADERS.items():
                 self.assertEqual(response.headers[name], value, f"{name} on {path}")
 
+    def test_an_answer_under_api_is_not_cached_unless_its_route_says_how(self) -> None:
+        router = APIRouter()
+
+        @router.get("/api/plain")
+        async def plain() -> dict[str, str]:
+            return {"own": "plain"}
+
+        @router.get("/api/cached")
+        async def cached() -> Response:
+            return Response("{}", headers={"Cache-Control": "max-age=60"})
+
+        client = self.build(routers=[router])
+
+        for path in ("/api/plain", "/api/nope", "/api/healthz", "/api", "/api/", "/api/branding", "/api/branding/logo/light"):
+            with self.subTest(path):
+                self.assertEqual(client.get(path).headers["cache-control"], "private, no-store")
+        for path, own in (("/api/cached", "max-age=60"), ("/api/auth/status", "no-store"), ("/flows/abc", "no-cache")):
+            with self.subTest(path):
+                self.assertEqual(client.get(path).headers["cache-control"], own)
+        for path in ("/health", "/assets/app.js", "/favicon.svg", "/assets/nope.js", "//api/plain"):
+            with self.subTest(path):
+                self.assertNotIn("no-store", client.get(path).headers.get("cache-control", ""))
+
     def test_the_policy_allows_nothing_inline_and_nothing_from_another_origin(self) -> None:
         self.assertIn("script-src 'self'", CONTENT_SECURITY_POLICY)
         self.assertIn("style-src 'self'", CONTENT_SECURITY_POLICY)

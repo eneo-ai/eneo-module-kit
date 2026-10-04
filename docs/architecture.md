@@ -175,7 +175,7 @@ flowchart TB
   b --> up["Call Eneo at ENEO_BACKEND_URL/api/v1/path with the query string"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
-  up -->|"any other status"| resp["Same status and body. Set-Cookie and Location dropped. Cache-Control private, no-store if Eneo sent none"]
+  up -->|"any other status"| resp["Same status and body. Set-Cookie, Location, Cache-Control and Eneo's policy headers dropped. Cache-Control private, no-store. JSON of 1 KiB or more gzipped for a browser that accepts it"]
 ```
 
 Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`) and `limits.py`. A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.

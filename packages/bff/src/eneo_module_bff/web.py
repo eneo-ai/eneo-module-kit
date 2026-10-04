@@ -29,8 +29,14 @@ SECURITY_HEADERS = {
 }
 
 
+# An answer of the app is one user's: no cache keeps it. The default of every answer under /api, and the proxy's and
+# the file streams' own.
+NO_STORE = "private, no-store"
+
+
 def add_security_headers(app: FastAPI, overrides: dict[str, str] | None = None) -> None:
-    """Every response gets the headers unless the route set its own (a same-origin PDF preview, a logo)."""
+    """Every response gets the headers unless the route set its own (a same-origin PDF preview, a logo). An answer
+    under ``/api`` that says nothing about caching is ``NO_STORE``."""
     headers = {**SECURITY_HEADERS, **(overrides or {})}
 
     @app.middleware("http")
@@ -38,6 +44,9 @@ def add_security_headers(app: FastAPI, overrides: dict[str, str] | None = None) 
         response: Response = await call_next(request)
         for name, value in headers.items():
             response.headers.setdefault(name, value)
+        path = request.scope["path"]
+        if path == "/api" or path.startswith("/api/"):
+            response.headers.setdefault("Cache-Control", NO_STORE)
         return response
 
 

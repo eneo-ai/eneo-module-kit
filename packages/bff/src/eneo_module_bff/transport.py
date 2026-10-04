@@ -20,6 +20,7 @@ from .limits import allow_upload, declared_length, too_large
 from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_too_large, upstream_url, uri_too_long
 from .settings import Settings, has_control_character
 from .upstream import SMALL_ANSWER, SMALL_ANSWER_BYTES, STREAMED, UnboundedAnswer
+from .web import NO_STORE
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -452,5 +453,5 @@ def _file_headers(upstream: httpx2.Response, inline_types: Sequence[str]) -> dic
     if not _may_be_shown_inline(media_type, (*INLINE_MEDIA_TYPES, *inline_types)):
         resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
     resp_headers["x-content-type-options"] = "nosniff"
-    resp_headers["Cache-Control"] = "private, no-store"
+    resp_headers["Cache-Control"] = NO_STORE
     return resp_headers

@@ -139,6 +139,21 @@ class ProxyAnswerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((response.status_code, response.content), (304, b""))
                 self.assertEqual(response.headers["etag"], '"v1"')
 
+    async def test_a_large_json_answer_reaches_the_browser_gzipped_with_the_modules_headers_and_not_eneos(self) -> None:
+        body = json.dumps({"items": [f"flow number {n}" for n in range(500)]}).encode()
+        eneo, browser = self.module(
+            lambda request: (200, json_headers(**{"cache-control": "public, max-age=60", "content-security-policy": "default-src *", "etag": '"v1"'}), body)
+        )
+
+        response = await browser.get("/api/eneo/things/x/", headers={"Accept-Encoding": "gzip"})
+
+        self.assertEqual(response.headers["content-encoding"], "gzip")
+        self.assertEqual(response.content, body)
+        self.assertLess(int(response.headers["content-length"]), len(body) // 4)
+        self.assertEqual(response.headers["etag"], 'W/"v1"')
+        self.assertEqual(response.headers["cache-control"], "private, no-store")
+        self.assertIn("default-src 'self'", response.headers["content-security-policy"])
+
     async def test_the_client_asks_for_no_encoding(self) -> None:
         seen = []
         eneo, browser = self.module(lambda request: (seen.append(request.headers["accept-encoding"]) or 200, json_headers(), b"{}"))

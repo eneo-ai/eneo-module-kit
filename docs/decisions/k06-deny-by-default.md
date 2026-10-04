@@ -15,7 +15,7 @@ Eneo serves every user of a module on one connection pool, and every call carrie
 Deny by default, for paths and for headers.
 - The kit ships the mechanism and no allowlist entries; each module names its routes with `rule(...)`.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. A module may add to the list, but never a credential or framing header. The credentials are set by the module from the session.
-- Eneo's `Location` and `Set-Cookie` never reach the browser. A redirect from Eneo (301, 302, 303, 307, 308) is a 502 `upstream_redirect`: the module follows none and no route of a module is expected to redirect.
+- Eneo's `Location`, `Set-Cookie`, `Cache-Control` and policy headers (`Content-Security-Policy`, `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`) never reach the browser. A redirect from Eneo (301, 302, 303, 307, 308) is a 502 `upstream_redirect`: the module follows none and no route of a module is expected to redirect.
 
 ## Consequences
 
