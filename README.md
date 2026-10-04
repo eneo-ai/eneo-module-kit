@@ -101,3 +101,7 @@ the source of truth.
 | Speech-to-text running on the kit | After its Astryx port, on a released kit version |
 
 The design is in `docs/design.md` and the implementation plan in `docs/plans/2026-10-01-module-kit-plan.md`. Work is tracked in Beads (`.beads/`, prefix `kit`).
+
+## Licence
+
+AGPL-3.0-only, the same licence as Eneo: see [LICENSE](LICENSE).
