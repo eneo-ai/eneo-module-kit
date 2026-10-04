@@ -155,6 +155,34 @@ class WebTests(unittest.TestCase):
             with self.subTest(path):
                 self.assertNotIn("no-store", client.get(path).headers.get("cache-control", ""))
 
+    def test_an_unhandled_error_is_a_500_with_the_security_headers_and_is_still_raised_to_the_server(self) -> None:
+        router = APIRouter()
+
+        @router.get("/api/boom")
+        async def api_boom() -> None:
+            raise RuntimeError("a bug in a route")
+
+        @router.get("/boom")
+        async def boom() -> None:
+            raise RuntimeError("a bug in a route")
+
+        client = self.build(
+            routers=[router], security_headers={"Permissions-Policy": "camera=(), geolocation=(), microphone=(self)"}
+        )
+        client = TestClient(client.app, raise_server_exceptions=False)
+
+        for path, cache in (("/api/boom", "private, no-store"), ("/boom", None)):
+            with self.subTest(path):
+                response = client.get(path)
+
+                self.assertEqual((response.status_code, response.text), (500, "Internal Server Error"))
+                for name, value in SECURITY_HEADERS.items():
+                    expected = "camera=(), geolocation=(), microphone=(self)" if name == "Permissions-Policy" else value
+                    self.assertEqual(response.headers[name], expected, f"{name} on {path}")
+                self.assertEqual(response.headers.get("cache-control"), cache)
+        with self.assertRaises(RuntimeError):
+            TestClient(client.app).get("/api/boom")
+
     def test_the_policy_allows_nothing_inline_and_nothing_from_another_origin(self) -> None:
         self.assertIn("script-src 'self'", CONTENT_SECURITY_POLICY)
         self.assertIn("style-src 'self'", CONTENT_SECURITY_POLICY)

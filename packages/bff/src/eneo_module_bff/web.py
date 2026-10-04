@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 CONTENT_SECURITY_POLICY = "; ".join(
     [
@@ -34,18 +34,28 @@ SECURITY_HEADERS = {
 NO_STORE = "private, no-store"
 
 
+def _is_api(path: str) -> bool:
+    return path == "/api" or path.startswith("/api/")
+
+
 def add_security_headers(app: FastAPI, overrides: dict[str, str] | None = None) -> None:
     """Every response gets the headers unless the route set its own (a same-origin PDF preview, a logo). An answer
-    under ``/api`` that says nothing about caching is ``NO_STORE``."""
+    under ``/api`` that says nothing about caching is ``NO_STORE``. So is the 500 for an unhandled exception: Starlette
+    answers it outside every middleware, so it gets them from a handler, and the exception still reaches the server."""
     headers = {**SECURITY_HEADERS, **(overrides or {})}
+
+    async def internal_server_error(request: Request, error: Exception) -> PlainTextResponse:
+        extra = {"Cache-Control": NO_STORE} if _is_api(request.scope["path"]) else {}
+        return PlainTextResponse("Internal Server Error", status_code=500, headers={**headers, **extra})
+
+    app.add_exception_handler(Exception, internal_server_error)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response: Response = await call_next(request)
         for name, value in headers.items():
             response.headers.setdefault(name, value)
-        path = request.scope["path"]
-        if path == "/api" or path.startswith("/api/"):
+        if _is_api(request.scope["path"]):
             response.headers.setdefault("Cache-Control", NO_STORE)
         return response
 
