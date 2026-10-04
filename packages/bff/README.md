@@ -83,7 +83,7 @@ Stable for the UI package and for any other frontend.
 
 | Route | Purpose |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET\|HEAD /health`, `GET\|HEAD /api/healthz` | `{"ok": true}` |
 | `GET /api/auth/login?next=&renew=` | Starts the handoff: 303 to Eneo's `/module-login`, with a state cookie |
 | `GET /api/auth/callback?ticket=&state=` | Finishes it: 303 to `next` with the session cookie set, or to `/?auth_error=<code>` |
 | `POST /api/auth/logout` | Ends the session (same origin required) |
@@ -91,7 +91,7 @@ Stable for the UI package and for any other frontend.
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. `logo` is `"custom"` (served here), `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it) or null (the name as text). |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
+| anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file and an unsafe name are a 404 JSON |
 
 ## Answers the package gives
 

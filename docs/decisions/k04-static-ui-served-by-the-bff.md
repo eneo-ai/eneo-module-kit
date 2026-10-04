@@ -12,11 +12,11 @@ A server-rendered UI would need a second server process or a proxy hop in front 
 
 ## Decision
 
-The UI is a static app. `create_app(static_dir=...)` serves its `assets/` and its one `index.html` for every page, and answers 404 for `/api/*` and for a path that names a missing file. No server rendering.
+The UI is a static app. `create_app(static_dir=...)` serves each built file at one URL and its one `index.html` for every page. `/api/*`, a path that names a missing file and a name that is not a plain file name (a control character, a backslash, a dot segment) are a 404 JSON, never the page. GET and HEAD are answered alike. No server rendering.
 
 ## Consequences
 
 - The Content-Security-Policy has no inline script and no inline style. If a component later needs inline style attributes, only `style-src` is widened, with a note in [design.md](../design.md).
 - Anything that a server render would have injected (colour mode, branding) is handled in the browser: [K9](k09-colour-mode-in-the-ui-package.md), [K10](k10-branding-without-templating.md).
-- `static_dir` must hold an `assets/` directory, or `create_app` raises.
+- The built folder is indexed once, when `create_app` runs: a request does no path resolution or stat, and a file added later is served after a restart. Dotfiles, files that resolve outside the folder, and `.br`/`.gz` files are not served by name.
 - Speech-to-text can adopt the UI package only once it is a static app too.

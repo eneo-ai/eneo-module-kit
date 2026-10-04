@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx2
 from fastapi import APIRouter, Response
@@ -167,6 +168,135 @@ class WebTests(unittest.TestCase):
         self.assertEqual(client.get("/").status_code, 404)
         self.assertEqual(client.get("/health").json(), {"ok": True})
         self.assertEqual(client.get("/").headers["x-content-type-options"], "nosniff")
+
+
+class StaticRuleTests(unittest.TestCase):
+    """What serve_web answers for a path that names nothing, a file twice, or a file that must not be named."""
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = Path(folder.name) / "dist"
+        (self.root / "assets").mkdir(parents=True)
+        (self.root / "index.html").write_text(INDEX)
+        (self.root / "assets" / "app.js").write_text("console.log(1)")
+        (self.root / "assets" / "app.css").write_text("body{}")
+        (self.root / "assets" / "app.js.br").write_bytes(b"not really brotli")
+        (self.root / "assets" / "app.js.gz").write_bytes(b"not really gzip")
+        (self.root / "index.html.br").write_bytes(b"not really brotli")
+        (self.root / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+        (self.root / ".hidden").write_text("hidden-content")
+        (self.root / "assets" / ".DS_Store").write_text("hidden-content")
+        (Path(folder.name) / "secret.txt").write_text("secret")
+        http = httpx2.AsyncClient()
+        self.addCleanup(lambda: asyncio.run(http.aclose()))
+        self.app = create_app(make_settings(), static_dir=self.root, http_client=http)
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+
+    def not_found(self, response: httpx2.Response) -> None:
+        self.assertEqual((response.status_code, response.json()), (404, {"detail": "Not Found"}))
+
+    def raw_get(self, path: str) -> httpx2.Response:
+        """A GET with ``path`` as the server receives it: the test client's URL parser reads ``//api/x`` as a host and
+        resolves ``/./``, so a path that is not canonical goes to the app directly."""
+        sent: list[dict] = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET", "scheme": "http", "root_path": "",
+            "path": path, "raw_path": path.encode(), "query_string": b"", "headers": [(b"host", b"testserver")],
+            "client": ("127.0.0.1", 1), "server": ("testserver", 80),
+        }
+        asyncio.run(self.app(scope, receive, send))
+        start = next(message for message in sent if message["type"] == "http.response.start")
+        body = b"".join(message.get("body", b"") for message in sent if message["type"] == "http.response.body")
+        return httpx2.Response(start["status"], headers=start["headers"], content=body)
+
+    def test_a_control_character_or_a_backslash_anywhere_in_the_path_is_a_404_json_never_the_page(self) -> None:
+        for path in (
+            "/%00", "/a%00", "/flows/%00", "/a%00.js", "/assets/a%00.js",  # NUL
+            "/%01", "/flows/%1f", "/%0a", "/%0d", "/a%09b", "/flows/a%7f",  # the rest of C0, and DEL
+            "/%5Cb", "/flows/a%5Cb", "/a%5Cb.js",  # a backslash
+        ):
+            with self.subTest(path=path):
+                self.not_found(self.client.get(path))
+        for path in ("/a%20b", "/fl%C3%B6de/%C3%A5", "/flows/abc"):  # a space, and letters outside ASCII, are names
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).text, INDEX)
+
+    def test_a_path_that_is_not_canonical_is_never_the_page_in_place_of_an_api_404(self) -> None:
+        for path in ("//api/x", "///api/x", "//api", "/./api/x", "/../api/x", "/a/../api/x", "/flows/./x", "/flows/../x"):
+            with self.subTest(path=path):
+                self.not_found(self.raw_get(path))
+        self.assertEqual(self.raw_get("/flows/abc").text, INDEX)
+
+    def test_a_dotfile_is_never_served(self) -> None:
+        for path in ("/.hidden", "/assets/.DS_Store", "/.env", "/.git/config", "/assets/.hidden.js", "/a/.b"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+
+                self.not_found(response)
+                self.assertNotIn("hidden-content", response.text)
+
+    def test_a_name_too_long_for_the_system_is_a_404_not_a_500(self) -> None:
+        for path in ("/" + "a" * 5000 + ".js", "/assets/" + "a" * 5000 + ".js", "/assets/" + "a" * 300 + ".js", "/" + "a" * 5000 + ".png"):
+            with self.subTest(path=path[:40] + f"…({len(path)})"):
+                self.not_found(self.client.get(path))
+        self.assertEqual(self.client.get("/" + "a" * 5000).text, INDEX, "a route of the app, however long, is the page")
+
+    def test_head_is_answered_like_get_without_a_body(self) -> None:
+        for path in ("/", "/flows/abc", "/index.html", "/assets/app.js", "/favicon.svg", "/health", "/api/healthz", "/assets/nope.js", "/api/nope"):
+            with self.subTest(path=path):
+                got, head = self.client.get(path), self.client.head(path)
+
+                self.assertEqual(head.status_code, got.status_code)
+                self.assertEqual(head.content, b"")
+                self.assertEqual(head.headers.get("content-type"), got.headers.get("content-type"))
+                self.assertEqual(head.headers.get("content-length"), got.headers.get("content-length"))
+
+    def test_a_file_has_one_url_and_a_compressed_sibling_is_never_served_by_its_name(self) -> None:
+        for path in ("/assets/app.js/", "/assets/app.css/", "/assets/app.js.br", "/assets/app.js.gz", "/assets/app.js.br/", "/assets/app.js.gz/", "/index.html.br", "/assets/"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+
+                self.not_found(response)
+                self.assertNotIn("not really", response.text)
+        self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
+        # Outside assets/ a path that ends in a slash is a route of the app, as any other: the page, never a file.
+        for path in ("/flows/", "/favicon.svg/", "/index.html.br/"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).text, INDEX)
+
+    def test_the_page_is_one_document_at_one_address(self) -> None:
+        response = self.client.get("/index.html")
+
+        self.assertEqual((response.status_code, response.text, response.headers["cache-control"]), (200, INDEX, "no-cache"))
+
+    def test_a_file_that_is_reached_through_a_link_out_of_the_folder_is_not_served(self) -> None:
+        (self.root / "link.txt").symlink_to(self.root.parent / "secret.txt")
+        http = httpx2.AsyncClient()
+        self.addCleanup(lambda: asyncio.run(http.aclose()))
+        client = TestClient(create_app(make_settings(), static_dir=self.root, http_client=http), raise_server_exceptions=False)
+
+        response = client.get("/link.txt")
+
+        self.not_found(response)
+        self.assertNotIn("secret", response.text)
+
+    def test_the_folder_is_read_once_at_start_and_a_request_resolves_and_stats_nothing_to_find_a_file(self) -> None:
+        with patch.object(Path, "resolve", side_effect=AssertionError("a request resolved a path")), patch.object(
+            Path, "is_file", side_effect=AssertionError("a request asked the disk")
+        ):
+            self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
+            self.assertEqual(self.client.get("/favicon.svg").status_code, 200)
+            self.not_found(self.client.get("/assets/nope.js"))
+            self.not_found(self.client.get("/" + "a" * 5000 + ".js"))
+            self.assertEqual(self.client.get("/flows/abc").text, INDEX)
 
 
 if __name__ == "__main__":

@@ -52,13 +52,13 @@ python -c "from eneo_module_bff import serve; serve('main:app')"
 
 `serve()` listens on port 3001, runs one worker and keeps the access log off. It refuses `workers=` and `access_log=`. Other uvicorn options pass through (`serve('main:app', port=3464)`).
 
-`static_dir` must hold an `assets/` directory, or the app refuses to start. A request for a path under `/api`, or for a file that is not there, is a 404, never the page.
+`static_dir` is read once, when `create_app` runs. Each file of it has one URL; `index.html` is the page for every path without a file name. A path under `/api`, a file that is not there, a dotfile, a `.br` or `.gz` name and a name with a control character, a backslash or a dot segment are a 404 JSON, never the page. `GET` and `HEAD` are answered alike.
 
 ## 3. What `create_app` gives you
 
 | Route | Source |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET\|HEAD /health`, `GET\|HEAD /api/healthz` | `{"ok": true}` |
 | `GET /api/auth/login`, `GET /api/auth/callback`, `POST /api/auth/logout`, `GET /api/auth/status` | the login handoff and the session |
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | the organisation of the deployment |
 | your `routers=` | whatever you declare |

@@ -66,8 +66,8 @@ def create_app(
     add_security_headers(app, security_headers)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
 
-    @app.get("/api/healthz")
-    @app.get("/health")
+    @app.api_route("/api/healthz", methods=["GET", "HEAD"])
+    @app.api_route("/health", methods=["GET", "HEAD"])
     async def health() -> dict[str, bool]:
         return {"ok": True}
 

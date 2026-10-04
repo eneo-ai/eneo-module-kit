@@ -126,7 +126,7 @@ Stable for the UI package and for any other frontend:
 
 | Route | Purpose |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET\|HEAD /health`, `GET\|HEAD /api/healthz` | `{"ok": true}` |
 | `GET /api/auth/login?next=&renew=` | Start the handoff |
 | `GET /api/auth/callback?ticket=&state=` | Finish it |
 | `POST /api/auth/logout` | End the session (same-origin) |
@@ -134,7 +134,7 @@ Stable for the UI package and for any other frontend:
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |
+| anything else | The static app; a missing file, an unsafe name, `/api` and unknown `/api/*` are a 404 JSON |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
 
