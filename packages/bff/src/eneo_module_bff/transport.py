@@ -4,7 +4,6 @@ import asyncio
 import logging
 import math
 import time
-import unicodedata
 from collections.abc import Iterable, Sequence
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,8 +17,9 @@ from starlette.types import Receive, Scope, Send
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
 from .limits import allow_upload, declared_length, too_large
-from .proxy import REDIRECT_STATUSES, leaves_route, upstream_redirect
-from .settings import Settings
+from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_too_large, upstream_url, uri_too_long
+from .settings import Settings, has_control_character
+from .upstream import SMALL_ANSWER, SMALL_ANSWER_BYTES, STREAMED, UnboundedAnswer
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -52,11 +52,6 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
     return value if value > 0 else None
 
 
-def _has_control_character(value: str | None) -> bool:
-    """A control character (C0, DEL, C1) or a line or paragraph separator: none belongs in a file name or a media type."""
-    return value is not None and any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in value)
-
-
 # Uploads bypass the catch-all proxy because forwarding
 # the browser's raw multipart bytes triggers ReadError from Eneo's load balancer.
 # We re-parse and rebuild the multipart with httpx2 instead.
@@ -70,9 +65,10 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
     (400: a line break in either would be written into the part headers sent to Eneo). Nothing is left behind if
     the upload is cut off or refused.
 
-    The time budget is settings.upload_proxy_timeout_seconds, lowered (never below 60 s) by the request's
-    X-Upload-Timeout-Seconds header. 504 on timeout, 502 when Eneo cannot be reached, 403 for a path that
-    leaves its route.
+    The call to Eneo has a read timeout and a write timeout of settings.upload_proxy_timeout_seconds each, lowered
+    (never below 60 s) by the request's X-Upload-Timeout-Seconds header: per phase, as for every call, so no
+    total deadline bounds the upload. 504 when one of them runs out, 502 when Eneo cannot be reached, 403 for a path
+    that leaves its route.
     """
     settings = request.app.state.settings
     # Upstream URLs are built from decoded path params; a "." / ".." segment or
@@ -94,7 +90,7 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
         if len(parts) != 1 or parts[0][0] != "upload_file" or not isinstance(parts[0][1], UploadFile):
             raise HTTPException(status_code=400, detail="Exactly one file, named upload_file, is required")
         upload_file = parts[0][1]
-        if _has_control_character(upload_file.filename) or _has_control_character(upload_file.content_type):
+        if has_control_character(upload_file.filename) or has_control_character(upload_file.content_type):
             raise HTTPException(status_code=400, detail="The file name and content type must not contain control characters")
         return await _post_file(request, upstream_path, upload_file)
 
@@ -102,11 +98,11 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
 async def _post_file(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
     settings = request.app.state.settings
     http_client = request.app.state.http
-    upstream_url = f"{settings.eneo_backend_url}/api/v1/{upstream_path}"
+    url = upstream_url(settings.eneo_backend_url, upstream_path)
     await upload_file.seek(0)
     try:
         upstream = await http_client.post(
-            upstream_url,
+            url,
             headers=upstream_auth_headers(request),
             files={
                 "upload_file": (
@@ -117,8 +113,13 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
             },
             timeout=_upload_timeout(settings, _requested_upload_timeout_seconds(request)),
         )
+    except httpx2.InvalidURL:
+        raise uri_too_long() from None
+    except UnboundedAnswer:
+        logger.error("Eneo's answer to an upload is past the bound: url=%s", url)
+        return upstream_too_large()
     except httpx2.TimeoutException:
-        logger.exception("Upload timed out: url=%s", upstream_url)
+        logger.exception("Upload timed out: url=%s", url)
         return JSONResponse(
             status_code=504,
             content={
@@ -127,7 +128,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
             },
         )
     except httpx2.RequestError:
-        logger.exception("Upload failed: url=%s", upstream_url)
+        logger.exception("Upload failed: url=%s", url)
         return JSONResponse(
             status_code=502,
             content={
@@ -137,7 +138,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
         )
 
     if upstream.status_code in REDIRECT_STATUSES:
-        logger.error("Upload was answered with a redirect: url=%s status=%s", upstream_url, upstream.status_code)
+        logger.error("Upload was answered with a redirect: url=%s status=%s", url, upstream.status_code)
         return upstream_redirect()
 
     return Response(
@@ -220,19 +221,31 @@ def _read_mint_answer(upstream: httpx2.Response, base_url: str, now: float) -> t
     try:
         payload = upstream.json()
         url = payload["url"]
-        expires_at = payload.get("expires_at") or now + _SIGNED_URL_TTL_SECONDS
-        if isinstance(expires_at, bool):
+        # The default only when the key is missing or null: any other value was supplied, so it must be a number
+        # (0, false, "", [] and {} are not "missing", and none of them is one).
+        expires_at = payload.get("expires_at")
+        if expires_at is None:
+            expires_at = now + _SIGNED_URL_TTL_SECONDS
+        elif isinstance(expires_at, bool):
             raise ValueError("expires_at is not a number")
         expires_at = float(expires_at)
         # Only the path and the signed query of the URL are used, on the host the module reaches Eneo on; but a URL
         # of another kind (ftp, file, javascript, a relative one) is not what Eneo's signed-URL route returns.
         parsed = urlsplit(url) if isinstance(url, str) else None
-    except (ValueError, TypeError, KeyError, AttributeError):
-        # Not JSON, not an object, no url, an expires_at that is not a number, or a URL that cannot be parsed.
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        # Not JSON, not an object, no url, an expires_at that is not a number (or too big for one), or a URL that
+        # cannot be parsed.
         raise _InvalidMintAnswer from None
-    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc or not math.isfinite(expires_at):
+    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.netloc or not (math.isfinite(expires_at) and expires_at > 0):
         raise _InvalidMintAnswer
-    return _rebase_signed_url(url, base_url), expires_at
+    rebased = _rebase_signed_url(url, base_url)
+    try:
+        # What the client will build the request from, before the URL is kept: one it refuses (a NUL, too long)
+        # would be cached, and every later request of the session would fail on it.
+        httpx2.URL(rebased)
+    except httpx2.InvalidURL:
+        raise _InvalidMintAnswer from None
+    return rebased, expires_at
 
 
 async def _signed_url(request: Request, session_id: str, mint_path: str, unavailable: str) -> str:
@@ -246,13 +259,19 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
 
     try:
         upstream = await http_client.post(
-            f"{settings.eneo_backend_url}/api/v1/{mint_path}",
+            upstream_url(settings.eneo_backend_url, mint_path),
             json={
                 "expires_in": _SIGNED_URL_TTL_SECONDS,
                 "content_disposition": "inline",
             },
             headers=upstream_auth_headers(request),
+            extensions=SMALL_ANSWER,
         )
+    except httpx2.InvalidURL:
+        raise uri_too_long() from None
+    except UnboundedAnswer:
+        logger.error("Signed URL answer is past the bound: path=%s", mint_path)
+        raise _InvalidMintAnswer from None
     except httpx2.RequestError:
         logger.exception("Signed URL request failed: path=%s", mint_path)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
@@ -324,6 +343,19 @@ async def stream_signed(
             slots.release()
 
 
+async def _read_small(upstream: httpx2.Response) -> bytes:
+    """The body of a streamed answer that is an error, closed; empty if it is longer than an error is."""
+    body = bytearray()
+    try:
+        async for chunk in upstream.aiter_raw():
+            body += chunk
+            if len(body) > SMALL_ANSWER_BYTES:
+                return b""
+    finally:
+        await upstream.aclose()
+    return bytes(body)
+
+
 async def _stream_file(
     request: Request,
     slots: asyncio.Semaphore,
@@ -335,6 +367,8 @@ async def _stream_file(
     http_client = request.app.state.http
     sessions = request.app.state.module_auth.sessions
     session_id = request.cookies.get(SESSION_COOKIE) or ""
+    # Before anything is asked of Eneo: a header httpx2 cannot write is the client's mistake, not a reason to mint.
+    fwd_headers = forwarded_headers(request.headers, _STREAM_FORWARD_REQUEST_HEADERS)
     try:
         url = await _signed_url(request, session_id, mint_path, unavailable)
     except _InvalidMintAnswer:
@@ -343,12 +377,7 @@ async def _stream_file(
             content={"error": "upstream_invalid", "detail": "Eneo answered with something the module cannot use."},
         )
 
-    fwd_headers = {
-        name: value
-        for name, value in request.headers.items()
-        if name.lower() in _STREAM_FORWARD_REQUEST_HEADERS
-    }
-    upstream_request = http_client.build_request("GET", url, headers=fwd_headers)
+    upstream_request = http_client.build_request("GET", url, headers=fwd_headers, extensions=STREAMED)
     try:
         upstream = await http_client.send(upstream_request, stream=True)
     except httpx2.RequestError:
@@ -369,11 +398,16 @@ async def _stream_file(
         # A rejected token is not worth keeping around; the next request mints anew.
         sessions.forget_signed_url(session_id, mint_path)
         try:
-            body = await upstream.aread()
-        finally:
-            await upstream.aclose()
+            body = await _read_small(upstream)
+        except httpx2.RequestError:
+            # Cut off or silent while its body was read: no more an answer than one that never came.
+            logger.exception("File stream answer could not be read: path=%s status=%s", mint_path, upstream.status_code)
+            return JSONResponse(
+                status_code=502,
+                content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
+            )
         detail: object = unavailable
-        if upstream.headers.get("content-type", "").startswith("application/json"):
+        if body and upstream.headers.get("content-type", "").startswith("application/json"):
             try:
                 detail = httpx2.Response(200, content=body).json()
             except ValueError:

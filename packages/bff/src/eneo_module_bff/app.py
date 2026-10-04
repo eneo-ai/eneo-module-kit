@@ -13,6 +13,7 @@ from .auth import ModuleAuth
 from .limits import BodyLimitMiddleware
 from .proxy import ProxyRule, proxy_router
 from .settings import Settings, load_settings
+from .upstream import hold_http_loggers_at_warning, make_client
 from .web import add_security_headers, serve_web
 
 
@@ -38,15 +39,12 @@ def create_app(
     """
     if settings is None:
         settings = load_settings()
+    # Whatever client serves the app (an injected one too): the application's logging may be at INFO.
+    hold_http_loggers_at_warning()
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.
-        # pool=5: a call waits at most 5 s for a free connection. With the default 60 s, a pool held full by
-        # streams made every API call a 502 after a minute.
-        http_client = httpx2.AsyncClient(
-            timeout=httpx2.Timeout(60.0, connect=10.0, pool=5.0),
-            follow_redirects=False,
-        )
+        http_client = make_client(settings)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

@@ -58,6 +58,13 @@ class BrandingRouteTests(unittest.TestCase):
             # An SVG opened on its own runs nothing in the module's origin.
             self.assertIn("sandbox", response.headers["content-security-policy"])
 
+    def test_the_default_logo_is_the_modules_own_and_the_kit_serves_no_file_for_it(self) -> None:
+        self.use(DEFAULT_ORGANIZATION)
+
+        self.assertEqual(self.client.get("/api/branding").json()["organization"]["logo"], "default")
+        for variant in ("light", "dark"):
+            self.assertEqual(self.client.get(f"/api/branding/logo/{variant}").status_code, 404)
+
     def test_no_logo_file_is_not_found(self) -> None:
         self.use(Organization(name="Umeå kommun", logo=None))
         self.assertEqual(self.client.get("/api/branding/logo/light").status_code, 404)

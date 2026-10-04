@@ -1,24 +1,57 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 logger = logging.getLogger("eneo_config")
 
+# The headers that carry credentials or frame a request. A module cannot add one to the request headers the proxy
+# forwards (proxy.py), and none can be the name of the service key's header: the module sets Authorization from the
+# session after the key, and the others are the HTTP client's to write.
+CREDENTIAL_AND_FRAMING_HEADERS = frozenset(
+    {
+        "authorization",
+        "cookie",
+        "origin",
+        "referer",
+        "x-api-key",
+        "proxy-authorization",
+        "host",
+        "content-length",
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "te",
+        "trailer",
+        "upgrade",
+    }
+)
+
+
+def _key_header_problem(name: str) -> str | None:
+    """What is wrong with ``name`` as the header that carries the service key, or None."""
+    if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name) is None:
+        return "must be a valid HTTP header name"
+    # X-API-Key is the default name, so it is the one entry of the set that is allowed.
+    if name.lower() in CREDENTIAL_AND_FRAMING_HEADERS - {"x-api-key"}:
+        return f"cannot be a credential or framing header ({name})"
+    return None
+
 
 class Organization(BaseModel):
-    """The organisation beside "Tal till text": its name, and its logo.
+    """The organisation shown beside the product name: its name, and its logo.
 
-    ``logo`` is ``default`` for Sundsvall's bundled logo, ``custom`` for the
-    deployment's own (served by /api/branding/logo/{light,dark}), or None for
-    the name as text.
+    ``logo`` is ``default`` for the logo the module bundles in its own frontend (the kit serves no file for it),
+    ``custom`` for the deployment's own (served by /api/branding/logo/{light,dark}), or None for the name as text.
     """
 
     name: str
@@ -49,6 +82,9 @@ class Settings(BaseModel):
     max_body_bytes: int = 10 * 1024 * 1024
     # The most one upload may declare (forward_upload).
     max_upload_bytes: int = 1024 * 1024 * 1024
+    # The most of an answer from Eneo the module reads (upstream.py), decoded: a larger one is a 502. Not for a file
+    # that streams (stream_signed), and the answers that carry a token or a URL have a bound of their own.
+    max_response_bytes: int = 32 * 1024 * 1024
     # How many files may stream at once (stream_signed). The shared client keeps 100 connections, and a file holds
     # one for as long as it streams: this leaves the rest for the API.
     max_concurrent_streams: int = 64
@@ -63,6 +99,14 @@ class Settings(BaseModel):
     organization_logo: LogoFile | None = None
     organization_logo_dark: LogoFile | None = None
 
+    @field_validator("eneo_api_key_header_name")
+    @classmethod
+    def _service_key_header(cls, name: str) -> str:
+        # The model's invariant, so settings a module builds itself hold it too (create_app takes them as they are).
+        if problem := _key_header_problem(name):
+            raise ValueError(f"eneo_api_key_header_name {problem}")
+        return name
+
     @property
     def module_origin(self) -> str:
         """The module's origin in canonical form, the one an ``Origin`` header is compared with."""
@@ -70,6 +114,12 @@ class Settings(BaseModel):
         if origin is None:
             raise ValueError("module_public_url must be an absolute http(s) URL")
         return origin
+
+
+def has_control_character(value: str | None) -> bool:
+    """A control character (C0, DEL, C1) or a line or paragraph separator: none belongs in a file name, a media type
+    or a path that a browser or a URL parser will read."""
+    return value is not None and any(unicodedata.category(character) in {"Cc", "Zl", "Zp"} for character in value)
 
 
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -185,6 +235,20 @@ def _positive_int(name: str, default: int) -> int:
     return value
 
 
+def _positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 0.0
+    # nan compares false with everything and inf is no budget: neither is a number of seconds.
+    if not (math.isfinite(value) and value > 0):
+        raise RuntimeError(f"{name} must be a number greater than zero")
+    return value
+
+
 def load_settings(*, default_organization: Organization | None = None, home_path: str = "/") -> Settings:
     required = [
         "ENEO_BACKEND_URL",
@@ -209,12 +273,8 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         raise RuntimeError("MODULE_KEY must use lowercase kebab-case")
 
     api_key_header_name = os.environ.get("ENEO_API_KEY_HEADER_NAME", "X-API-Key")
-    if re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", api_key_header_name) is None:
-        raise RuntimeError("ENEO_API_KEY_HEADER_NAME must be a valid HTTP header name")
-
-    upload_timeout = float(os.environ.get("UPLOAD_PROXY_TIMEOUT_SECONDS", "1800"))
-    if upload_timeout <= 0:
-        raise RuntimeError("UPLOAD_PROXY_TIMEOUT_SECONDS must be greater than zero")
+    if problem := _key_header_problem(api_key_header_name):
+        raise RuntimeError(f"ENEO_API_KEY_HEADER_NAME {problem}")
 
     raw_session_minutes = os.environ.get("SESSION_MAX_AGE_MINUTES", "480")
     try:
@@ -235,9 +295,10 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         eneo_api_key_header_name=api_key_header_name,
         session_secret=session_secret,
         cookie_secure=_parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE"),
-        upload_proxy_timeout_seconds=upload_timeout,
+        upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
+        max_response_bytes=_positive_int("MAX_RESPONSE_BYTES", 32 * 1024 * 1024),
         max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
         session_max_age_seconds=session_minutes * 60,
         home_path=home_path,

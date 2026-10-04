@@ -1,11 +1,14 @@
 # eneo-module-kit: design
 
-Design record, 2026-10-01. Status: proposed, nothing built. The plan that carries it out is
-`docs/plans/2026-10-01-module-kit-plan.md`.
+Purpose: the long-form design record: the module contract with Eneo, the decisions K1 to K12, the BFF's HTTP surface, its limits and the open questions.
+Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
+Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
+
+Design record, 2026-10-01. Status: the BFF described here is built (`packages/bff`); the UI package and the template are planned. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
-`docs/plans/2026-10-01-module-platform-design.md`.
+`docs/plans/2026-10-01-module-platform-design.md` (a file that repository removes when its port ends).
 
 ## 1. Goal
 
@@ -76,12 +79,14 @@ No content type is exempt: FastAPI reads a body whatever the content type says, 
 would otherwise buy an unbounded read. Only `forward_upload` lifts the limit, to `max_upload_bytes`, for its own
 request, after the route's dependencies and its own checks; the bytes that arrive are counted, so a Content-Length
 that lies, or a chunked body, gets no further. What this does not do: an unauthenticated request can still make the
-BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run. Measured, a body of
-that size costs 13 to 26 MiB while it is read and parsed (the most for a JSON model), per request in flight, so a
-module that is public to the internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default.
+BFF buffer up to `max_body_bytes` of a body, once per request, before a route's dependencies run. What that costs in memory is in section 6, so a module that is public to the
+internet sets `MAX_BODY_BYTES` for its own largest JSON body, not for the default.
+A Content-Length that is not a length (not ASCII digits, longer than 19 characters, or 2**63 or more) is a 400
+`Invalid Content-Length`, whatever the route: uvicorn's httptools parser lets a zero-padded one of any length through,
+and `int()` refuses more than 4300 digits, so it would otherwise be a 500.
 A body that passes the limit while a response is already streaming ends the response, as if the client had gone.
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
-http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, and the log names the mint path,
+http(s) or that the client refuses (a NUL, over 65,536 characters), an `expires_at` that was given but is not a finite number above zero (`false`, `0`, `""`, `[]`, `{}`, a negative one or one too big for a float; only a missing or null one means the default of 15 minutes)) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
 At most `max_concurrent_streams` (64) files stream at once: a stream holds one of the shared client's 100
 connections for as long as it runs, so the next one is a 503 with `Retry-After` at once, and the API keeps its
@@ -151,9 +156,37 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   an upload's own budget): there is no total deadline per request. One is added when a module needs it.
 - `serve()` stops within 8 s of SIGTERM, with files still streaming (`timeout_graceful_shutdown`), because Docker
   kills the container after 10 s.
-- At the Starlette floor (1.3.1) the temporary file of an upload that is cut off is closed when garbage is collected,
-  not at once (13 open files at rest, 27 after 175 cut-off uploads in a test, then steady); from 1.7 it is closed
-  at once. Raising the floor to 1.7 removes the delay.
+- The Starlette floor is 1.7.0 (FastAPI's own floor stays 0.142.2: every FastAPI release from 0.138 to 0.142.2 declares
+  only `starlette>=0.46.0`, and the suite passes on 1.7.0). The first release with no known advisory (1.3.1) was not enough. From 1.3.1 to 1.6 a
+  multipart body the parser cannot read (a bare CR in a file name, a part header of 20 KB, garbage before the first
+  boundary, no boundary at all) is a 500, because the parser's own error is not turned into a response, and the
+  temporary file of an upload that is cut off is closed when garbage is collected, not at once (13 open files at rest,
+  27 after 175 cut-off uploads, then steady). From 1.7.0 those are a 400 and the file is closed at once.
+  The "a malformed body is a 400, never a 500" claim therefore holds at the floor, and a library that is used with
+  the newest stack gains nothing from a lower one.
+- The memory bound is per request, not total. Measured on a 10 MiB body: one request raises the process's peak by
+  about 21 MiB (`request.body()`) or 42 MiB (a JSON model), and 50 at once raise it by 13 to 16 MiB or 17 to 26 MiB
+  each. A module multiplies that by the requests it expects in flight; the cap bounds a request, not their sum, and
+  no global byte budget is built.
+- The client the kit builds (`upstream.make_client`) keeps no cookies: one client serves every user, so a cookie Eneo
+  sets on one user's call would otherwise be sent with the next user's. Every call to Eneo is authorised by its
+  headers alone. A module that passes its own `http_client` to `create_app` owns that policy.
+- What Eneo answers is bounded as it arrives, like what the browser sends. The kit's client (`upstream.make_client`) asks
+  for no encoding, refuses an encoded answer (a few KB of gzip decode to gigabytes, and the decoded size is what is
+  held), and stops at `max_response_bytes` (32 MiB; 502 `upstream_too_large`, the answer closed): the proxy and
+  uploads. The answers that carry a token or a URL (ticket exchange, session check, refresh, signed URL) stop at 1 MiB
+  and the body of a failed file answer is read to 1 MiB and dropped past it. Only a file that streams is unbounded, and an answer that cannot carry content (to a HEAD, a 204, a 304, which may declare the length of the representation it did not send) is not checked. A
+  proxied answer is still held whole until it is sent, so `MAX_RESPONSE_BYTES` is the most payload one answer retains,
+  not the memory it costs: httpx2 joins the chunks it read into one `bytes`, and holds both while it does, and the
+  transport adds its own buffers. Measured against a real server, one 24 MiB answer raised the module's peak by 55 to
+  59 MiB (2.3 to 2.5 times the payload), and six 8 MiB answers at once by 73 to 89 MiB (1.5 to 1.9 times each, as
+  the joins do not all coincide). A module plans for about 2.5 times `MAX_RESPONSE_BYTES` per answer in flight, times
+  the answers it expects at once, and sets `MAX_RESPONSE_BYTES` for its largest real answer; one that serves large
+  downloads uses `stream_signed`, not the proxy.
+- No log record carries a URL with a query. httpx2 logs every request's full URL at INFO, and a signed file URL carries
+  its bearer token in the query string (a proxied call carries the user's query), so `create_app` holds the `httpx2` and
+  `httpcore2` loggers at WARNING, whatever the application's root logger says. The kit's own records name a path template
+  or a status. A module that logs the URLs of its own calls to Eneo carries that rule itself.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).
 - Recorded, not built: no cap on the number of sessions (each one needs an Eneo login, which Eneo rate-limits, and a
@@ -173,3 +206,7 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
 | Does `eneo-ai` own the `@eneo-ai` scope on npm? | To be checked before the first release. |
 | Licence for this repository? | None yet; the module repositories have none either. |
 | Router for the template? | `react-router`, library mode. The UI package does not depend on it. |
+
+## Build scaffolding (temporary)
+
+The plan that carries this design out is `docs/plans/2026-10-01-module-kit-plan.md`. It and the Beads board exist only while the kit is built.
