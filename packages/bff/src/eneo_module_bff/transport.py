@@ -291,9 +291,25 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
     return url
 
 
+# How long closing Eneo's answer may take: a peer that does not answer the close does not hold the response.
+_STREAM_CLOSE_TIMEOUT_SECONDS = 2
+
+
+async def _close(upstream: httpx2.Response) -> None:
+    """Close Eneo's answer. Shielded from the cancellation that may be ending the request, bounded, and a failure
+    is logged: closing is cleanup, so it never replaces the answer or the error of the response it belongs to."""
+    with anyio.move_on_after(_STREAM_CLOSE_TIMEOUT_SECONDS, shield=True):
+        try:
+            await upstream.aclose()
+        except Exception:
+            logger.warning("File stream: closing Eneo's answer failed", exc_info=True)
+
+
 class _SlotStreamingResponse(StreamingResponse):
-    """A streamed file that holds one of the app's stream slots until the response is over, however it ends:
-    the file finished, the client went away, or the request was cancelled."""
+    """A streamed file that holds one of the app's stream slots until Eneo's answer is closed, however the
+    response ends: the file finished, an error in the body, the client went away, or the request was cancelled.
+    A BackgroundTask would run only after a stream that succeeded, and a generator is closed only if it is
+    resumed, so the closing belongs to the whole life of the response."""
 
     def __init__(self, upstream: httpx2.Response, slots: asyncio.Semaphore, **kwargs: object) -> None:
         super().__init__(upstream.aiter_raw(), **kwargs)
@@ -304,9 +320,11 @@ class _SlotStreamingResponse(StreamingResponse):
         try:
             await super().__call__(scope, receive, send)
         finally:
-            self._slots.release()
-            with anyio.CancelScope(shield=True):
-                await self._upstream.aclose()
+            try:
+                await _close(self._upstream)
+            finally:
+                # The slot bounds the connections open to Eneo, so it is given back after the close.
+                self._slots.release()
 
 
 async def stream_signed(
@@ -352,7 +370,7 @@ async def _read_small(upstream: httpx2.Response) -> bytes:
             if len(body) > SMALL_ANSWER_BYTES:
                 return b""
     finally:
-        await upstream.aclose()
+        await _close(upstream)
     return bytes(body)
 
 
@@ -390,7 +408,7 @@ async def _stream_file(
     if upstream.status_code in REDIRECT_STATUSES:
         # Not a file: the URL is not worth keeping either, and the stream is closed unread.
         sessions.forget_signed_url(session_id, mint_path)
-        await upstream.aclose()
+        await _close(upstream)
         logger.error("File stream was answered with a redirect: path=%s status=%s", mint_path, upstream.status_code)
         return upstream_redirect()
 
@@ -414,6 +432,17 @@ async def _stream_file(
                 pass
         raise HTTPException(status_code=upstream.status_code, detail=detail)
 
+    try:
+        return _SlotStreamingResponse(
+            upstream, slots, status_code=upstream.status_code, headers=_file_headers(upstream, inline_types)
+        )
+    except Exception:
+        # A header that cannot be written back: the response never existed to close Eneo's answer.
+        await _close(upstream)
+        raise
+
+
+def _file_headers(upstream: httpx2.Response, inline_types: Sequence[str]) -> dict[str, str]:
     resp_headers = {
         k.lower(): v
         for k, v in upstream.headers.items()
@@ -424,4 +453,4 @@ async def _stream_file(
         resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
     resp_headers["x-content-type-options"] = "nosniff"
     resp_headers["Cache-Control"] = "private, no-store"
-    return _SlotStreamingResponse(upstream, slots, status_code=upstream.status_code, headers=resp_headers)
+    return resp_headers

@@ -21,6 +21,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Eneo's `Set-Cookie` and `Location` stay with the module; a redirect is an error | 502 `upstream_redirect` for the proxy, uploads and files | `proxy.py`, `transport.py` |
 | No body is read before auth or past a limit | A body cap on every route; uploads read after the route's guards, counted as they arrive | `limits.py`, `transport.py` |
 | File streams cannot starve the API | At most `MAX_CONCURRENT_STREAMS` at once; a quick 503; a 5 s wait for a free connection | `transport.py`, `app.py` |
+| A stream's connection and slot come back however it ends | Eneo's answer is closed in a `finally` around the whole response, shielded and bounded at 2 s; the slot is returned after the close | `transport.py` |
 | A signed URL never reaches the browser and ends with its session | Minted by the module, kept in the session store | `transport.py`, `auth.py` |
 | A user's file cannot run script from the module's origin | Inline only for audio, video, PDF and PNG, JPEG, GIF, WebP; `nosniff` | `transport.py` |
 | The static folder serves only what it held at start | One URL per built file; a dotfile, a `.br` or `.gz` name, a file that resolves outside the folder, a control character, a backslash, a dot segment, `//api` and an overlong name are a 404 JSON | `web.py` |

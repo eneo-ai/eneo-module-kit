@@ -226,7 +226,7 @@ sequenceDiagram
   S-->>B: bytes streamed through, nosniff, private no-store, attachment unless the type may be shown inline
 ```
 
-Source: `transport.py` (`stream_signed`) and `auth.py` (`ModuleSessionStore.signed_url`). The stream slot is released when the response ends, however it ends. At most `MAX_CONCURRENT_STREAMS` files stream at once. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
+Source: `transport.py` (`stream_signed`) and `auth.py` (`ModuleSessionStore.signed_url`). Eneo's answer is closed when the response ends, however it ends (the file finished, an error in the body, the browser left, a cancellation): in a `finally` around the whole response, shielded from the cancellation and bounded at 2 s, and a failing close is logged and changes nothing. The stream slot is returned after the close. At most `MAX_CONCURRENT_STREAMS` files stream at once. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
 
 ## Target deployment
 

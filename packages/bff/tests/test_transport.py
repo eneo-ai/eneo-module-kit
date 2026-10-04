@@ -2,11 +2,14 @@ import asyncio
 import logging
 import time
 import unittest
+from unittest.mock import patch
 
+import anyio
 import httpx2
 from fastapi import Depends, Request, Response
 from fastapi.testclient import TestClient
 
+from eneo_module_bff import transport
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleSession, ModuleUser
 from eneo_module_bff.deps import require_same_origin, require_session
@@ -841,6 +844,186 @@ class StreamSlotTests(TransportFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refused.status_code, 503)
         fake.hold.set()
         self.assertEqual({r.status_code for r in await asyncio.gather(*tasks)}, {200})
+
+
+class ScriptedStream(FakeStreamResponse):
+    """Eneo's answer as a script: what the body does after its first chunk and what closing it does.
+    Only the module can close it: ``closes`` counts the tries and ``closed`` is set when one went through."""
+
+    def __init__(self, *, status: int = 200, headers: dict[str, str] | None = None, then: str = "ends", closing: str = "works") -> None:
+        headers = headers or {"content-type": "audio/webm", "content-length": "10"}
+        super().__init__(status, headers, b"0123456789")
+        self.then = then
+        self.closing = closing
+        self.closes = 0
+        self.waiting = asyncio.Event()  # the body has sent its first chunk and waits for the next
+        self.close_started = asyncio.Event()
+        self.close_may_end = asyncio.Event()
+
+    async def aiter_raw(self):
+        yield self._body
+        if self.then == "breaks":
+            raise httpx2.ReadError("Eneo went away")
+        if self.then == "waits":
+            self.waiting.set()
+            await asyncio.Event().wait()
+
+    async def aclose(self):
+        self.closes += 1
+        self.close_started.set()
+        if self.closing == "fails":
+            raise RuntimeError("closing failed")
+        if self.closing == "waits":
+            await self.close_may_end.wait()
+        await asyncio.sleep(0)  # a real close awaits the connection: here a cancellation that is not shielded off stops it
+        self.closed = True
+
+
+class StreamCloseTests(TransportFixture, unittest.IsolatedAsyncioTestCase):
+    """Eneo's answer is closed, and its slot given back, however the response ends."""
+
+    LIMIT = 2
+
+    async def asyncSetUp(self) -> None:
+        self.fake = FakeAudioClient()
+        self.build(self.fake, max_concurrent_streams=self.LIMIT)
+        self.slots = self.app.state.stream_slots
+        self.sent: list[dict] = []
+
+    def free(self) -> int:
+        return self.slots._value
+
+    def eneo_answers(self, stream: ScriptedStream) -> ScriptedStream:
+        self.fake.respond = lambda request: stream
+        # A close that waits is let go at the end, so that a module that never stops waiting does not hang the run.
+        self.addCleanup(stream.close_may_end.set)
+        return stream
+
+    def start(self, *, send=None, spec: str = "2.4") -> asyncio.Task:
+        """One GET of the audio route, fed straight to the app."""
+        scope = {
+            "type": "http", "asgi": {"version": "3.0", "spec_version": spec}, "http_version": "1.1", "method": "GET", "scheme": "https",
+            "path": AUDIO, "raw_path": AUDIO.encode(), "query_string": b"", "root_path": "", "client": ("127.0.0.1", 1),
+            "server": ("module.example.test", 443), "headers": [(b"cookie", f"{SESSION_COOKIE}={self.session_id}".encode())],
+        }
+
+        async def receive():
+            await asyncio.Event().wait()  # a GET has no body, and the browser never says it is gone
+
+        async def keep(message) -> None:
+            self.sent.append(message)
+
+        task = asyncio.create_task(self.app(scope, receive, send or keep))
+        self.addCleanup(task.cancel)
+        return task
+
+    async def ended(self, task: asyncio.Task) -> BaseException | None:
+        """What the app raised once it was over; a response that does not end is a failure, not a hung run."""
+        done, _ = await asyncio.wait({task}, timeout=5)
+        self.assertTrue(done, "the response did not end")
+        return task.exception() if not task.cancelled() else asyncio.CancelledError()
+
+    async def test_eneos_answer_is_closed_and_the_slot_returned_however_the_response_ends(self) -> None:
+        for spec in ("2.0", "2.4"):
+            for exit_ in ("whole", "body breaks", "browser leaves between chunks", "browser leaves while a chunk is sent", "send cannot proceed", "scope cancelled"):
+                with self.subTest(exit_, spec=spec):
+                    stream = self.eneo_answers(ScriptedStream(then="breaks" if exit_ == "body breaks" else "waits" if "between" in exit_ or exit_ == "scope cancelled" else "ends"))
+                    sending = asyncio.Event()
+
+                    async def send(message) -> None:
+                        if message["type"] != "http.response.body":
+                            return
+                        if exit_ == "browser leaves while a chunk is sent":
+                            raise OSError("browser went away")
+                        if exit_ == "send cannot proceed":
+                            sending.set()
+                            await asyncio.Event().wait()
+
+                    scopes: list[anyio.CancelScope] = []
+
+                    async def under_scope() -> None:
+                        with anyio.CancelScope() as scope:
+                            scopes.append(scope)
+                            await self.start(send=send, spec=spec)
+
+                    task = asyncio.create_task(under_scope()) if exit_ == "scope cancelled" else self.start(send=send, spec=spec)
+                    if exit_ == "browser leaves between chunks":
+                        await asyncio.wait_for(stream.waiting.wait(), 5)
+                        task.cancel()
+                    elif exit_ == "send cannot proceed":
+                        await asyncio.wait_for(sending.wait(), 5)
+                        task.cancel()
+                    elif exit_ == "scope cancelled":
+                        await asyncio.wait_for(stream.waiting.wait(), 5)
+                        scopes[0].cancel()
+                    await self.ended(task)
+
+                    self.assertTrue(stream.closed)
+                    self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_a_close_that_never_returns_does_not_hold_the_response_or_the_slot(self) -> None:
+        stream = self.eneo_answers(ScriptedStream(closing="waits"))
+
+        with patch.object(transport, "_STREAM_CLOSE_TIMEOUT_SECONDS", 0.05):
+            await self.ended(self.start())
+
+        self.assertEqual(stream.closes, 1)
+        self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_the_slot_is_held_until_eneos_answer_is_closed(self) -> None:
+        stream = self.eneo_answers(ScriptedStream(closing="waits"))
+        task = self.start()
+
+        await asyncio.wait_for(stream.close_started.wait(), 5)
+
+        self.assertEqual(self.free(), self.LIMIT - 1, "the slot bounds the open connections to Eneo, so it is returned after the close")
+        stream.close_may_end.set()
+        await self.ended(task)
+        self.assertEqual(self.free(), self.LIMIT)
+
+    async def test_a_close_that_fails_is_logged_and_does_not_replace_what_the_response_raised(self) -> None:
+        stream = self.eneo_answers(ScriptedStream(then="breaks", closing="fails"))
+        with self.assertLogs("eneo_proxy", "WARNING"):
+            raised = await self.ended(self.start())
+
+        self.assertIsInstance(raised, httpx2.ReadError, "the error of the body, not the one of the close")
+        self.assertEqual((stream.closes, self.free()), (1, self.LIMIT))
+
+    async def test_a_close_that_fails_after_a_whole_file_is_logged_and_the_file_is_still_whole(self) -> None:
+        stream = self.eneo_answers(ScriptedStream(closing="fails"))
+        with self.assertLogs("eneo_proxy", "WARNING"):
+            raised = await self.ended(self.start())
+
+        self.assertIsNone(raised)
+        self.assertEqual(b"".join(m.get("body", b"") for m in self.sent), b"0123456789")
+        self.assertEqual((stream.closes, self.free()), (1, self.LIMIT))
+
+    async def test_a_close_that_fails_does_not_change_the_answer_when_eneo_refuses_or_redirects(self) -> None:
+        logging.disable(logging.CRITICAL)
+        self.addCleanup(logging.disable, logging.NOTSET)
+        for status, expected in ((403, 403), (302, 502)):
+            with self.subTest(status):
+                stream = self.eneo_answers(
+                    ScriptedStream(status=status, headers={"content-type": "application/json", "location": "http://eneo.internal/elsewhere/"}, closing="fails")
+                )
+                self.store.forget_signed_url(self.session_id, MINT_PATH)
+
+                response = await asyncio.to_thread(self.client.get, AUDIO)
+
+                self.assertEqual(response.status_code, expected)
+                self.assertEqual((stream.closes, self.free()), (1, self.LIMIT))
+
+    async def test_an_answer_that_cannot_be_turned_into_a_response_is_closed_and_the_slot_returned(self) -> None:
+        logging.disable(logging.CRITICAL)
+        self.addCleanup(logging.disable, logging.NOTSET)
+        # Eneo's header bytes are read as text; one that Starlette cannot write back is an error after Eneo has answered.
+        stream = self.eneo_answers(ScriptedStream())
+        stream.headers = httpx2.Headers([(b"content-type", b"audio/webm"), (b"content-disposition", 'inline; filename="\u65e5\u672c.webm"'.encode())])
+
+        raised = await self.ended(self.start())
+
+        self.assertIsInstance(raised, UnicodeEncodeError)
+        self.assertEqual((stream.closes, self.free()), (1, self.LIMIT))
 
 
 if __name__ == "__main__":
