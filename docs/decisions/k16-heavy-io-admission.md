@@ -1,4 +1,4 @@
-# K15. Shared admission for heavy operations
+# K16. Shared admission for heavy operations
 
 Purpose: bound upload spooling and long-lived upstream connections before allocating them.
 Read this when: you add a long-lived module protocol, change concurrency or upload reception, or size temporary storage.

@@ -8,8 +8,8 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 |---|---|
 | Eneo | The AI platform a module runs beside. It is the installation's only login and the module's AI engine. |
 | Module | A small web app on its own domain that uses Eneo. It has a backend (the BFF, built on this kit) and a UI. Registered in Eneo with a module key, a callback URL and a service key. |
-| Kit | This repository: the BFF package, the planned UI package and the planned template. |
-| Template | The smallest working module (planned, `template/`). A new module starts as a copy of it. Packages are imported; the template is copied. |
+| Kit | This repository: the BFF package, the UI package and the template. |
+| Template | The smallest working module (`template/`). A new module starts as a copy of it. Packages are imported; the template is copied. |
 | BFF | Backend for frontend: the module's server side. It holds the session and the credentials, and the browser talks only to it. Package `eneo-module-bff`. |
 | Module key | The module's name in Eneo (`MODULE_KEY`): lowercase kebab-case, as registered in Eneo. |
 | Service key | The module's own API key for Eneo (`ENEO_API_KEY`). It is sent in a header whose name is `ENEO_API_KEY_HEADER_NAME` (default `X-API-Key`). It never reaches the browser. |
@@ -28,6 +28,13 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Mint path | The Eneo route (called with POST) that returns a signed URL for a file. Passed to `stream_signed`. |
 | Signed URL | A short-lived URL from Eneo that is itself the credential for one file. Kept with the session, never given to the browser. |
 | Stream slot | One of `MAX_CONCURRENT_STREAMS` places for files streaming at once. |
+| Stub Eneo | `template/stub-eneo/server.py`: Eneo's side of the module contract in about 170 lines, for development and tests. Never shipped. |
+| Gate | The accessibility gate: Playwright and axe over every state of the template at several widths and themes (`template/web/tests/e2e/`). Its thresholds are never lowered. |
+| Colour mode | The person's choice of `light`, `dark` or `system`, stored under `localStorage["theme"]`. Owned by the UI package. |
+| Cover | What hides and disables the page while the login has ended (`SignedOutCover`): the page stays mounted under it, `inert` and invisible, with the sign-in dialog above. |
+| Session client | `@eneo-ai/module-kit/session`: `RequireSession`, the sign-in screen, `SignedInAgain` and `fetchWithSession`. It keeps a page's login and asks for a new one in place. |
+| Shell | `ModuleShell`: the page frame with the top bar, the skip link and the one main region. |
+| Brand (lockup) | `Brand`: the organisation's mark, a divider and the product's name in the top bar. |
 | Module network | The network the module container shares with Eneo's backend. |
 | Beads | The issue tracker (`br`, `.beads/`) that holds the work order of this repository while the kit is built. Not part of the kit. |
 

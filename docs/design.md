@@ -4,7 +4,7 @@ Purpose: the long-form design record: the module contract with Eneo, the decisio
 Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
 Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
 
-Design record, 2026-10-01. Status: the BFF described here is built (`packages/bff`); the UI package and the template are planned. Where this page and the code disagree, the code wins.
+Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The Astryx integration and the first release are planned. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
@@ -91,7 +91,7 @@ never the body.
 Uploads and files share admission through `limits.py` (`heavy_io_slot`); module-owned protocols use the same public guard.
 Admission precedes upload parsing or file minting, returns 503 with `Retry-After` when occupied, and stays held
 through upstream and temporary-file cleanup. Upload reception has total and inactivity deadlines (408), and
-an incomplete multipart body is a 400. [K15](decisions/k15-heavy-io-admission.md) explains the bounds; the
+an incomplete multipart body is a 400. [K16](decisions/k16-heavy-io-admission.md) explains the bounds; the
 [configuration table](guides/configuration.md) owns their defaults and storage sizing.
 The client waits at most 5 s for a free connection (`pool=5`).
 A signed URL is a bearer URL to a file, so the session store keeps it and it ends with its session, however the
@@ -101,12 +101,13 @@ session ends (logout, expiry, a refresh that ends it, a new login replacing it).
 the app's lifespan. No import-time globals, so tests build an app per case instead of patching module state.
 
 **K9. Colour mode is the UI package's own.** A static app has no server render, so the stored choice is read
-before React renders and passed to Astryx's `<Theme mode>` directly. The storage key is `theme` with values
+when the provider first renders (the first paint is already in the right mode) and passed to Astryx's `<Theme mode>` directly. The storage key is `theme` with values
 `light`, `dark`, `system`, the same key and values next-themes uses, so speech-to-text's saved preferences carry
 over. An inline script is not needed, which keeps the strict CSP.
 
-**K10. Branding without templating.** The page asks `/api/branding` before its first render and shows no
-organisation mark until it has the answer. Nothing is injected into `index.html`.
+**K10. Branding without templating.** The page asks `/api/branding` once, when it starts, with a
+deadline of 2 s, and shows the product name alone until it has the answer (and if none comes). Nothing is injected
+into `index.html`. The kit ships no organisation's mark: a module that bundles one passes it as `defaultLogo`.
 
 **K11. Astryx is pinned to an exact version** in the UI package and the template. The house bar above its defaults
 (44 px touch targets, a measured focus ring, a readable dark-mode error label) is met once, in the theme.
@@ -140,6 +141,13 @@ Stable for the UI package and for any other frontend:
 | anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
+
+The UI package's session client depends on four things in this surface:
+
+- The `X-Auth-Required: session` mark on a 401: it is how a request learns that the login ended, as opposed to Eneo's own 401.
+- `session_ends_in` and `refresh_in` in `/api/auth/status`: the warning and the keepalive.
+- `next` and `renew=1` on `/api/auth/login`: before the end a renewal is bound to the user signed in; after the end the backend refuses a renewal (`fel=utgangen`), so the page starts a login without `renew`.
+- The redirect `?fel=annan-anvandare` or `?fel=utgangen` when a renewal is refused: the value is part of the contract and is Swedish.
 
 ## 6. Limits to be honest about
 

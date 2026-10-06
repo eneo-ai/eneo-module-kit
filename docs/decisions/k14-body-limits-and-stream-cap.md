@@ -6,7 +6,7 @@ Related: [decisions](README.md), [K7](k07-primitives-for-uploads-and-files.md), 
 
 Status: Accepted, 2026-10-01. Built: `packages/bff/src/eneo_module_bff/limits.py`, `transport.py`, `app.py`.
 
-The stream-only admission decision below is extended by [K15](k15-heavy-io-admission.md), which adds shared admission with uploads and module protocols, and upload receive deadlines. The body limits remain in force.
+The stream-only admission decision below is extended by [K16](k16-heavy-io-admission.md), which adds shared admission with uploads and module protocols, and upload receive deadlines. The body limits remain in force.
 
 ## Context
 

@@ -1,0 +1,48 @@
+{
+  "name": "@eneo-ai/module-kit",
+  "version": "0.1.0",
+  "description": "The UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell, brand and the session client.",
+  "type": "module",
+  "sideEffects": ["**/*.css"],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./theme.css": "./dist/theme.css",
+    "./layers.css": "./dist/layers.css",
+    "./base.css": "./dist/base.css",
+    "./session": { "types": "./dist/session/index.d.ts", "default": "./dist/session/index.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "astryx": "astryx",
+    "theme:build": "npm run astryx -- theme build src/theme/eneo.theme.ts -o src/theme/built/eneo.css",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "test": "node scripts/test.mjs"
+  },
+  "peerDependencies": {
+    "@astryxdesign/core": "0.6.3",
+    "@stylexjs/stylex": "0.19.1",
+    "react": ">=19.0.0",
+    "react-dom": ">=19.0.0"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.6.3",
+    "@astryxdesign/core": "0.6.3",
+    "@stylexjs/stylex": "0.19.1",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^22.12.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/semver": "7.8.0",
+    "dom-accessibility-api": "0.7.1",
+    "jsdom": "^30.1.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router": "8.4.0",
+    "semver": "7.8.5",
+    "typescript": "5.6.3"
+  },
+  "engines": { "node": ">=22.13.0" }
+}

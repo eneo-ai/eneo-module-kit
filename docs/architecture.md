@@ -11,11 +11,11 @@ Every claim about code names the file, never a line. If a diagram and the code d
 | Part | Path | Status |
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
-| UI package `@eneo-ai/module-kit` | `packages/ui/` | Planned. Not in the repository yet. |
-| Template (the smallest working module) | `template/` | Planned. Not in the repository yet. |
+| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Planned: the Astryx integration. |
+| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose file, module CI, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
-The diagrams below describe the BFF as built, except the last one, which is the target deployment of a module made from the planned template.
+The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
 
 ## Parts and package structure
 
@@ -37,12 +37,13 @@ flowchart TB
     branding["branding.py: /api/branding"]
     settings["settings.py: Settings, load_settings"]
   end
-  ui["packages/ui (planned)"]
-  tpl["template/ (planned)"]
+  ui["packages/ui: providers, shell, brand, theme (built)"]
+  tpl["template/ (built)"]
   module --> app
   module --> serve
   module --> deps
   module --> transport
+  module -->|"web/ imports"| ui
   app --> auth
   app --> proxy
   app --> limits
@@ -58,11 +59,10 @@ flowchart TB
   transport --> auth
   deps --> auth
   auth --> settings
-  ui -.-> module
-  tpl -.-> module
+  tpl -.->|"a module starts as a copy"| module
 ```
 
-The dashed arrows are planned: a module will import the UI package and start as a copy of the template. The BFF holds the module contract with Eneo and no route of any module.
+A module imports both packages and copies none of their code. The BFF holds the module contract with Eneo and no route of any module. The UI package holds no page of any module and imports no router. The dashed arrow is a copy, not an import.
 
 ## System context
 
@@ -162,17 +162,19 @@ Look at: the order of the checks. Nothing reaches Eneo until the session, the or
 
 ```mermaid
 flowchart TB
-  r["Browser: GET, POST or PATCH /api/eneo/path"] --> l{"Content-Length above the cap?"}
-  l -->|"yes"| e413["413"]
+  r["Browser: GET, POST or PATCH /api/eneo/path"] --> l{"Content-Length not a length, or above the cap?"}
+  l -->|"yes"| e413["400 or 413"]
   l -->|"no"| s{"Valid session?"}
   s -->|"no"| e401["401, X-Auth-Required: session"]
   s -->|"yes"| o{"Origin is the module's? Only checked for writes"}
   o -->|"no"| e403a["403 Invalid request origin"]
   o -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
   a -->|"no"| e403b["403 Eneo resource is not exposed"]
-  a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token"]
+  a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token. A value that is not ASCII is a 400"]
   h --> b["Read the body, at most MAX_BODY_BYTES: 413 when the stream passes it"]
-  b --> up["Call Eneo at ENEO_BACKEND_URL/api/v1/path with the query string"]
+  b --> up["Call Eneo at ENEO_BACKEND_URL/api/v1/path, the path encoded as the one the rule matched, with the query string"]
+  up -->|"a URL the client will not write"| e414["414"]
+  up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
   up -->|"any other status"| resp["Same status and body. Set-Cookie and Location dropped. Cache-Control private, no-store if Eneo sent none"]
@@ -220,7 +222,7 @@ sequenceDiagram
   S->>K: signed URL for this session and mint path?
   K-->>S: the URL, or none
   S->>A: POST mint path with both credentials, if none or within 60 s of its end
-  A-->>S: JSON with url and expires_at, else 502 upstream_invalid
+  A-->>S: JSON of at most 1 MiB with url and expires_at, else 502 upstream_invalid
   S->>K: remember it, only while the session lives
   S->>A: GET the signed URL on ENEO_BACKEND_URL with Range, If-Range, Accept, no credentials
   A-->>S: 200 or 206 stream
@@ -229,9 +231,95 @@ sequenceDiagram
 
 Source: `transport.py` (`stream_signed`), `limits.py` (`heavy_io_slot`) and `auth.py` (`ModuleSessionStore.signed_url`). Stream and shared slots are released after the upstream connection closes, however the response ends. The shared ceiling also covers uploads and module protocols that use the public guard. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
 
-## Target deployment
+## The UI app and its layers
 
-Look at: one container, one process, one replica. This is the deployment the planned template builds. The BFF half is built: `serve()` fixes one worker and turns the access log off.
+Look at: the nesting of providers, top to bottom. The kit's UI package supplies the middle (colour mode, theme, words, links, branding, the shell); the module supplies the router and the pages.
+
+```mermaid
+flowchart TB
+  main["main.tsx: five stylesheets in order, then render"] --> router["BrowserRouter: the module's"]
+  router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, toasts, links"]
+  mp --> bp["BrandingProvider: asks /api/branding once"]
+  bp --> app["App: the module's routes"]
+  app --> rs["RequireSession, from the session client: asks /api/auth/status"]
+  rs --> frame["Frame: ModuleShell, Brand, Layout"]
+  frame --> page["A page, built from Astryx components"]
+```
+
+| Layer | Where | Owned by |
+|---|---|---|
+| Stylesheets: `layers.css`, Astryx's `reset.css` and `astryx.css`, `theme.css`, `base.css` | imported in `template/web/src/main.tsx`, in this order | the module imports, the kit and Astryx supply |
+| Providers, shell, brand, theme, colour mode, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
+| Router, pages, `Frame`, `AccountMenu`, `config.ts`, `getJson` | `template/web/src/` | the module |
+| Components | `@astryxdesign/core`, pinned to an exact version | Astryx |
+| Design-system fixes | `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` | the UI package, once, for every module |
+
+The UI is a static app: the BFF serves its built files ([K4](decisions/k04-static-ui-served-by-the-bff.md)), so nothing is rendered on a server and the colour mode is read in the browser on the first render ([K9](decisions/k09-colour-mode-in-the-ui-package.md)). Detail: [UI package](guides/ui-package.md).
+
+## How a page learns the login ended and gets it back
+
+Look at: the page never navigates. It asks the BFF, finds the login ended, covers itself and opens the new login in a window of its own, then hears from that window and asks again.
+
+```mermaid
+sequenceDiagram
+  participant P as Page
+  participant B as BFF
+  participant E as Eneo
+  participant W as Login window
+  P->>B: GET /api/auth/status, when the backend wants a renewal or the page is seen
+  B->>E: refresh the token
+  E-->>B: refused
+  B-->>P: authenticated false
+  P->>P: cover the page, open the sign-in dialog
+  P->>W: person presses Logga in igen, window opens /api/auth/login?next=/inloggad
+  W->>E: sign in, back to the BFF callback
+  E-->>W: ticket
+  W->>B: callback, session cookie set, then to /inloggad
+  W->>P: BroadcastChannel eneo-module:session
+  P->>B: GET /api/auth/status
+  B-->>P: authenticated true, the same user
+  P->>P: lift the cover, give the focus back
+```
+
+Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
+
+## Where the organisation's branding enters
+
+Look at: the deployment sets the organisation once, in the BFF's environment; the page learns it from `/api/branding`; the module chooses its own product name and bundled logo.
+
+```mermaid
+flowchart LR
+  env["Deployment: ORGANIZATION_NAME, ORGANIZATION_LOGO, ORGANIZATION_LOGO_DARK, SHOW_ORGANIZATION"] --> settings["BFF: Settings.organization, logo files read at start"]
+  settings --> api["/api/branding and /api/branding/logo/light or dark, no session"]
+  api --> prov["UI: BrandingProvider asks once, with a 2 s deadline"]
+  prov --> brand["Brand: the mark and the product name in the top bar"]
+  mod["Module: PRODUCT_NAME, and defaultLogo if it bundles one"] --> brand
+```
+
+Until the answer comes, or when it fails, the lockup is the product name alone. The kit ships no organisation's mark. See [K10](decisions/k10-branding-without-templating.md) and [UI package: branding](guides/ui-package.md#branding).
+
+## The template and its image
+
+Look at: two builds in one image. Node builds the UI to static files, Python installs the backend's packages, and only Python and the built files reach the runtime image.
+
+```mermaid
+flowchart LR
+  subgraph build["Build"]
+    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist"]
+    pkgs["Stage python-packages: pip install with hashes from requirements.lock, then the BFF"]
+  end
+  kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"until the release"| web
+  kit -.-> pkgs
+  web --> run["Runtime: python 3.12 slim, user uid 10001, no Node"]
+  pkgs --> run
+  run --> cmd["serve main:build_app on port 3001, HEALTHCHECK on /health"]
+```
+
+The dotted arrows are the pre-release route: without the `kit` build context the Dockerfile installs the pinned versions, which do not exist yet ([new module](guides/new-module.md#6-build-the-image)). Source: `template/Dockerfile`.
+
+## Deployment of a module
+
+Look at: one container, one process, one replica. This is what the template builds and what `serve()` fixes: one worker, no access log.
 
 ```mermaid
 flowchart LR
@@ -255,9 +343,24 @@ flowchart LR
 |---|---|
 | `serve()` runs one uvicorn worker, no access log (the callback URL carries a ticket), WebSocket buffers bounded, stops within 8 s of SIGTERM | Built (`serve.py`) |
 | Port 3001, `GET /health` answers `{"ok": true}` | Built (`serve.py`, `app.py`) |
+| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Built (`template/Dockerfile`) |
 | One container on the module network, no outbound internet | Contract from [design.md](design.md) section 2 |
-| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Planned (template) |
 | Sessions are process-local: one replica. More needs sticky sessions or a shared store | Decided when a module needs it |
+
+## What CI builds and proves
+
+Look at: every job builds against the packages of the same commit, not published ones, so the packages are always proven to work together ([K1](decisions/k01-one-repository-three-parts.md)).
+
+```mermaid
+flowchart TB
+  commit["A commit or pull request"] --> bff["bff: the suite at the lowest and the newest versions, pip-audit"]
+  commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
+  commit --> tb["template-backend: the template's tests on this commit's BFF"]
+  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF, three browsers and the gate"]
+  commit --> ti["template-image: build the image from this commit's packages, run it, GET /health"]
+```
+
+Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
 
 ## Where each fact lives
 
@@ -276,3 +379,17 @@ flowchart LR
 | App factory | `app.py` | `test_app.py` |
 | Running the server | `serve.py` | `test_serve.py`, `test_shutdown.py` |
 | Public names and version | `__init__.py` | `test_serve.py` (the names), `test_package.py` (the version) |
+
+The UI package, the template and the image:
+
+| Topic | Path | Tests |
+|---|---|---|
+| Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
+| Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
+| Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
+| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
+| Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
+| A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
+| Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |
+| A module's UI | `template/web/src/` | `template/web/tests/e2e/` |
+| The image | `template/Dockerfile`, `docker-compose.yml` | the `template-image` job of `.github/workflows/ci.yml` |

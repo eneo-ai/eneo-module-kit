@@ -4,7 +4,7 @@ Purpose: take a backend from nothing to a module that signs in through Eneo, ser
 Read this when: you are writing a module's `main.py`, adding a route, an upload, a file download or a proxy rule.
 Related: [configuration](configuration.md), [local development](local-development.md), [security checklist](security-checklist.md), [BFF package README](../../packages/bff/README.md), [architecture](../architecture.md).
 
-The planned template (`template/`) will hold the result of steps 1 to 3 ready-made. Until it exists, follow this guide. The module's own code stays in the module: its routes, its allowlist, its protocols.
+`template/` holds the result of steps 1 to 4 ready-made, with a UI and a stub Eneo: [new module](new-module.md) starts from it. This guide is the backend in detail. The module's own code stays in the module: its routes, its allowlist, its protocols.
 
 ## 1. Install the package
 
@@ -44,7 +44,7 @@ app = create_app(
 )
 ```
 
-Run it, with the environment of [configuration](configuration.md) set:
+The template builds its app in a function instead, `build_app(settings=None, *, static_dir=..., http_client=None)`, so a test can pass its own settings and client, and runs it with `serve('main:build_app', factory=True)`. Prefer that shape for a module with tests. Run `main:app` as above, with the environment of [configuration](configuration.md) set:
 
 ```bash
 python -c "from eneo_module_bff import serve; serve('main:app')"
@@ -89,7 +89,7 @@ async def add_note() -> dict[str, bool]:
 
 To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run.
 
-Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py`, call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route it cannot check (a mount, a nested include) instead of passing it.
+Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route it cannot check (a mount, a nested include) instead of passing it.
 
 ## 5. Name the Eneo routes you expose
 
@@ -183,11 +183,24 @@ app = create_app(load_settings(home_path="/flows"), routers=[router])
 
 ## 9. Test it
 
-`create_app(settings, http_client=...)` takes a `Settings` built in the test and an HTTP client of your own, so a test builds an app per case and no Eneo is needed. The kit's own tests do this: see `packages/bff/tests/test_app.py` for the app, `test_proxy.py` (`FakeProxyClient`) for a fake client that records its calls, and `test_auth.py` for fake token answers. An injected client is never closed by the app.
+`create_app(settings, http_client=...)` takes a `Settings` built in the test and an HTTP client of your own, so a test builds an app per case and no Eneo is needed. The template's `backend/tests/test_app.py` is a module's example: it builds the app with a temporary `static_dir`, a mock transport for Eneo and a session made in the store. The kit's own tests do this too: see `packages/bff/tests/test_app.py` for the app, `test_proxy.py` (`FakeProxyClient`) for a fake client that records its calls, and `test_auth.py` for fake token answers. An injected client is never closed by the app.
 
 ```bash
 python -m unittest discover -s tests
 ```
+
+## 10. Sessions and dialogs
+
+The UI side of a login that can end while a page is open. Wrap every page that needs a login in `RequireSession` (from `@eneo-ai/module-kit/session`) and call the backend with `fetchWithSession` instead of `fetch`. Route `/inloggad` to `<SignedInAgain productName=... />`: it is where a login in a window of its own ends.
+
+- Signed out, `RequireSession` shows the sign-in screen.
+- Signed in, it keeps the login: it asks the backend when the page is seen, when a login window says it is done, and when the backend wants Eneo's token renewed. It warns five minutes before the end.
+- When the login has ended it covers the page with a modal dialog that asks for a new login in place, so nothing on the page is lost.
+- A read waits for the new login and is sent once more. A write waits only if it carries an `Idempotency-Key`; otherwise it fails with `SessionExpiredError`.
+- A dialog of your own page must be closed while `useSignedOut()` is true (`isOpen={open && !signedOut}`), with its state held above the dialog, so it is back as it was after the new login. Render page dialogs in place, inside the children of `RequireSession`.
+- `onIdentity(user)` is awaited before the page is shown: clear what belongs to someone else there.
+
+See `template/web/src/App.tsx` and `template/web/src/pages/Flows.tsx`, the [UI package guide](ui-package.md#the-session-client), and the [security checklist](security-checklist.md#the-cover-for-an-ended-login).
 
 ## What stays in your module
 
