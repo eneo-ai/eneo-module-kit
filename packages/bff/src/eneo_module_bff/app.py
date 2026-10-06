@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
 import httpx2
+import anyio
 from fastapi import APIRouter, FastAPI
 
 from . import branding
@@ -58,6 +59,8 @@ def create_app(
     app.state.http = http_client
     # One slot per file streaming at once (transport.stream_signed): the rest are 503, and the pool keeps room for the API.
     app.state.stream_slots = asyncio.Semaphore(settings.max_concurrent_streams)
+    app.state.upload_slots = anyio.CapacityLimiter(settings.max_concurrent_uploads)
+    app.state.heavy_io_slots = anyio.CapacityLimiter(settings.max_concurrent_heavy_io)
     app.state.module_auth = ModuleAuth(settings=settings, http_client=http_client)
     # Added before the security headers, so that the 413 it answers carries them.
     app.add_middleware(BodyLimitMiddleware, max_body_bytes=settings.max_body_bytes, max_upload_bytes=settings.max_upload_bytes)

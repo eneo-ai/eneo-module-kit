@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from pydantic import ValidationError
 
 from eneo_module_bff.settings import Organization, Settings, canonical_origin, load_settings
 
@@ -24,6 +25,31 @@ def valid_environment() -> dict[str, str]:
 
 
 class SettingsTests(unittest.TestCase):
+    def test_heavy_admission_and_receive_deadlines_have_validated_operator_controls(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            base = load_settings()
+        self.assertEqual((base.max_concurrent_uploads, base.max_concurrent_heavy_io), (1, 64))
+        self.assertEqual((base.upload_receive_timeout_seconds, base.upload_receive_idle_timeout_seconds), (1800, 30))
+        with patch.dict(os.environ, valid_environment() | {
+            "MAX_CONCURRENT_UPLOADS": "2", "MAX_CONCURRENT_HEAVY_IO": "8",
+            "UPLOAD_RECEIVE_TIMEOUT_SECONDS": "900", "UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS": "45",
+        }, clear=True):
+            selected = load_settings()
+        self.assertEqual((selected.max_concurrent_uploads, selected.max_concurrent_heavy_io), (2, 8))
+        self.assertEqual((selected.upload_receive_timeout_seconds, selected.upload_receive_idle_timeout_seconds), (900, 45))
+        for overrides in (
+            {"max_concurrent_uploads": 0}, {"max_concurrent_heavy_io": 97},
+            {"max_concurrent_uploads": 2, "max_concurrent_heavy_io": 1},
+            {"upload_receive_timeout_seconds": float("inf")}, {"upload_receive_idle_timeout_seconds": 0},
+        ):
+            with self.subTest(overrides=overrides), self.assertRaises(ValidationError):
+                Settings(**(base.model_dump() | overrides))
+        for name, raw in (("MAX_CONCURRENT_HEAVY_IO", "97"), ("MAX_CONCURRENT_UPLOADS", "65"),
+                          ("UPLOAD_RECEIVE_TIMEOUT_SECONDS", "inf"), ("UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS", "0")):
+            with self.subTest(name=name), patch.dict(os.environ, valid_environment() | {name: raw}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, name):
+                    load_settings()
+
     def test_loads_module_contract(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             settings = load_settings()

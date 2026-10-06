@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -100,13 +101,14 @@ def session() -> ModuleSession:
     )
 
 
-def build() -> tuple:
+def build(**overrides) -> tuple:
     """A module: a guarded JSON route, a deliberately public JSON route, a guarded upload route, one proxy rule."""
     eneo = Eneo()
     settings = Settings(
         eneo_backend_url="http://eneo.test", eneo_public_url="http://eneo.example", module_public_url=ORIGIN,
         module_key="limits", eneo_api_key="K", session_secret="x" * 48, cookie_secure=False,
         max_body_bytes=CAP, max_upload_bytes=UPLOAD_CAP,
+        **overrides,
     )
     router = APIRouter()
 
@@ -550,6 +552,78 @@ class UploadTests(Case):
             await self.app(scope, receive, send)
         except Exception:  # the dropped connection surfaces as an error the server logs; what matters is what is left
             pass
+
+
+class UploadReceptionTests(Case):
+    async def test_busy_upload_is_refused_before_reading_and_a_finished_upload_releases_capacity(self) -> None:
+        self.app, self.eneo, self.session_id = build(max_concurrent_uploads=1)
+        receiving, finish = asyncio.Event(), asyncio.Event()
+        body = multipart_of(2)
+
+        async def held():
+            yield body.head
+            receiving.set()
+            await finish.wait()
+            yield b"x" * (2 * MiB)
+            yield body.tail
+
+        async with client(self.app, self.session_id) as browser:
+            first = asyncio.create_task(browser.post("/upload/flow-1", headers={**MULTIPART, "Content-Length": str(body.length)}, content=held()))
+            try:
+                await asyncio.wait_for(receiving.wait(), 2)
+                second_body = multipart_of(2)
+                second = await self.post("/upload/flow-1", second_body, headers=MULTIPART)
+                self.assertEqual(second.status_code, 503)
+                self.assertEqual(second.json()["error"], "uploads_busy")
+                self.assertEqual(second.headers["retry-after"], "2")
+                self.assertEqual(second_body.taken, 0, "a refused upload must not consume spool space")
+                self.assertEqual((await browser.get("/api/auth/status")).status_code, 200)
+            finally:
+                finish.set()
+                result = await first
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual((await self.post("/upload/flow-1", multipart_of(2), headers=MULTIPART)).status_code, 200)
+
+    async def test_idle_and_total_receive_deadlines_close_partial_files_before_answering(self) -> None:
+        for mode in ("idle", "total"):
+            with self.subTest(mode=mode):
+                self.app, self.eneo, self.session_id = build(
+                    upload_receive_timeout_seconds=0.08 if mode == "total" else 1,
+                    upload_receive_idle_timeout_seconds=0.2 if mode == "total" else 0.04,
+                )
+                opened = []
+                original = tempfile.SpooledTemporaryFile
+
+                def spool(*args, **kwargs):
+                    file = original(*args, **kwargs)
+                    opened.append(file)
+                    return file
+
+                async def slow():
+                    yield multipart_head()
+                    yield b"x" * (2 * MiB)
+                    for _ in range(10):
+                        await asyncio.sleep(0.02 if mode == "total" else 0.2)
+                        yield b"x"
+                    yield MULTIPART_TAIL
+
+                with patch("starlette.formparsers.SpooledTemporaryFile", spool):
+                    async with client(self.app, self.session_id) as browser:
+                        response = await browser.post("/upload/flow-1", headers={**MULTIPART, "Content-Length": str(2 * MiB + 1000)}, content=slow())
+                self.assertEqual(response.status_code, 408)
+                self.assertEqual(response.json()["error"], "upload_receive_timeout")
+                self.assertTrue(opened)
+                self.assertTrue(all(file.closed for file in opened), "deadline cleanup cannot rely on garbage collection")
+                self.assertEqual(self.eneo.calls, [])
+                self.assertEqual((await self.post("/upload/flow-1", multipart_of(2), headers=MULTIPART)).status_code, 200)
+
+    async def test_eof_without_a_final_boundary_never_forwards_the_file(self) -> None:
+        for tail in (b"", f"\r\n--{BOUNDARY}\r\n".encode()):
+            with self.subTest(tail=tail):
+                body = Lazy(2, multipart_head(), tail)
+                response = await self.post("/upload/flow-1", body, headers=MULTIPART)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.eneo.calls, [])
 
 
 if __name__ == "__main__":

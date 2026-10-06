@@ -20,6 +20,7 @@ PUBLIC_NAMES = {
     "require_session",
     "require_same_origin",
     "upstream_auth_headers",
+    "heavy_io_slot",
     "forward_upload",
     "stream_signed",
 }

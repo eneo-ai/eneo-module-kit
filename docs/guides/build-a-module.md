@@ -134,6 +134,9 @@ The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multi
 | Above `MAX_UPLOAD_BYTES` | 413 |
 | Not exactly one file named `upload_file`, or a control character (C0, DEL, C1) or a line or paragraph separator in its file name or content type | 400 |
 | The path leaves its route | 403 |
+| The upload limit or shared heavy-operation ceiling is occupied, checked before body parsing | 503 `uploads_busy`, with `Retry-After: 2` |
+| The browser's body exceeds its total or inactivity receive deadline | 408 `upload_receive_timeout` |
+| The multipart body ends without its final boundary | 400 |
 | A read or write of the upload to Eneo takes longer than `UPLOAD_PROXY_TIMEOUT_SECONDS` (or the lower `X-Upload-Timeout-Seconds`, never below 60 s). Each is timed on its own: there is no total deadline | 504 |
 | Eneo cannot be reached, answers with a redirect, or answers with more than `MAX_RESPONSE_BYTES` (or encoded) | 502 |
 | Otherwise | Eneo's status, body and `Content-Type` |
@@ -155,7 +158,20 @@ async def audio(run_id: str, request: Request):
     )
 ```
 
-The mint route must answer JSON with `url`, and may give `expires_at` (a number above zero; missing or null means 15 minutes); anything else is a 502 `upstream_invalid`. The file is shown inline only if it is audio, video, a PDF or a PNG, JPEG, GIF or WebP image, and is an attachment otherwise, always with `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. Widen it with `inline_types=["text/plain", "image/bmp"]` (a media type or `type/*`); never add one that can run script (`text/html`, `image/svg+xml`). At most `MAX_CONCURRENT_STREAMS` files stream at once: the next gets 503 with `Retry-After` at once.
+The mint route must answer JSON with `url`, and may give `expires_at` (a number above zero; missing or null means 15 minutes); anything else is a 502 `upstream_invalid`. The file is shown inline only if it is audio, video, a PDF or a PNG, JPEG, GIF or WebP image, and is an attachment otherwise, always with `X-Content-Type-Options: nosniff` and `Cache-Control: private, no-store`. Widen it with `inline_types=["text/plain", "image/bmp"]` (a media type or `type/*`); never add one that can run script (`text/html`, `image/svg+xml`). Files share admission with uploads and module operations, in addition to `MAX_CONCURRENT_STREAMS`: an occupied limit returns 503 `streams_busy` with `Retry-After` before minting a URL.
+
+For a module's own long-lived upstream connection, use the same admission owner:
+
+```python
+from eneo_module_bff import heavy_io_slot
+
+with heavy_io_slot(request_or_websocket) as admitted:
+    if not admitted:
+        return your_retryable_overload_response()
+    await your_operation_and_upstream_cleanup()
+```
+
+The context never waits. Keep it open through upstream cleanup, including disconnect and cancellation. For a WebSocket, send the protocol's own retryable error and close it when admission fails. The kit does not choose that protocol. Each long-lived upstream connection needs its own slot; a streaming response must keep the context until the response has finished, rather than release it when the route returns.
 
 ## 8. Settings of your own module
 

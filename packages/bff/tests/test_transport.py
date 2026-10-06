@@ -3,6 +3,7 @@ import logging
 import time
 import unittest
 
+import anyio
 import httpx2
 from fastapi import Depends, Request, Response
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleSession, ModuleUser
 from eneo_module_bff.deps import require_same_origin, require_session
+from eneo_module_bff import heavy_io_slot
 from eneo_module_bff.settings import Settings
 from eneo_module_bff.transport import (
     _rebase_signed_url,
@@ -841,6 +843,115 @@ class StreamSlotTests(TransportFixture, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(refused.status_code, 503)
         fake.hold.set()
         self.assertEqual({r.status_code for r in await asyncio.gather(*tasks)}, {200})
+
+
+class HeavyIOAdmissionTests(TransportFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_cancelling_a_refused_file_closes_its_upstream_before_releasing_capacity(self) -> None:
+        reading = anyio.Event()
+        closed = False
+
+        class Refused(FakeAudioClient):
+            async def send(self, *args, **kwargs):
+                response = FakeStreamResponse(403, {"content-type": "application/json"}, b"{}")
+
+                async def raw():
+                    yield b"{"
+                    reading.set()
+                    await anyio.sleep_forever()
+
+                async def close():
+                    nonlocal closed
+                    await anyio.sleep(0)
+                    closed = True
+
+                response.aiter_raw = raw
+                response.aclose = close
+                return response
+
+        self.build(Refused(), max_concurrent_heavy_io=1)
+        async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=self.app), base_url="https://module.example.test",
+                                     cookies={SESSION_COOKIE: self.session_id}) as browser:
+            async with anyio.create_task_group() as group:
+                group.start_soon(browser.get, AUDIO)
+                with anyio.fail_after(2):
+                    await reading.wait()
+                group.cancel_scope.cancel()
+        self.assertTrue(closed, "a cancelled error response must close its HTTP connection")
+        self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
+
+    async def test_capacity_is_held_until_the_upstream_connection_has_closed(self) -> None:
+        closing, finish = asyncio.Event(), asyncio.Event()
+
+        class HeldClose(FakeAudioClient):
+            async def send(self, *args, **kwargs):
+                response = await super().send(*args, **kwargs)
+                original = response.aclose
+
+                async def close():
+                    closing.set()
+                    await finish.wait()
+                    await original()
+
+                response.aclose = close
+                return response
+
+        self.build(HeldClose(), max_concurrent_heavy_io=1)
+        browser = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=self.app), base_url="https://module.example.test",
+                                    cookies={SESSION_COOKIE: self.session_id})
+        self.addAsyncCleanup(browser.aclose)
+        first = asyncio.create_task(browser.get(AUDIO))
+        try:
+            await asyncio.wait_for(closing.wait(), 2)
+            self.assertEqual((await browser.get(AUDIO)).status_code, 503, "a closing connection is still occupied")
+        finally:
+            finish.set()
+            result = await first
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
+
+    async def test_a_module_operation_and_file_share_the_upload_limit_and_leave_auth_available(self) -> None:
+        fake = FakeAudioClient()
+        fake.hold = asyncio.Event()
+        self.build(fake, max_concurrent_heavy_io=2)
+        browser = httpx2.AsyncClient(transport=httpx2.ASGITransport(app=self.app), base_url="https://module.example.test",
+                                    cookies={SESSION_COOKIE: self.session_id})
+        self.addAsyncCleanup(browser.aclose)
+        request = Request({"type": "http", "app": self.app, "headers": []})
+        stream = None
+        with heavy_io_slot(request) as admitted:
+            self.assertTrue(admitted)
+            stream = asyncio.create_task(browser.get(AUDIO))
+            try:
+                for _ in range(200):
+                    if self.app.state.heavy_io_slots.borrowed_tokens == 2:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 2)
+                minted = len(fake.signed_url_calls)
+                rejected = await browser.get("/audio/flow-1/run-2/file-2")
+                self.assertEqual(rejected.status_code, 503)
+                self.assertEqual(len(fake.signed_url_calls), minted)
+                taken = 0
+
+                async def body():
+                    nonlocal taken
+                    taken += 1
+                    yield b"not read"
+
+                upload = await browser.post("/upload/flow-1", content=body(), headers={**ORIGIN, "Content-Type": "multipart/form-data; boundary=x", "Content-Length": "100"})
+                self.assertEqual(upload.status_code, 503)
+                self.assertEqual(taken, 0)
+                self.assertEqual((await browser.get("/api/auth/status")).status_code, 200)
+                with heavy_io_slot(request) as extra:
+                    self.assertFalse(extra, "the module maps its own overload without opening an upstream")
+            finally:
+                fake.hold.set()
+                await stream
+        self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
+        with self.assertRaisesRegex(RuntimeError, "module failed"), heavy_io_slot(request) as admitted:
+            self.assertTrue(admitted)
+            raise RuntimeError("module failed")
+        self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
 
 
 if __name__ == "__main__":

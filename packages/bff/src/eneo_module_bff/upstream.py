@@ -8,7 +8,7 @@ from urllib.request import Request
 
 import httpx2
 
-from .settings import Settings
+from .settings import Settings, UPSTREAM_CONNECTION_LIMIT
 
 # The request extension that sets how much of that request's answer is read: a number of bytes, or None for none (a
 # file that streams). A request without it gets ``Settings.max_response_bytes``.
@@ -93,6 +93,7 @@ def make_client(settings: Settings, *, transport: httpx2.AsyncBaseTransport | No
         # pool=5: a call waits at most 5 s for a free connection. With the default 60 s, a pool held full by
         # streams made every API call a 502 after a minute.
         timeout=httpx2.Timeout(60.0, connect=10.0, pool=5.0),
+        limits=httpx2.Limits(max_connections=UPSTREAM_CONNECTION_LIMIT),
         follow_redirects=False,
         cookies=CookieJar(policy=_NoCookies()),
         headers={"Accept-Encoding": "identity"},

@@ -88,9 +88,12 @@ A body that passes the limit while a response is already streaming ends the resp
 An answer from Eneo to the signed-URL request that the module cannot use (not JSON, no `url`, a URL that is not
 http(s) or that the client refuses (a NUL, over 65,536 characters), an `expires_at` that was given but is not a finite number above zero (`false`, `0`, `""`, `[]`, `{}`, a negative one or one too big for a float; only a missing or null one means the default of 15 minutes)) is a 502 `upstream_invalid`, and the log names the mint path,
 never the body.
-At most `max_concurrent_streams` (64) files stream at once: a stream holds one of the shared client's 100
-connections for as long as it runs, so the next one is a 503 with `Retry-After` at once, and the API keeps its
-connections. The client waits at most 5 s for a free connection (`pool=5`), so a busy pool is a quick 502, not 60 s.
+Uploads and files share admission through `limits.py` (`heavy_io_slot`); module-owned protocols use the same public guard.
+Admission precedes upload parsing or file minting, returns 503 with `Retry-After` when occupied, and stays held
+through upstream and temporary-file cleanup. Upload reception has total and inactivity deadlines (408), and
+an incomplete multipart body is a 400. [K15](decisions/k15-heavy-io-admission.md) explains the bounds; the
+[configuration table](guides/configuration.md) owns their defaults and storage sizing.
+The client waits at most 5 s for a free connection (`pool=5`).
 A signed URL is a bearer URL to a file, so the session store keeps it and it ends with its session, however the
 session ends (logout, expiry, a refresh that ends it, a new login replacing it).
 
@@ -152,8 +155,8 @@ A request without a session gets 401 with `X-Auth-Required: session`. A write fr
   within noise (11 runs each). The floor `>=2.12.0` is where its five advisories are all fixed. It pins `httpcore2`
   to its own version, and it uses the operating system's trust store (`truststore`) instead of `certifi`: a module that
   calls Eneo over HTTPS with a private CA installs that CA in its image.
-- Timeouts are per phase and that is the contract (60 s a read or write, 5 s for a free connection, 10 s to connect,
-  an upload's own budget): there is no total deadline per request. One is added when a module needs it.
+- Forwarding timeouts remain per phase (60 s a read or write, 5 s for a free connection, 10 s to connect,
+  an upload's own forwarding budget). Receiving an upload has total and inactivity deadlines; those do not bound forwarding to Eneo.
 - `serve()` stops within 8 s of SIGTERM, with files still streaming (`timeout_graceful_shutdown`), because Docker
   kills the container after 10 s.
 - The Starlette floor is 1.7.0 (FastAPI's own floor stays 0.142.2: every FastAPI release from 0.138 to 0.142.2 declares

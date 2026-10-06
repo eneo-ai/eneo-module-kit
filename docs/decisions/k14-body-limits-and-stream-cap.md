@@ -6,6 +6,8 @@ Related: [decisions](README.md), [K7](k07-primitives-for-uploads-and-files.md), 
 
 Status: Accepted, 2026-10-01. Built: `packages/bff/src/eneo_module_bff/limits.py`, `transport.py`, `app.py`.
 
+The stream-only admission decision below is extended by [K15](k15-heavy-io-admission.md), which adds shared admission with uploads and module protocols, and upload receive deadlines. The body limits remain in force.
+
 ## Context
 
 FastAPI reads a body before it runs a route's dependencies and whatever the content type says, so an unauthenticated client could make the BFF read an unbounded body by claiming `multipart/form-data`. A file that streams holds one of the shared client's 100 connections for as long as it runs; with a 60 s wait for a free connection a busy pool made every API call a 502 after a minute.

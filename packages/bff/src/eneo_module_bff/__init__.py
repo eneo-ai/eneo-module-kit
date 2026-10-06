@@ -3,6 +3,7 @@
 from .app import create_app
 from .auth import ModuleSession, ModuleUser
 from .deps import require_same_origin, require_session, upstream_auth_headers
+from .limits import heavy_io_slot
 from .proxy import RESOURCE_ID, ProxyRule, rule
 from .serve import serve
 from .settings import Organization, Settings, load_settings
@@ -25,6 +26,7 @@ __all__ = [
     "require_session",
     "require_same_origin",
     "upstream_auth_headers",
+    "heavy_io_slot",
     "forward_upload",
     "stream_signed",
 ]

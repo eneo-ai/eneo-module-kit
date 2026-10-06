@@ -30,7 +30,7 @@ Status: **current** matches the code today; **planned** describes something not 
 | Page | Purpose | Audience | Status |
 |---|---|---|---|
 | [BFF package README](../packages/bff/README.md) | Public names, HTTP surface, answers, limits, how to develop the package | BFF developers | current |
-| [decisions](decisions/README.md) | K1 to K14, one short page each | Anyone asking why | current (K9, K11 planned) |
+| [decisions](decisions/README.md) | K1 to K15, one short page each | Anyone asking why | current (K9, K11 planned) |
 | [design](design.md) | The long form: the module contract with Eneo (section 2), the HTTP surface (5), limits (6), open questions (7) | Developers, the owner | current for the BFF; the UI package and template parts are planned |
 
 ## For agents

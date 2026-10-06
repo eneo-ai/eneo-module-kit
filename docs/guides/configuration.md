@@ -20,10 +20,14 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off` | `false` only for local development over http. |
 | `SESSION_MAX_AGE_MINUTES` | `480` | integer above zero | The most a login lasts. The session also ends at Eneo's own ceiling, whichever comes first. |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | number above zero | The timeout of each read and of each write of one upload to Eneo, not a total for the upload. A request's `X-Upload-Timeout-Seconds` header can lower it, never below 60 s. |
+| `UPLOAD_RECEIVE_TIMEOUT_SECONDS` | `1800` | finite number above zero | Total time to receive and parse the browser's upload body. A deadline returns 408 and closes partial files. |
+| `UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS` | `30` | finite number above zero | Maximum wait for the next body chunk. This does not reset the total receive deadline. |
+| `MAX_CONCURRENT_UPLOADS` | `1` | integer above zero, at most `MAX_CONCURRENT_HEAVY_IO` | Uploads admitted before parsing, including files still forwarding to Eneo or being closed. Size temporary storage for this value times `MAX_UPLOAD_BYTES`, plus filesystem and other application use. |
+| `MAX_CONCURRENT_HEAVY_IO` | `64` | integer from 1 to 96 | Shared ceiling for uploads, signed-file streams and module operations using `heavy_io_slot`. The kit's HTTP pool has 100 connections; the upper bound leaves at least four for short API and auth calls. |
 | `MAX_BODY_BYTES` | `10485760` (10 MiB) | integer above zero | The most of any request body, but an upload that `forward_upload` reads. A body of this size costs 21 MiB (42 MiB as a JSON model) for one request, and 13 to 16 MiB (17 to 26) each when 50 arrive at once: a module that is public to the internet sets it for its own largest JSON body. |
 | `MAX_UPLOAD_BYTES` | `1073741824` (1 GiB) | integer above zero | The most one upload may declare. |
 | `MAX_RESPONSE_BYTES` | `33554432` (32 MiB) | integer above zero | The most of an answer from Eneo that the proxy and an upload read, decoded; a larger one is a 502 `upstream_too_large`, read no further. Not for a file that streams. The answers that carry a token or a URL are limited to 1 MiB. It is the payload one answer retains, not its memory: reading one costs about 2.5 times as much while the chunks are joined (measured: 55 to 59 MiB for a 24 MiB answer), so a module sets it for its largest real answer. |
-| `MAX_CONCURRENT_STREAMS` | `64` | integer above zero | How many files may stream at once through `stream_signed`. |
+| `MAX_CONCURRENT_STREAMS` | `64` | integer above zero | How many files may stream at once through `stream_signed`, also bounded by the shared heavy-operation ceiling. |
 | `SHOW_ORGANIZATION` | `true` | boolean, as `COOKIE_SECURE` | `false` shows no organisation at all. |
 | `ORGANIZATION_NAME` | none | at most 100 characters, white space collapsed | The organisation shown beside the product name. It is also the logo's text alternative. |
 | `ORGANIZATION_LOGO` | none | path to an `.svg` or `.png` of at most 1 MiB, whose content matches its name. Needs `ORGANIZATION_NAME` | The organisation's logo, served at `/api/branding/logo/light`. A file that cannot be used is logged once and the name is shown instead. |
@@ -57,3 +61,5 @@ EOF
 ```
 
 `session_max_age_seconds` is `SESSION_MAX_AGE_MINUTES` times 60. The variables and their checks are in `load_settings`.
+
+`Settings` validates the capacity values and receive deadlines even when a module constructs it directly. A module passing its own HTTP client to `create_app` must give that pool room beyond its configured heavy-operation ceiling, and apply `heavy_io_slot` to its own long-lived upstream connections. The shared ceiling does not reserve capacity against arbitrary short API traffic.

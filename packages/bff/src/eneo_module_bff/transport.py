@@ -1,22 +1,24 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
+from contextlib import ExitStack, asynccontextmanager
 from urllib.parse import urlsplit, urlunsplit
 
 import anyio
 import httpx2
+from python_multipart.multipart import parse_options_header
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.datastructures import UploadFile
+from starlette.datastructures import FormData, UploadFile
+from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.types import Receive, Scope, Send
 
 from .auth import SESSION_COOKIE, SignedUrl
 from .deps import upstream_auth_headers
-from .limits import allow_upload, declared_length, too_large
+from .limits import _capacity_slot, allow_upload, declared_length, heavy_io_slot, too_large
 from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_too_large, upstream_url, uri_too_long
 from .settings import Settings, has_control_character
 from .upstream import SMALL_ANSWER, SMALL_ANSWER_BYTES, STREAMED, UnboundedAnswer
@@ -55,6 +57,61 @@ def _requested_upload_timeout_seconds(request: Request) -> float | None:
 # Uploads bypass the catch-all proxy because forwarding
 # the browser's raw multipart bytes triggers ReadError from Eneo's load balancer.
 # We re-parse and rebuild the multipart with httpx2 instead.
+class _UploadParser(MultiPartParser):
+    def __init__(self, request: Request) -> None:
+        self._complete = False
+        self._idle_seconds = request.app.state.settings.upload_receive_idle_timeout_seconds
+        super().__init__(request.headers, self._receive(request.stream()), max_files=1, max_fields=0)
+
+    def on_end(self) -> None:
+        self._complete = True
+        super().on_end()
+
+    async def _receive(self, stream: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+        iterator = aiter(stream)
+        while True:
+            try:
+                with anyio.fail_after(self._idle_seconds):
+                    chunk = await anext(iterator)
+            except StopAsyncIteration:
+                break
+            yield chunk
+        # finalize() accepts an unfinished body. Raising inside parse() makes Starlette
+        # close every allocated file, including a part not yet added to FormData.
+        if not self._complete:
+            raise MultiPartException("Incomplete multipart body")
+
+
+@asynccontextmanager
+async def _upload_form(request: Request) -> AsyncIterator[FormData]:
+    if parse_options_header(request.headers.get("Content-Type"))[0] != b"multipart/form-data":
+        raise HTTPException(status_code=400, detail="Expected multipart/form-data")
+    try:
+        with anyio.fail_after(request.app.state.settings.upload_receive_timeout_seconds):
+            form = await _UploadParser(request).parse()
+    except MultiPartException as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    except TimeoutError:
+        raise HTTPException(
+            status_code=408,
+            detail={"error": "upload_receive_timeout", "detail": "The upload body did not arrive before its deadline."},
+            headers={"Connection": "close"},
+        ) from None
+    try:
+        yield form
+    finally:
+        with anyio.CancelScope(shield=True):
+            await form.close()
+
+
+def _uploads_busy() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"error": "uploads_busy", "detail": "Too many heavy operations are running. Try again shortly."},
+        headers={"Retry-After": "2", "Connection": "close"},
+    )
+
+
 async def forward_upload(request: Request, upstream_path: str) -> Response:
     """Re-post the one file of the request's multipart body to {ENEO_BACKEND_URL}/api/v1/{upstream_path}.
 
@@ -65,9 +122,13 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
     (400: a line break in either would be written into the part headers sent to Eneo). Nothing is left behind if
     the upload is cut off or refused.
 
+    Admission is checked before parsing: the upload and shared heavy-operation limits return 503 uploads_busy
+    with Retry-After. Receiving the body has total and inactivity deadlines (408 upload_receive_timeout).
+    The file is closed before either slot is released, including on timeout, disconnect or cancellation.
+
     The call to Eneo has a read timeout and a write timeout of settings.upload_proxy_timeout_seconds each, lowered
     (never below 60 s) by the request's X-Upload-Timeout-Seconds header: per phase, as for every call, so no
-    total deadline bounds the upload. 504 when one of them runs out, 502 when Eneo cannot be reached, 403 for a path
+    total deadline bounds forwarding to Eneo. 504 when one of them runs out, 502 when Eneo cannot be reached, 403 for a path
     that leaves its route.
     """
     settings = request.app.state.settings
@@ -80,19 +141,25 @@ async def forward_upload(request: Request, upstream_path: str) -> Response:
         raise HTTPException(status_code=411, detail="Content-Length required")
     if declared > settings.max_upload_bytes:
         raise too_large("Upload too large")
-    # Only now, after the route's dependencies and these checks, is the body allowed to be as big as an upload; the
-    # limit counts the bytes that arrive, so a Content-Length that lies gets no further than max_upload_bytes.
-    allow_upload(request, settings.max_upload_bytes)
-    # max_fields=0: no text field beside the file. The files are closed when the block ends, and by Starlette
-    # if the parse fails.
-    async with request.form(max_files=1, max_fields=0) as form:
-        parts = form.multi_items()
-        if len(parts) != 1 or parts[0][0] != "upload_file" or not isinstance(parts[0][1], UploadFile):
-            raise HTTPException(status_code=400, detail="Exactly one file, named upload_file, is required")
-        upload_file = parts[0][1]
-        if has_control_character(upload_file.filename) or has_control_character(upload_file.content_type):
-            raise HTTPException(status_code=400, detail="The file name and content type must not contain control characters")
-        return await _post_file(request, upstream_path, upload_file)
+    with ExitStack() as slots:
+        if not slots.enter_context(_capacity_slot(request.app.state.upload_slots)) or not slots.enter_context(heavy_io_slot(request)):
+            return _uploads_busy()
+        # Admission precedes both parsing and the body-limit increase. Keep both slots
+        # until the file has been forwarded and shielded cleanup has closed it.
+        allow_upload(request, settings.max_upload_bytes)
+        try:
+            async with _upload_form(request) as form:
+                parts = form.multi_items()
+                if len(parts) != 1 or parts[0][0] != "upload_file" or not isinstance(parts[0][1], UploadFile):
+                    raise HTTPException(status_code=400, detail="Exactly one file, named upload_file, is required")
+                upload_file = parts[0][1]
+                if has_control_character(upload_file.filename) or has_control_character(upload_file.content_type):
+                    raise HTTPException(status_code=400, detail="The file name and content type must not contain control characters")
+                return await _post_file(request, upstream_path, upload_file)
+        except HTTPException as error:
+            if error.status_code == 408:
+                return JSONResponse(status_code=408, content=error.detail, headers=error.headers)
+            raise
 
 
 async def _post_file(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
@@ -295,7 +362,7 @@ class _SlotStreamingResponse(StreamingResponse):
     """A streamed file that holds one of the app's stream slots until the response is over, however it ends:
     the file finished, the client went away, or the request was cancelled."""
 
-    def __init__(self, upstream: httpx2.Response, slots: asyncio.Semaphore, **kwargs: object) -> None:
+    def __init__(self, upstream: httpx2.Response, slots: ExitStack, **kwargs: object) -> None:
         super().__init__(upstream.aiter_raw(), **kwargs)
         self._upstream = upstream
         self._slots = slots
@@ -304,9 +371,11 @@ class _SlotStreamingResponse(StreamingResponse):
         try:
             await super().__call__(scope, receive, send)
         finally:
-            self._slots.release()
-            with anyio.CancelScope(shield=True):
-                await self._upstream.aclose()
+            try:
+                with anyio.CancelScope(shield=True):
+                    await self._upstream.aclose()
+            finally:
+                self._slots.close()
 
 
 async def stream_signed(
@@ -321,44 +390,45 @@ async def stream_signed(
     ``resource`` are the path ids that went into ``mint_path``; one that leaves its route is a 403. The file is
     an attachment unless its media type is in ``INLINE_MEDIA_TYPES`` or ``inline_types``. At most
     ``settings.max_concurrent_streams`` files stream at once: the next is a 503 with Retry-After, at once, so
-    that the connections a stream would hold stay free for the API.
+    that the connections a stream would hold stay free for the API. Files also share heavy-operation admission
+    with uploads and module protocols; both slots are held until the upstream connection is closed.
     """
     if any(leaves_route(part) for part in resource):
         raise HTTPException(status_code=403, detail="Eneo resource is not exposed")
-    slots = request.app.state.stream_slots
-    if slots.locked():
+    stream_slots = request.app.state.stream_slots
+    slots = ExitStack()
+    if stream_slots.locked() or not slots.enter_context(heavy_io_slot(request)):
+        slots.close()
         return JSONResponse(
             status_code=503,
             content={"error": "streams_busy", "detail": "Too many files are being streamed. Try again shortly."},
             headers={"Retry-After": "2"},
         )
-    await slots.acquire()
     response: Response | None = None
     try:
+        await stream_slots.acquire()
+        slots.callback(stream_slots.release)
         response = await _stream_file(request, slots, resource, mint_path, unavailable, inline_types)
         return response
     finally:
         # A file that is streaming keeps its slot until its response is over; anything else gives it back now.
         if not isinstance(response, _SlotStreamingResponse):
-            slots.release()
+            slots.close()
 
 
 async def _read_small(upstream: httpx2.Response) -> bytes:
-    """The body of a streamed answer that is an error, closed; empty if it is longer than an error is."""
+    """Read a bounded error body; _stream_file owns closing the connection."""
     body = bytearray()
-    try:
-        async for chunk in upstream.aiter_raw():
-            body += chunk
-            if len(body) > SMALL_ANSWER_BYTES:
-                return b""
-    finally:
-        await upstream.aclose()
+    async for chunk in upstream.aiter_raw():
+        body += chunk
+        if len(body) > SMALL_ANSWER_BYTES:
+            return b""
     return bytes(body)
 
 
 async def _stream_file(
     request: Request,
-    slots: asyncio.Semaphore,
+    slots: ExitStack,
     resource: tuple[str, ...],
     mint_path: str,
     unavailable: str,
@@ -387,41 +457,49 @@ async def _stream_file(
             content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
         )
 
-    if upstream.status_code in REDIRECT_STATUSES:
-        # Not a file: the URL is not worth keeping either, and the stream is closed unread.
-        sessions.forget_signed_url(session_id, mint_path)
-        await upstream.aclose()
-        logger.error("File stream was answered with a redirect: path=%s status=%s", mint_path, upstream.status_code)
-        return upstream_redirect()
+    response: _SlotStreamingResponse | None = None
+    try:
+        if upstream.status_code in REDIRECT_STATUSES:
+            # Not a file: the URL is not worth keeping either, and the stream is closed unread.
+            sessions.forget_signed_url(session_id, mint_path)
+            logger.error("File stream was answered with a redirect: path=%s status=%s", mint_path, upstream.status_code)
+            return upstream_redirect()
 
-    if upstream.status_code >= 400:
-        # A rejected token is not worth keeping around; the next request mints anew.
-        sessions.forget_signed_url(session_id, mint_path)
-        try:
-            body = await _read_small(upstream)
-        except httpx2.RequestError:
-            # Cut off or silent while its body was read: no more an answer than one that never came.
-            logger.exception("File stream answer could not be read: path=%s status=%s", mint_path, upstream.status_code)
-            return JSONResponse(
-                status_code=502,
-                content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
-            )
-        detail: object = unavailable
-        if body and upstream.headers.get("content-type", "").startswith("application/json"):
+        if upstream.status_code >= 400:
+            # A rejected token is not worth keeping around; the next request mints anew.
+            sessions.forget_signed_url(session_id, mint_path)
             try:
-                detail = httpx2.Response(200, content=body).json()
-            except ValueError:
-                pass
-        raise HTTPException(status_code=upstream.status_code, detail=detail)
+                body = await _read_small(upstream)
+            except httpx2.RequestError:
+                # Cut off or silent while its body was read: no more an answer than one that never came.
+                logger.exception("File stream answer could not be read: path=%s status=%s", mint_path, upstream.status_code)
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
+                )
+            detail: object = unavailable
+            if body and upstream.headers.get("content-type", "").startswith("application/json"):
+                try:
+                    detail = httpx2.Response(200, content=body).json()
+                except ValueError:
+                    pass
+            raise HTTPException(status_code=upstream.status_code, detail=detail)
 
-    resp_headers = {
-        k.lower(): v
-        for k, v in upstream.headers.items()
-        if k.lower() in _STREAM_FORWARD_RESPONSE_HEADERS
-    }
-    media_type = resp_headers.get("content-type", "").split(";")[0].strip().lower()
-    if not _may_be_shown_inline(media_type, (*INLINE_MEDIA_TYPES, *inline_types)):
-        resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
-    resp_headers["x-content-type-options"] = "nosniff"
-    resp_headers["Cache-Control"] = "private, no-store"
-    return _SlotStreamingResponse(upstream, slots, status_code=upstream.status_code, headers=resp_headers)
+        resp_headers = {
+            k.lower(): v
+            for k, v in upstream.headers.items()
+            if k.lower() in _STREAM_FORWARD_RESPONSE_HEADERS
+        }
+        media_type = resp_headers.get("content-type", "").split(";")[0].strip().lower()
+        if not _may_be_shown_inline(media_type, (*INLINE_MEDIA_TYPES, *inline_types)):
+            resp_headers["content-disposition"] = _attachment(resp_headers.get("content-disposition"))
+        resp_headers["x-content-type-options"] = "nosniff"
+        resp_headers["Cache-Control"] = "private, no-store"
+        response = _SlotStreamingResponse(upstream, slots, status_code=upstream.status_code, headers=resp_headers)
+        return response
+    finally:
+        # Success transfers ownership to the response; errors, cancellation and
+        # failures while constructing it close here before stream_signed releases admission.
+        if response is None:
+            with anyio.CancelScope(shield=True):
+                await upstream.aclose()

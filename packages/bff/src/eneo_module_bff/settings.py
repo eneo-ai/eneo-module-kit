@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 logger = logging.getLogger("eneo_config")
+
+UPSTREAM_CONNECTION_LIMIT = 100
+MAX_HEAVY_IO_LIMIT = UPSTREAM_CONNECTION_LIMIT - 4
 
 # The headers that carry credentials or frame a request. A module cannot add one to the request headers the proxy
 # forwards (proxy.py), and none can be the name of the service key's header: the module sets Authorization from the
@@ -77,6 +80,11 @@ class Settings(BaseModel):
     session_secret: str
     cookie_secure: bool = True
     upload_proxy_timeout_seconds: float = 1800.0
+    upload_receive_timeout_seconds: float = Field(default=1800.0, gt=0, allow_inf_nan=False)
+    upload_receive_idle_timeout_seconds: float = Field(default=30.0, gt=0, allow_inf_nan=False)
+    max_concurrent_uploads: int = Field(default=1, gt=0, strict=True)
+    # Heavy operations share this ceiling, leaving at least four connections for short API/auth calls.
+    max_concurrent_heavy_io: int = Field(default=64, gt=0, le=MAX_HEAVY_IO_LIMIT, strict=True)
     # The most of any request body the module reads (limits.py), whatever the content type, but an upload that
     # forward_upload reads.
     max_body_bytes: int = 10 * 1024 * 1024
@@ -87,7 +95,7 @@ class Settings(BaseModel):
     max_response_bytes: int = 32 * 1024 * 1024
     # How many files may stream at once (stream_signed). The shared client keeps 100 connections, and a file holds
     # one for as long as it streams: this leaves the rest for the API.
-    max_concurrent_streams: int = 64
+    max_concurrent_streams: int = Field(default=64, gt=0, strict=True)
     # Övre gräns för modulsessionen. Den slutar senast vid
     # Eneos sessionstak (module_auth_max_session_hours); modultoken förnyas
     # via Eneo fram till dess.
@@ -98,6 +106,12 @@ class Settings(BaseModel):
     organization: Organization | None = None
     organization_logo: LogoFile | None = None
     organization_logo_dark: LogoFile | None = None
+
+    @model_validator(mode="after")
+    def _capacity(self) -> Settings:
+        if self.max_concurrent_uploads > self.max_concurrent_heavy_io:
+            raise ValueError("max_concurrent_uploads cannot exceed max_concurrent_heavy_io")
+        return self
 
     @field_validator("eneo_api_key_header_name")
     @classmethod
@@ -286,6 +300,13 @@ def load_settings(*, default_organization: Organization | None = None, home_path
 
     organization, organization_logo, organization_logo_dark = _organization(default_organization)
 
+    heavy_limit = _positive_int("MAX_CONCURRENT_HEAVY_IO", 64)
+    upload_limit = _positive_int("MAX_CONCURRENT_UPLOADS", 1)
+    if heavy_limit > MAX_HEAVY_IO_LIMIT:
+        raise RuntimeError(f"MAX_CONCURRENT_HEAVY_IO must be at most {MAX_HEAVY_IO_LIMIT}")
+    if upload_limit > heavy_limit:
+        raise RuntimeError("MAX_CONCURRENT_UPLOADS cannot exceed MAX_CONCURRENT_HEAVY_IO")
+
     return Settings(
         eneo_backend_url=_required_url("ENEO_BACKEND_URL"),
         eneo_public_url=_required_url("ENEO_PUBLIC_URL"),
@@ -296,6 +317,10 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         session_secret=session_secret,
         cookie_secure=_parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE"),
         upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
+        upload_receive_timeout_seconds=_positive_float("UPLOAD_RECEIVE_TIMEOUT_SECONDS", 1800.0),
+        upload_receive_idle_timeout_seconds=_positive_float("UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS", 30.0),
+        max_concurrent_uploads=upload_limit,
+        max_concurrent_heavy_io=heavy_limit,
         max_body_bytes=_positive_int("MAX_BODY_BYTES", 10 * 1024 * 1024),
         max_upload_bytes=_positive_int("MAX_UPLOAD_BYTES", 1024 * 1024 * 1024),
         max_response_bytes=_positive_int("MAX_RESPONSE_BYTES", 32 * 1024 * 1024),

@@ -22,5 +22,6 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 | [K12](k12-agent-setup.md) | For agents: AGENTS.md, the pinned Astryx CLI, and the UI package as an Astryx integration | Partly built |
 | [K13](k13-httpx2.md) | The HTTP client is httpx2, not httpx | Built |
 | [K14](k14-body-limits-and-stream-cap.md) | Body limits and a cap on streaming files | Built |
+| [K15](k15-heavy-io-admission.md) | Shared admission and upload reception deadlines | Built |
 
 "Built" means the code is in the repository and tested. "Planned" means the part it concerns (`packages/ui`, `template/`) is not in the repository yet. "Partly built" means the part in `packages/bff` is built and the rest is planned.

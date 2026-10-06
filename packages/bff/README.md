@@ -51,6 +51,7 @@ Run from the module's directory, with the environment of [configuration](../../d
 | `require_session` | Route dependency: the caller's live session, else 401 with `X-Auth-Required: session` (a WebSocket handshake is refused). |
 | `require_same_origin` | Route dependency: writes and WebSocket handshakes only from the module's own origin, else 403. |
 | `upstream_auth_headers(request)` | The service key and `Authorization: Bearer <module-user token>`, for a call to Eneo from a module's route. |
+| `heavy_io_slot(request_or_websocket)` | Context manager yielding whether a module operation was admitted, without waiting. Keep it through upstream cleanup. |
 | `rule(methods, pattern)`, `ProxyRule`, `RESOURCE_ID` | One allowed proxy route, its type, and `[^/]+`. |
 | `forward_upload(request, upstream_path)` | Re-posts the one file of an upload to Eneo. |
 | `stream_signed(request, *resource, mint_path, unavailable, inline_types=())` | Streams a file through Eneo's signed URL, with Range. |
@@ -72,6 +73,8 @@ async def upload(flow_id: str, request: Request):
 ```
 
 The request must declare its `Content-Length` (else 411; one that is not a length is a 400), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (else 400). The name is forwarded as it came, a path included: Eneo owns where a file lands. Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
+
+Uploads are admitted before the body is read and share capacity with signed-file streams. A busy request returns 503 `uploads_busy` with `Retry-After: 2`; it is not queued. Receiving the body has total and inactivity deadlines, returning 408 `upload_receive_timeout`. An incomplete multipart body is a 400. Files are closed before capacity is released, including when the client disconnects or the request is cancelled. The settings and temporary-storage sizing are in [configuration](../../docs/guides/configuration.md).
 
 ## A module's own routes
 
@@ -111,6 +114,8 @@ Stable for the UI package and for any other frontend.
 | 502 | Eneo answered with 301, 302, 303, 307 or 308 | `{"error": "upstream_redirect", ...}` |
 | 502 | The answer to the signed-URL request cannot be used | `{"error": "upstream_invalid", ...}` |
 | 503 | No free stream slot. Header `Retry-After: 2` | `{"error": "streams_busy", ...}` |
+| 503 | No upload slot or shared heavy-operation capacity. Headers `Retry-After: 2`, `Connection: close` | `{"error": "uploads_busy", ...}` |
+| 408 | The upload body exceeds its total or inactivity receive deadline. Header `Connection: close` | `{"error": "upload_receive_timeout", ...}` |
 | 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
 | other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
 
@@ -124,8 +129,8 @@ A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_s
 
 - The dependencies are ranges with security floors (see `pyproject.toml`), not exact pins: pin and lock them in the module's own requirements.
 - `serve()` stops within 8 s of SIGTERM even with files still streaming (Docker kills at 10 s). There is no total
-  deadline per request: the timeouts are per phase (60 s a read or write, 5 s for a free connection, 10 s to connect, and
-  an upload's own budget), and a total is added when a module needs one.
+  deadline for forwarding to Eneo: those timeouts are per phase (60 s a read or write, 5 s for a free connection, 10 s to connect, and
+  an upload's own forwarding budget). Upload reception has total and inactivity deadlines.
 - One process, one replica: sessions live in memory. `serve()` fixes one worker and turns the access log off,
   because the callback URL carries a login ticket.
 - Nothing in the package configures logging: a module sets up its own.

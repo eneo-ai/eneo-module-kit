@@ -195,14 +195,15 @@ sequenceDiagram
   R->>R: dependencies: require_session 401, require_same_origin 403
   R->>F: forward_upload(request, upstream_path)
   F->>F: path leaves its route 403, no Content-Length 411, above MAX_UPLOAD_BYTES 413
-  F->>F: raise this request's limit to MAX_UPLOAD_BYTES, then parse the multipart
+  F->>F: upload and shared admission, else 503 before reading
+  F->>F: raise body cap, parse with total and inactivity deadlines, else 408
   F->>F: not exactly one file named upload_file, or a control or line-separator character in its name or type 400
   F->>A: POST /api/v1/upstream_path with one file and both credentials
   A-->>F: status and body
   F-->>B: same status, body and Content-Type. 504 when a read or write timeout runs out, 502 if unreachable or redirected
 ```
 
-Source: `transport.py` (`forward_upload`) and `limits.py`. The read timeout and the write timeout of the call to Eneo are each `UPLOAD_PROXY_TIMEOUT_SECONDS`, lowered (never below 60 s) by the request's `X-Upload-Timeout-Seconds` header. They are per phase, as for every call: no total deadline bounds an upload.
+Source: `transport.py` (`forward_upload`) and `limits.py`. Admission is held through forwarding and file cleanup. The configuration table gives the reception deadlines and temporary-storage sizing. The read timeout and write timeout of forwarding to Eneo are each `UPLOAD_PROXY_TIMEOUT_SECONDS`, lowered (never below 60 s) by the request's `X-Upload-Timeout-Seconds` header; these forwarding timeouts remain per phase.
 
 ## Signed files
 
@@ -215,7 +216,7 @@ sequenceDiagram
   participant K as Session store
   participant A as Eneo API
   B->>S: GET the module's file route, optional Range
-  S->>S: ids leave their route 403, no free stream slot 503 with Retry-After
+  S->>S: ids leave their route 403, no stream or shared slot 503 with Retry-After
   S->>K: signed URL for this session and mint path?
   K-->>S: the URL, or none
   S->>A: POST mint path with both credentials, if none or within 60 s of its end
@@ -226,7 +227,7 @@ sequenceDiagram
   S-->>B: bytes streamed through, nosniff, private no-store, attachment unless the type may be shown inline
 ```
 
-Source: `transport.py` (`stream_signed`) and `auth.py` (`ModuleSessionStore.signed_url`). The stream slot is released when the response ends, however it ends. At most `MAX_CONCURRENT_STREAMS` files stream at once. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
+Source: `transport.py` (`stream_signed`), `limits.py` (`heavy_io_slot`) and `auth.py` (`ModuleSessionStore.signed_url`). Stream and shared slots are released after the upstream connection closes, however the response ends. The shared ceiling also covers uploads and module protocols that use the public guard. An entry in the session store ends with its session: logout, expiry, a refresh that ends it, or a new login.
 
 ## Target deployment
 

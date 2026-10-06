@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import unittest
+from contextlib import closing
 
 
 def free_port() -> int:
@@ -30,9 +31,9 @@ def start(test: unittest.TestCase, code: str) -> tuple[subprocess.Popen, int]:
     test.addCleanup(stop, process)
     for _ in range(300):  # 30 s: a loaded machine takes several seconds to import the app
         try:
-            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
-            connection.request("GET", "/nope")
-            connection.getresponse().read()
+            with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=1)) as connection:
+                connection.request("GET", "/nope")
+                connection.getresponse().read()
             return process, port
         except OSError:
             time.sleep(0.1)

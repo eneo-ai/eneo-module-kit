@@ -16,7 +16,12 @@ holds it for the whole app, whatever route or content type:
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+import anyio
 from fastapi import HTTPException, Request
+from starlette.requests import HTTPConnection
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -27,6 +32,34 @@ INVALID_LENGTH = "Invalid Content-Length"
 MAX_LENGTH_DIGITS = 19
 # The scope key that holds this request's limit, once the code that handles an upload has raised it.
 BODY_LIMIT = "eneo_module_bff.body_limit"
+
+
+@contextmanager
+def _capacity_slot(limiter: anyio.CapacityLimiter) -> Iterator[bool]:
+    """Try admission without queueing, and hold capacity until the caller's cleanup finishes."""
+    borrower = object()
+    try:
+        limiter.acquire_on_behalf_of_nowait(borrower)
+    except anyio.WouldBlock:
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        limiter.release_on_behalf_of(borrower)
+
+
+@contextmanager
+def heavy_io_slot(connection: HTTPConnection) -> Iterator[bool]:
+    """One heavy operation, sharing admission with uploads and signed files.
+
+    ``with heavy_io_slot(request_or_websocket) as admitted`` never waits. If false,
+    the module returns its own retryable overload response before reading a body
+    or opening an upstream connection. If true, keep the context through cleanup.
+    A module holding multiple upstream connections takes one slot for each.
+    """
+    with _capacity_slot(connection.app.state.heavy_io_slots) as admitted:
+        yield admitted
 
 
 def too_large(detail: str = TOO_LARGE) -> HTTPException:
