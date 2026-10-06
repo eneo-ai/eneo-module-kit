@@ -13,7 +13,8 @@
     "./base.css": "./dist/base.css",
     "./session": { "types": "./dist/session/index.d.ts", "default": "./dist/session/index.js" }
   },
-  "files": ["dist"],
+  "license": "AGPL-3.0-only",
+  "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "astryx": "astryx",
     "theme:build": "npm run astryx -- theme build src/theme/eneo.theme.ts -o src/theme/built/eneo.css",

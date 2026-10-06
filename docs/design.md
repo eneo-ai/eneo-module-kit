@@ -205,13 +205,13 @@ The UI package's session client depends on four things in this surface:
 - Speech-to-text can only adopt the UI package once it is a static app too (its Plan B), because the package's
   colour mode and providers assume no server render.
 
-## 7. Open decisions for the owner
+## 7. Distribution and licence
 
-| Question | Default |
+| Setting | Decision or remaining check |
 |---|---|
-| Packages public (npm `@eneo-ai/module-kit`, PyPI `eneo-module-bff`) or private? | Public. Until the first release the template pins the BFF to a commit. |
+| Package distribution | Public: npm `@eneo-ai/module-kit` and PyPI `eneo-module-bff`. Until the first release the template pins the BFF to a commit. |
 | Does `eneo-ai` own the `@eneo-ai` scope on npm? | To be checked before the first release. |
-| Licence for this repository? | None yet; the module repositories have none either. |
+| Licence | AGPL-3.0-only, the same licence as Eneo; see [LICENSE](../LICENSE). A module copied from the template uses the same licence. |
 | Router for the template? | `react-router`, library mode. The UI package does not depend on it. |
 
 ## Build scaffolding (temporary)

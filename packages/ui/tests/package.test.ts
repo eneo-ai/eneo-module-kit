@@ -61,3 +61,19 @@ test("the development minimum the root names is one every locked tool accepts, a
   assert.equal(manifest.engines.node, ">=22.13.0", "the package's own engines are the consumers' minimum, the Astryx CLI's");
   assert.match(readFileSync("README.md", "utf8"), new RegExp(`Node \`${root.engines.node.replace(/[\^|.]/g, "\\$&")}\``), "the README names the development minimum");
 });
+
+test("the kit is AGPL-3.0-only, like Eneo: every manifest says so, and each package carries the one licence text", () => {
+  const licence = readFileSync("../../LICENSE", "utf8");
+  assert.match(licence, /^\s*GNU AFFERO GENERAL PUBLIC LICENSE\s+Version 3, 19 November 2007/, "the full text of the AGPL v3");
+  // One text in every place a package or a copied template is taken from (a boolean: a failed comparison would print all of it).
+  for (const copy of ["LICENSE", "../bff/LICENSE", "../../template/LICENSE"]) assert.ok(readFileSync(copy, "utf8") === licence, `${copy} is the root's licence text`);
+  for (const file of ["package.json", "../../package.json", "../../template/web/package.json"]) {
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).license, "AGPL-3.0-only", file);
+  }
+  const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+  assert.equal(manifest.private, undefined, "the UI package is publishable");
+  assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE"], "what ships: the build, the README and the licence");
+  const pyproject = readFileSync("../bff/pyproject.toml", "utf8");
+  assert.match(pyproject, /^license = "AGPL-3\.0-only"$/m, "the BFF says it in SPDX form (PEP 639)");
+  assert.match(pyproject, /^license-files = \["LICENSE"\]$/m, "and ships the text");
+});

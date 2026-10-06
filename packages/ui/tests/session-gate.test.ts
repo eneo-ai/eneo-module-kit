@@ -505,3 +505,118 @@ test("a renewal before the end that the login window announced resets the warnin
   assert.ok(dialog()?.hasAttribute("open"), "the new end is inside the five minutes too: the warning is there for it");
   assert.doesNotMatch(dialog()?.textContent ?? "", /Fönstret kunde inte öppnas/, "the old warning's problem is gone with the renewal");
 });
+
+/** The page's backend, answer by answer: `/api/auth/status` calls are answered by `answers` in turn (a held one is a promise); other calls by `other`. */
+function scripted(t: import("node:test").TestContext, answers: Array<() => Response | Promise<Response>>, other?: () => Response) {
+  const log: string[] = [];
+  const browserFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    log.push(String(url));
+    if (String(url) === "/api/auth/status") return (answers.shift() ?? (() => json(signedIn())))();
+    return other ? other() : json({});
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = browserFetch;
+  });
+  return log;
+}
+const heldAnswer = () => {
+  let release: (response: Response) => void = () => {};
+  return { answer: () => new Promise<Response>((resolve) => (release = resolve)), arrive: (response: Response) => release(response) };
+};
+const withRefresh = (endsIn: number, refreshIn: number) => json({ ...signedIn(anna, endsIn), refresh_in: refreshIn });
+
+/** A gate whose login window can say it is done (the channel is in memory), and the way to say it. */
+async function gateWithWindow(t: import("node:test").TestContext) {
+  const nodeChannel = globalThis.BroadcastChannel;
+  globalThis.BroadcastChannel = FakeChannel as unknown as typeof BroadcastChannel;
+  t.after(() => {
+    globalThis.BroadcastChannel = nodeChannel;
+  });
+  const view = await gate();
+  const { SESSION_CHANNEL } = await import("../src/session/SignedInAgain.js");
+  const announce = async () => {
+    const window = new FakeChannel(SESSION_CHANNEL);
+    await view.act(async () => {
+      window.postMessage("signed-in");
+      await settle();
+    });
+    window.close();
+  };
+  return { ...view, announce };
+}
+
+test("an old signed-out status that arrives after the login window said it is done, before the confirmation, does not cover the renewed page", async (t) => {
+  const oldRead = heldAnswer();
+  const freshRead = heldAnswer();
+  const log = scripted(t, [() => json(signedIn()), oldRead.answer, freshRead.answer, () => withRefresh(8 * 3600, 0)]);
+  const { act, state, announce } = await gateWithWindow(t);
+  await act(async () => settle());
+  await act(async () => seen()); // a status question goes out and is held: the old login's
+  await announce(); // the renewal replaced the cookie: the check that confirms it goes out and is held
+  assert.equal(log.length, 3);
+
+  await act(async () => {
+    oldRead.arrive(json(signedOutStatus));
+    await settle();
+  });
+  assert.equal(state.signedOut, false, "an answer to a question asked before the word covers nothing");
+  await act(async () => {
+    freshRead.arrive(withRefresh(8 * 3600, 0));
+    await settle();
+  });
+  assert.equal(state.signedOut, false);
+  assert.ok(!dialog(), "the renewed page is as it was");
+  await act(async () => settle(1_200));
+  assert.equal(log.length, 4, "the keepalive of the new login runs");
+});
+
+test("an old marked 401 that arrives after the login window said it is done, before the confirmation, does not cover the renewed page", async (t) => {
+  const freshRead = heldAnswer();
+  const log = scripted(t, [() => json(signedIn()), freshRead.answer, () => withRefresh(8 * 3600, 0)], () => new Response("{}", { status: 401, headers: { "X-Auth-Required": "session" } }));
+  const { act, state, announce } = await gateWithWindow(t);
+  await act(async () => settle());
+  const { createFetchWithSession } = await import("../src/session/request.js");
+  // Sent under the old login; its refusal arrives after the word.
+  const late = heldAnswer();
+  const stubbed = globalThis.fetch;
+  let slow = true;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => (slow && String(url) === "/api/eneo/runs/" ? late.answer() : stubbed(url, init))) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = stubbed;
+  });
+  const writing = createFetchWithSession(state)("/api/eneo/runs/", { method: "POST" }).catch(() => undefined);
+  await act(async () => settle());
+  await announce();
+  slow = false;
+  await act(async () => {
+    late.arrive(new Response("{}", { status: 401, headers: { "X-Auth-Required": "session" } }));
+    await writing;
+    await settle();
+  });
+  assert.equal(state.signedOut, false, "the refusal belongs to the login before the word");
+  await act(async () => {
+    freshRead.arrive(withRefresh(8 * 3600, 0));
+    await settle();
+  });
+  assert.equal(state.signedOut, false);
+  assert.ok(!dialog());
+  await act(async () => settle(1_200));
+  assert.ok(log.filter((url) => url === "/api/auth/status").length >= 3, "and the keepalive of the new login runs");
+});
+
+test("the old deadline that passes after the login window said it is done, before the confirmation, does not cover the renewed page", async (t) => {
+  const freshRead = heldAnswer();
+  scripted(t, [() => json(signedIn(anna, 1)), freshRead.answer]);
+  const { act, state, announce } = await gateWithWindow(t);
+  await act(async () => settle());
+  await announce();
+  await act(async () => settle(1_300)); // the first login's end, a second after it began, passes while the check is out
+  assert.equal(state.signedOut, false, "the old login's deadline is not the new login's");
+  await act(async () => {
+    freshRead.arrive(json(signedIn(anna, 8 * 3600)));
+    await settle();
+  });
+  assert.equal(state.signedOut, false, "the confirmation is taken");
+  assert.ok(!dialog(), "no warning, no cover: the new login ends in eight hours");
+});

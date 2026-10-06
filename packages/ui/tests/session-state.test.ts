@@ -288,3 +288,49 @@ test("a wait that is cancelled, renewed or torn down leaves nothing behind: not 
   assert.equal(state.waiting, 0);
   assert.equal(torn.held.size, 0, "and so does the page going away");
 });
+
+// A renewal replaces the cookie and deletes the old session on the backend before the login window says it is done: from
+// that word on, everything asked earlier is about a login that is gone, though the status read that confirms the renewal
+// has not come back yet.
+test("an old signed-out status that arrives between the login window's word and the confirmation is dropped; the fresh one recovers the page", () => {
+  const state = createSessionState();
+  const end = state.begin(anna);
+  const old = state.ask();
+  state.loginWindowDone();
+  const fresh = state.ask();
+  assert.equal(state.observe(signedOut, old), false, "asked before the word");
+  assert.equal(state.signedOut, false);
+  assert.equal(state.observe(signedIn(), fresh), true, "the confirmation is still taken");
+  assert.equal(state.signedOut, false);
+  assert.equal(state.renewals, 1, "and it confirms the renewal");
+  end();
+});
+
+test("an old marked 401 that arrives between the login window's word and the confirmation covers nothing", () => {
+  const state = createSessionState();
+  const end = state.begin(anna);
+  const old = state.ask();
+  state.loginWindowDone();
+  const fresh = state.ask();
+  assert.equal(state.ended(old), false);
+  assert.equal(state.signedOut, false);
+  assert.equal(state.observe(signedIn(), fresh), true);
+  assert.equal(state.signedOut, false);
+  end();
+});
+
+test("the old deadline that passes between the login window's word and the confirmation does not cover the page or spoil the confirmation", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const state = createSessionState();
+  const end = state.begin(anna);
+  t.after(end);
+  state.observe(signedIn(60));
+  state.loginWindowDone();
+  const fresh = state.ask();
+  t.mock.timers.tick(61_000);
+  assert.equal(state.signedOut, false, "the old login's deadline is not the new login's");
+  assert.equal(state.observe(signedIn(8 * 3600), fresh), true);
+  assert.equal(state.signedOut, false);
+  t.mock.timers.tick(61_000);
+  assert.equal(state.signedOut, false, "and the new end is the one that counts now");
+});

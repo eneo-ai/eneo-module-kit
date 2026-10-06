@@ -143,8 +143,12 @@ There is no custom MCP server and no skill. Astryx's hosted MCP server is option
 | Template skeleton | Done |
 | UI package: theme, colour mode, providers, shell, brand | Done |
 | UI package: the session client and screens | Done |
-| Astryx integration, the first release of both packages | Planned. The owner decides first whether the packages are public and who owns the `@eneo-ai` npm scope ([design.md](docs/design.md) section 7) |
+| Astryx integration, the first release of both packages | Planned. Public packages under `@eneo-ai` and AGPL-3.0-only are decided; registry access must be verified before publishing ([design.md](docs/design.md) section 7) |
 | Speech-to-text running on the kit | After its Astryx port, on a released kit version |
+
+## Licence
+
+AGPL-3.0-only, the same licence as Eneo: see [LICENSE](LICENSE).
 
 ## Build scaffolding (temporary)
 

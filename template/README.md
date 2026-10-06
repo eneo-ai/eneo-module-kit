@@ -4,6 +4,8 @@ The smallest working Eneo module: a sign-in page, one page behind the login that
 It runs on `eneo-module-kit`: the kit's FastAPI backend does the login handoff, the session and a deny-by-default proxy,
 and `@eneo-ai/module-kit` gives the theme, colour mode, shell and brand. One process, one container, port 3001, `/health`.
 
+A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
+
 - **Try it before the first release** (the packages are not published yet, so a plain `docker build` fails). From the root of
   the kit repository, build the image with the packages of that checkout, then start it with the stub Eneo:
   ```bash
