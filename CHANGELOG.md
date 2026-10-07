@@ -7,6 +7,7 @@ Related: [README](README.md), [new module](docs/guides/new-module.md), [UI packa
 ## 0.1.0 — unreleased
 
 - `eneo-module-bff`: the Eneo SSO handoff, server-side sessions and renewal, a deny-by-default proxy, guarded transport helpers, bounded uploads and signed-file streams, shared heavy-I/O admission, branding and static UI serving.
+- Deployment accent settings validate contrast against the Eneo theme and derive a dark-mode colour when omitted. The template loads their same-origin stylesheet from the BFF before themed content appears; no custom theme or inline script is needed.
 - `@eneo-ai/module-kit`: the pinned Astryx theme, colour mode, providers, shell, branding and session client. Its Astryx integration adds two reference page templates, a documentation topic and generated agent guidance.
 - The module template supplies a guarded backend, Swedish UI, stub Eneo, browser and accessibility checks, one-process image, local development and CI configuration.
 

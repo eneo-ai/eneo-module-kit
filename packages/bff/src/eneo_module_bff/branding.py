@@ -4,10 +4,31 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-# The organisation beside the product name is a deployment setting (Settings.organization). Neither
-# route asks for a session: the login page shows the organisation before there is one.
+from .accent import etag, theme_css
+
+# The login page shows the organisation and its theme before there is a session.
 
 router = APIRouter()
+
+
+def _etag_matches(if_none_match: str | None, current: str) -> bool:
+    if if_none_match is None:
+        return False
+    listed = {value.strip().removeprefix("W/") for value in if_none_match.split(",")}
+    return "*" in listed or current in listed
+
+
+@router.get("/api/branding/theme.css")
+async def get_branding_theme(request: Request) -> Response:
+    css = theme_css(request.app.state.settings.accent)
+    headers = {
+        "Cache-Control": "public, max-age=300",
+        "ETag": etag(css),
+        "X-Content-Type-Options": "nosniff",
+    }
+    if _etag_matches(request.headers.get("if-none-match"), headers["ETag"]):
+        return Response(status_code=304, headers=headers)
+    return Response(content=css, media_type="text/css", headers=headers)
 
 
 @router.get("/api/branding")

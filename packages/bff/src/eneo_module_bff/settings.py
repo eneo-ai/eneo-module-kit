@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .accent import Accent, resolve_accent
 
 logger = logging.getLogger("eneo_config")
 
@@ -106,6 +107,8 @@ class Settings(BaseModel):
     organization: Organization | None = None
     organization_logo: LogoFile | None = None
     organization_logo_dark: LogoFile | None = None
+    # None leaves the UI theme's own accent unchanged.
+    accent: Accent | None = None
 
     @model_validator(mode="after")
     def _capacity(self) -> Settings:
@@ -299,6 +302,10 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         raise RuntimeError("SESSION_MAX_AGE_MINUTES must be greater than zero")
 
     organization, organization_logo, organization_logo_dark = _organization(default_organization)
+    accent = resolve_accent(
+        os.environ.get("ORGANIZATION_ACCENT", "").strip(),
+        os.environ.get("ORGANIZATION_ACCENT_DARK", "").strip(),
+    )
 
     heavy_limit = _positive_int("MAX_CONCURRENT_HEAVY_IO", 64)
     upload_limit = _positive_int("MAX_CONCURRENT_UPLOADS", 1)
@@ -330,4 +337,5 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         organization=organization,
         organization_logo=organization_logo,
         organization_logo_dark=organization_logo_dark,
+        accent=accent,
     )

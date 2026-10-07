@@ -25,6 +25,36 @@ def valid_environment() -> dict[str, str]:
 
 
 class SettingsTests(unittest.TestCase):
+    def test_the_accent_is_independent_of_the_organization_and_derives_dark_mode(self) -> None:
+        with patch.dict(os.environ, valid_environment(), clear=True):
+            self.assertIsNone(load_settings().accent)
+        with patch.dict(os.environ, valid_environment() | {
+            "SHOW_ORGANIZATION": "false", "ORGANIZATION_ACCENT": " #1e7b34\n",
+        }, clear=True):
+            settings = load_settings()
+        self.assertIsNone(settings.organization)
+        self.assertEqual(
+            (settings.accent.light, settings.accent.dark, settings.accent.on_light, settings.accent.on_dark),
+            ("#1E7B34", "#2AAE4A", "#FFFFFF", "#0B1118"),
+        )
+
+    def test_an_unusable_accent_refuses_start_up(self) -> None:
+        cases = (
+            ({"ORGANIZATION_ACCENT": "#FFD700"}, "ORGANIZATION_ACCENT=#FFD700: accentfärgen mot sidans ytor når 1,23:1 i ljust läge"),
+            ({"ORGANIZATION_ACCENT": "blue"}, "ORGANIZATION_ACCENT måste vara en färg på formen #RRGGBB"),
+            ({"ORGANIZATION_ACCENT_DARK": "#52B1FF"}, "ORGANIZATION_ACCENT_DARK kräver ORGANIZATION_ACCENT"),
+            ({"ORGANIZATION_ACCENT": "#004595", "ORGANIZATION_ACCENT_DARK": "#004595"}, "ORGANIZATION_ACCENT_DARK=#004595: accentfärgen mot sidans ytor når"),
+        )
+        for values, message in cases:
+            with self.subTest(values=values), patch.dict(os.environ, valid_environment() | values, clear=True):
+                with self.assertRaises(RuntimeError) as raised:
+                    load_settings()
+                self.assertTrue(str(raised.exception).startswith(message), str(raised.exception))
+        with patch.dict(os.environ, valid_environment() | {
+            "ORGANIZATION_ACCENT": "#004595", "ORGANIZATION_ACCENT_DARK": "#52b1ff",
+        }, clear=True):
+            self.assertEqual(load_settings().accent.dark, "#52B1FF")
+
     def test_heavy_admission_and_receive_deadlines_have_validated_operator_controls(self) -> None:
         with patch.dict(os.environ, valid_environment(), clear=True):
             base = load_settings()

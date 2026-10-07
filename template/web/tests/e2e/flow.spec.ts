@@ -5,6 +5,37 @@ test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
 });
 
+test("the deployment accent stylesheet is applied when themed content first appears", async ({ page, browserName }, info) => {
+  const response = await page.request.get("/api/branding/theme.css");
+  expect(response.ok()).toBe(true);
+  const configured = (await response.text()).match(/--color-accent: light-dark\((#[0-9A-F]{6}), (#[0-9A-F]{6})\)/);
+  const colours = configured ? configured.slice(1) : ["#004595", "#52B1FF"];
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      const root = document.querySelector('[data-astryx-theme="eneo"]');
+      if (!root) return;
+      (window as typeof window & { firstThemeAccent: string }).firstThemeAccent = getComputedStyle(root).getPropertyValue("--color-accent").trim();
+      observer.disconnect();
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+  for (const [index, mode] of (["light", "dark"] as const).entries()) {
+    await page.emulateMedia({ colorScheme: mode });
+    await page.goto("/");
+    await expect(page.locator('head link[rel="stylesheet"][href="/api/branding/theme.css"]')).toHaveCount(1);
+    const signIn = page.getByRole("link", { name: "Logga in med Eneo" });
+    await expect(signIn).toBeVisible();
+    const first = await page.evaluate(() => (window as typeof window & { firstThemeAccent: string }).firstThemeAccent);
+    expect(first).toBe(`light-dark(${colours[0]}, ${colours[1]})`);
+    const rgb = colours[index].slice(1).match(/../g)!.map((hex) => parseInt(hex, 16)).join(", ");
+    await expect(signIn).toHaveCSS("background-color", `rgb(${rgb})`);
+    // WebKit's screenshot preparation injects an inline stylesheet. Photograph Chromium and keep CSP checks strict.
+    if (process.env.SHOTS && browserName === "chromium") {
+      await page.screenshot({ path: info.outputPath(`accent-${mode}.png`), fullPage: true, caret: "initial" });
+    }
+  }
+});
+
 test("sign in through the stub Eneo, see the shell and the flows, call the module's own route, sign out", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Eneo-modul" })).toBeVisible();

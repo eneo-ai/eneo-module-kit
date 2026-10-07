@@ -45,6 +45,7 @@ Tick each before a module goes live.
 - [ ] Every route of the module has `Depends(require_session)`. Every write (`POST`, `PUT`, `PATCH`, `DELETE`) and every WebSocket also has `Depends(require_same_origin)`.
 - [ ] A test fails when a guard is forgotten: `unguarded_routes` (copy from `packages/bff/tests/test_deps.py`) returns `[]` for the module's routers.
 - [ ] A route that is public on purpose is rare and written down. It still gets the body cap and nothing else: it must never return session, token or Eneo data.
+- [ ] A deployment accent is loaded through the kit's validated configuration and same-origin stylesheet. Do not interpolate unchecked colour input into CSS. See [K10](../decisions/k10-branding-without-templating.md).
 - [ ] An upload route has no `File(...)` parameter and calls `forward_upload`.
 - [ ] Each proxy rule is as narrow as it can be: the fewest methods, a pattern that ends at the route (`$`), the trailing slash of Eneo's route, `RESOURCE_ID` only where one id belongs, no `.*`.
 - [ ] `forward_request_headers` is empty unless a header is needed, and never names a credential (the app refuses those).

@@ -92,6 +92,7 @@ Stable for the UI package and for any other frontend.
 | `POST /api/auth/logout` | Ends the session (same origin required) |
 | `GET /api/auth/status` | `{"authenticated": false, "user": null}`, or `{authenticated, user, session_ends_in, refresh_in}` (`refresh_in` only while a refresh is still possible) |
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation, and its logos (404 when none is configured). No session needed. `logo` is `"custom"` (served here), `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it) or null (the name as text). |
+| `GET /api/branding/theme.css` | The validated deployment accent as `text/css`, or a harmless comment with no override. No session needed; no user data or cookie. `Cache-Control: public, max-age=300`, content ETag and `nosniff`. A matching `If-None-Match` (including weak, listed or wildcard validators) returns 304 with no body. A changed accent produces a different ETag; cached colours can remain until the five-minute freshness period ends. |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
@@ -100,6 +101,7 @@ Stable for the UI package and for any other frontend.
 
 | Status | When | Body |
 |---|---|---|
+| 304 | The branding stylesheet's content ETag matches `If-None-Match` | empty |
 | 400 | An upload is not exactly one file named `upload_file`, or has a control character or line separator in its file name or content type | `{"detail": ...}` |
 | 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |

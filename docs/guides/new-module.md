@@ -102,6 +102,8 @@ The page suggestion is `eneo-module-page`; `eneo-signin` uses the shared sign-in
 
 ## 3. Set the environment
 
+The optional accent settings and their contrast checks are in [configuration](configuration.md). Keep the branding stylesheet link in `web/index.html`; the template already includes it and needs no custom visual CSS for the accent.
+
 ```bash
 cp .env.example .env
 ```

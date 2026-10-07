@@ -108,6 +108,7 @@ over. An inline script is not needed, which keeps the strict CSP.
 **K10. Branding without templating.** The page asks `/api/branding` once, when it starts, with a
 deadline of 2 s, and shows the product name alone until it has the answer (and if none comes). Nothing is injected
 into `index.html`. The kit ships no organisation's mark: a module that bundles one passes it as `defaultLogo`.
+The static head links `/api/branding/theme.css` for the deployment's validated accent family; it changes existing theme tokens before themed content appears. See [K10](decisions/k10-branding-without-templating.md) and the [configuration table](guides/configuration.md) for its validation.
 
 **K11. Astryx is pinned to an exact version** in the UI package and the template. The house bar above its defaults
 (44 px touch targets, a measured focus ring, a readable dark-mode error label) is met once, in the theme.
@@ -136,6 +137,7 @@ Stable for the UI package and for any other frontend:
 | `POST /api/auth/logout` | End the session (same-origin) |
 | `GET /api/auth/status` | `{authenticated, user, session_ends_in, refresh_in}` |
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation |
+| `GET /api/branding/theme.css` | Its validated accent family; public CSS with a content ETag |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |

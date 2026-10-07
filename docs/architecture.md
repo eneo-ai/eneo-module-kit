@@ -285,7 +285,7 @@ Before the end the same dialog is a warning five minutes ahead, and its button o
 
 ## Where the organisation's branding enters
 
-Look at: the deployment sets the organisation once, in the BFF's environment; the page learns it from `/api/branding`; the module chooses its own product name and bundled logo.
+Look at: the deployment sets the organisation and accent in the BFF's environment; the UI fetches the lockup and loads the checked colour family as a stylesheet. The module chooses its product name and bundled logo.
 
 ```mermaid
 flowchart LR
@@ -294,6 +294,9 @@ flowchart LR
   api --> prov["UI: BrandingProvider asks once, with a 2 s deadline"]
   prov --> brand["Brand: the mark and the product name in the top bar"]
   mod["Module: PRODUCT_NAME, and defaultLogo if it bundles one"] --> brand
+  accentenv["Deployment: ORGANIZATION_ACCENT, ORGANIZATION_ACCENT_DARK"] --> accent["accent.py: contrast checks and dark-mode derivation"]
+  accent --> css["branding.py: /api/branding/theme.css, no session"]
+  css --> head["Static head stylesheet: overrides the Eneo theme's accent tokens"]
 ```
 
 Until the answer comes, or when it fails, the lockup is the product name alone. The kit ships no organisation's mark. See [K10](decisions/k10-branding-without-templating.md) and [UI package: branding](guides/ui-package.md#branding).
@@ -376,6 +379,7 @@ Source: `.github/workflows/ci.yml`. What each job proves, and the module's own C
 | Where login returns | `auth.py` | `test_login_redirect.py` |
 | Security headers, built UI | `web.py` | `test_web.py` |
 | Branding routes | `branding.py` | `test_branding.py` |
+| Accent validation and derivation | `accent.py` | `test_accent.py` |
 | App factory | `app.py` | `test_app.py` |
 | Running the server | `serve.py` | `test_serve.py`, `test_shutdown.py` |
 | Public names and version | `__init__.py` | `test_serve.py` (the names), `test_package.py` (the version) |

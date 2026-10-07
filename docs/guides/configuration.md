@@ -32,8 +32,12 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `ORGANIZATION_NAME` | none | at most 100 characters, white space collapsed | The organisation shown beside the product name. It is also the logo's text alternative. |
 | `ORGANIZATION_LOGO` | none | path to an `.svg` or `.png` of at most 1 MiB, whose content matches its name. Needs `ORGANIZATION_NAME` | The organisation's logo, served at `/api/branding/logo/light`. A file that cannot be used is logged once and the name is shown instead. |
 | `ORGANIZATION_LOGO_DARK` | none | as `ORGANIZATION_LOGO` | The logo for dark mode, at `/api/branding/logo/dark`. Used only when `ORGANIZATION_LOGO` is usable. |
+| `ORGANIZATION_ACCENT` | the UI theme's accent | `#RRGGBB`, surrounding whitespace trimmed; at least 4.5:1 for text on the accent, accent text on page/popover surfaces, and secondary text on selected-row tints | The accent family served by `/api/branding/theme.css`. Independent of the organisation's name, logo and visibility. An invalid form or insufficient contrast refuses start-up with the variable, measured ratio and corrective advice. |
+| `ORGANIZATION_ACCENT_DARK` | derived from the light accent | same form and contrast checks; requires `ORGANIZATION_ACCENT` | Optional dark accent. When omitted, the backend preserves hue and saturation and chooses the lowest lightness that meets the dark theme's checks; if none works, supply this value. |
 
-With none of the `ORGANIZATION_*` variables set, the organisation is the `default_organization` the module passed to `load_settings` (none by default: the product name alone).
+With no name or logo variable set, the organisation is the `default_organization` the module passed to `load_settings` (none by default: the product name alone). Accent variables do not change that choice.
+
+The checks use the Eneo theme's surfaces and tint proportions, pinned against `packages/ui/src/theme/built/eneo.css` by `packages/bff/tests/test_accent.py`. The formatter accepts only validated hex colours, preventing CSS injection. The template links `/api/branding/theme.css` in its document head, so the override is available when themed content first appears. With no accent configured the response is a harmless CSS comment; the built theme remains in use. The endpoint's cache behavior is in the [BFF HTTP reference](../../packages/bff/README.md#http-surface).
 
 ## Not environment variables
 
