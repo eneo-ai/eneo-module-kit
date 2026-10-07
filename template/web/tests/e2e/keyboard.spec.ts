@@ -57,7 +57,7 @@ const focusMovesInto = (popup: Locator) =>
   expect.poll(() => popup.evaluate((element) => element.contains(document.activeElement)), { message: "focus moves into the popup" }).toBe(true);
 
 /** Opens `popup` from its trigger with Enter, moves with `keys`, checks focus after each, and closes it with Escape. */
-async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: string[]) {
+async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: string[], initialHeading?: Locator) {
   await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(popup).toBeVisible();
@@ -65,7 +65,11 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   const problems: string[] = [];
   for (const key of [undefined, ...keys]) {
     if (key) await page.keyboard.press(key);
-    if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, popup)));
+    if (!key && initialHeading) {
+      // The announced title is a static initial focus target; keyboard controls still need a visible indicator.
+      await expect(initialHeading).toBeFocused();
+      await expect(initialHeading).toHaveAttribute("tabindex", "-1");
+    } else if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, popup)));
   }
   expect.soft(problems, "focus stays inside and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
   // A tooltip leaves a moment after focus does, and takes the first Escape if it is still there.
@@ -91,14 +95,15 @@ test("the account menu holds focus through its items and gives it back", async (
 test("the page's dialog holds focus and gives it back", async ({ page }) => {
   await stubFlows(page, "normal");
   await signIn(page);
-  await holdsFocus(page, page.getByRole("button", { name: "Anteckning" }), page.getByRole("dialog", { name: "Anteckning" }), [
+  const dialog = page.getByRole("dialog", { name: "Anteckning" });
+  await holdsFocus(page, page.getByRole("button", { name: "Anteckning" }), dialog, [
     "Tab",
     "Tab",
     "Tab",
     "Tab",
     "Shift+Tab",
     "Shift+Tab",
-  ]);
+  ], dialog.getByRole("heading", { name: "Anteckning" }));
 });
 
 test("the warning before the login ends takes focus, holds it, and gives it back on Escape", async ({ page }) => {
