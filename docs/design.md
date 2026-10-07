@@ -113,8 +113,9 @@ The static head links `/api/branding/theme.css` for the deployment's validated a
 **K11. Astryx is pinned to an exact version** in the UI package and the template. The house bar above its defaults
 (44 px touch targets, a measured focus ring, a readable dark-mode error label) is met once, in the theme.
 
-**K12. For agents: `AGENTS.md`, the pinned Astryx CLI, and the UI package as an Astryx integration.** No custom MCP
-server and no skill.
+**K12. For agents: `AGENTS.md`, the pinned Astryx CLI, and the UI package as an Astryx integration.**
+[K17](decisions/k17-module-development-skill.md) adds a local skill for module setup and feature work.
+No custom MCP server.
 
 ## 4. What stays out
 

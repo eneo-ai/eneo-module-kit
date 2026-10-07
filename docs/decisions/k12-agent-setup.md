@@ -6,6 +6,8 @@ Related: [decisions](README.md), [AGENTS.md](../../AGENTS.md), [template/AGENTS.
 
 Status: Accepted, 2026-10-01. Built: this repository's `AGENTS.md`, and the template's `AGENTS.md`, `CLAUDE.md`, `astryx` script and generated `web/AGENTS.md`. Built: the UI package's integration manifest, two reference templates, documentation topic and eight generated agent guidance lines.
 
+The restriction on a local skill is superseded by [K17](k17-module-development-skill.md), 2026-10-07.
+
 ## Context
 
 Agents guess props and layouts unless the project tells them where the truth is. Every module should start with the same setup so no module has to be corrected one by one.

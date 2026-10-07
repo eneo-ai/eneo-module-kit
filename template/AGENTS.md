@@ -4,6 +4,16 @@ A module made from `eneo-module-kit`: a FastAPI backend (the kit's BFF) serving 
 and one container. Read `README.md` first. The UI rules below are in addition to the generated block in `web/AGENTS.md`;
 where they differ, these win.
 
+For setup or feature work, use the local [eneo-module skill](.agents/skills/eneo-module/SKILL.md).
+It routes tasks to the existing examples, Eneo contract and checks.
+
+The kit's [documentation index](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/README.md) covers the
+[Eneo contract and architecture](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/architecture.md),
+[backend routes and proxy rules](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md),
+and [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md).
+These guides belong to the kit repository and are not copied into this module. For UI guidance available locally,
+run `npm run astryx -- docs eneo-module` from `web/`.
+
 ## Where things are
 
 - `backend/main.py`: the app, and `PROXY_RULES`, the Eneo routes this module may call. `backend/routes.py`: the module's

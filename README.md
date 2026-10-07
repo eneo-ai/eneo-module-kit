@@ -109,13 +109,14 @@ A new module starts as a copy of `template/` and imports the two packages. It do
 
 ## Built for AI agents
 
-This repository has an [AGENTS.md](AGENTS.md) (directory map, commands, rules) and a `CLAUDE.md` that imports it. Every module made from the template starts with the same agent setup, so an agent produces the same kind of UI in each one without being corrected:
+This repository has an [AGENTS.md](AGENTS.md) (directory map, commands, rules) and a `CLAUDE.md` that imports it. Every module made from the template starts with guidance for setup, Eneo integration and UI work:
 
 - `AGENTS.md` with the module's rules, and a `CLAUDE.md` that imports it and `web/AGENTS.md`.
+- A local [eneo-module skill](template/.agents/skills/eneo-module/SKILL.md), linked by `AGENTS.md` and imported by `CLAUDE.md`. It guides setup and feature work through the existing examples, contract and checks.
 - The Astryx CLI, pinned, behind an `astryx` npm script, and the block `astryx init --features agents` generates (`web/AGENTS.md`).
 - The UI package registers its page and sign-in templates, `eneo-module` topic and eight agent guidance lines with the pinned Astryx CLI. See [the UI guide](docs/guides/ui-package.md#astryx-integration).
 
-There is no custom MCP server and no skill. Astryx's hosted MCP server is optional for discovery; the pinned CLI is the source of truth. See [K12](docs/decisions/k12-agent-setup.md).
+Astryx's hosted MCP server is optional for discovery; the pinned CLI is the source of truth. There is no custom MCP server. See [K17](docs/decisions/k17-module-development-skill.md).
 
 ## Where to read next
 

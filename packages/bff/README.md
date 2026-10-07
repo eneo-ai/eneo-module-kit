@@ -2,7 +2,7 @@
 
 Purpose: the Eneo module contract for a FastAPI BFF, packaged: login handoff, a server-side session with token refresh, a deny-by-default proxy to Eneo, upload forwarding, signed-file streaming, security headers and the built UI.
 Read this when: you build a module's backend on it, change the package, or need its HTTP surface, public names or limits.
-Related: [guide: new module](../../docs/guides/new-module.md), [guide: build a module](../../docs/guides/build-a-module.md), [UI package](../ui/README.md), [configuration](../../docs/guides/configuration.md), [architecture](../../docs/architecture.md), [security checklist](../../docs/guides/security-checklist.md), [decisions](../../docs/decisions/README.md), [repository README](../../README.md).
+Related: [guide: new module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md), [guide: build a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md), [UI package](https://github.com/eneo-ai/eneo-module-kit/blob/main/packages/ui/README.md), [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md), [architecture](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/architecture.md), [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md), [decisions](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/decisions/README.md), [repository README](https://github.com/eneo-ai/eneo-module-kit/blob/main/README.md).
 
 It is the security boundary between a browser and Eneo, so it holds no module-specific route.
 
@@ -37,7 +37,7 @@ app = create_app(
 # Run it: python -c "from eneo_module_bff import serve; serve('main:app')"
 ```
 
-Run from the module's directory, with the environment of [configuration](../../docs/guides/configuration.md) set. A walk-through, with a stub Eneo to sign in against, is in [build a module](../../docs/guides/build-a-module.md) and [local development](../../docs/guides/local-development.md).
+Run from the module's directory, with the environment of [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md) set. A walk-through, with a stub Eneo to sign in against, is in [build a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md) and [local development](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/local-development.md).
 
 ## Public names
 
@@ -74,7 +74,7 @@ async def upload(flow_id: str, request: Request):
 
 The request must declare its `Content-Length` (else 411; one that is not a length is a 400), at most `MAX_UPLOAD_BYTES` (else 413), and hold one file part named `upload_file` and no other field (else 400), with no control character (C0, DEL, C1) or line or paragraph separator in the file name or content type (else 400). The name is forwarded as it came, a path included: Eneo owns where a file lands. Every request body is capped at `MAX_BODY_BYTES` (413) before a route sees it, whatever its content type, for all routes, a module's deliberately public ones too: the cap looks at no session. Only `forward_upload` lifts it, for its own request, to `MAX_UPLOAD_BYTES`; the bytes that arrive are counted, so a Content-Length that lies gets no further.
 
-Uploads are admitted before the body is read and share capacity with signed-file streams. A busy request returns 503 `uploads_busy` with `Retry-After: 2`; it is not queued. Receiving the body has total and inactivity deadlines, returning 408 `upload_receive_timeout`. An incomplete multipart body is a 400. Files are closed before capacity is released, including when the client disconnects or the request is cancelled. The settings and temporary-storage sizing are in [configuration](../../docs/guides/configuration.md).
+Uploads are admitted before the body is read and share capacity with signed-file streams. A busy request returns 503 `uploads_busy` with `Retry-After: 2`; it is not queued. Receiving the body has total and inactivity deadlines, returning 408 `upload_receive_timeout`. An incomplete multipart body is a 400. Files are closed before capacity is released, including when the client disconnects or the request is cancelled. The settings and temporary-storage sizing are in [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md).
 
 ## A module's own routes
 
@@ -125,7 +125,7 @@ A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_s
 
 ## Configuration
 
-`create_app()` reads the environment when it is not given a `Settings`. Every variable, its default and its check are in [configuration](../../docs/guides/configuration.md). The six required ones: `ENEO_BACKEND_URL`, `ENEO_PUBLIC_URL`, `MODULE_PUBLIC_URL`, `MODULE_KEY`, `ENEO_API_KEY`, `SESSION_SECRET`.
+`create_app()` reads the environment when it is not given a `Settings`. Every variable, its default and its check are in [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md). The six required ones: `ENEO_BACKEND_URL`, `ENEO_PUBLIC_URL`, `MODULE_PUBLIC_URL`, `MODULE_KEY`, `ENEO_API_KEY`, `SESSION_SECRET`.
 
 ## Limits
 
@@ -137,7 +137,7 @@ A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_s
   because the callback URL carries a login ticket.
 - Nothing in the package configures logging: a module sets up its own.
 
-More in [design.md](../../docs/design.md) section 6 and the [security checklist](../../docs/guides/security-checklist.md).
+More in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/design.md) section 6 and the [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md).
 
 ## Layout
 
@@ -159,4 +159,4 @@ python3.12 -m venv .venv
 
 CI (`.github/workflows/ci.yml`) runs the suite twice, at the lowest versions the ranges allow and at the newest, with `pip-audit` on each installed set.
 
-The contract with Eneo and the HTTP surface in full are in [design.md](../../docs/design.md), sections 2 and 5.
+The contract with Eneo and the HTTP surface in full are in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/design.md), sections 2 and 5.

@@ -15,7 +15,7 @@ export default {
       title: 'Session and backend',
       content: [
         { type: 'prose', text: 'Place private routes inside RequireSession and send requests with fetchWithSession from @eneo-ai/module-kit/session. Module-owned native dialogs must close while useSignedOut() is true; keep their draft state outside the dialog. The shared sign-in screen handles SSO and callback errors.' },
-        { type: 'prose', text: 'A module owns its routes and allowlist. Declare require_session on every private route and require_same_origin on writes and WebSockets. Do not put module-specific routes or protocols into the kit. Build-a-module and new-module guides in the repository show the complete setup and guard tests.' },
+        { type: 'prose', text: 'A module owns its routes and allowlist. Declare require_session on every private route and require_same_origin on writes and WebSockets. Do not put module-specific routes or protocols into the kit. The backend, setup and configuration guides live in the kit repository, not in a copied module: https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/README.md' },
       ],
     },
     {

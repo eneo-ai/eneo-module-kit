@@ -23,6 +23,7 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `.devcontainer/` | Python 3.12 and Node 22, ports 3001, 5173 and 8411 forwarded. |
 | `.github/workflows/ci.yml` | A module's own CI. |
 | `AGENTS.md`, `CLAUDE.md`, `web/AGENTS.md` | The module's rules for agents; `web/AGENTS.md` is the block `astryx init --features agents` generates. |
+| `.agents/skills/eneo-module/SKILL.md` | A local skill for setup and feature work, linked from `AGENTS.md` and imported by `CLAUDE.md`. It routes agents to the existing examples, contract and checks. |
 
 ## Before the first release
 
@@ -61,7 +62,8 @@ cp -R template ../eneo-mod-<name> && cd ../eneo-mod-<name>
 | The module key (lowercase kebab-case) | `MODULE_KEY` in `.env` (step 3). The stub's key is `eneo-module`: set `STUB_MODULE_KEY` to change it. |
 | The API title | `title=` in `backend/main.py` |
 
-A module in its own repository makes the copy its root: `template/` becomes `.`.
+A module in its own repository makes the copy its root: `template/` becomes `.`. Keep dotfiles when copying;
+they include the skill, development environment and CI.
 
 ## 2. Install the packages
 
@@ -200,7 +202,9 @@ cd template && cp .env.example .env && docker compose up      # then open http:/
 | A page | A route in `web/src/App.tsx`, inside `RequireSession` when it needs a session, rendering `<Frame>`; calls to the backend go through `fetchWithSession` (the template's `getJson`), and a dialog of the page is closed while `useSignedOut()` is true ([build a module](build-a-module.md#10-sessions-and-dialogs)). Build it from Astryx components: `npm run astryx -- build "<idea>"` and `npm run astryx -- component <Name>` in `web/`, never a guessed prop. Its states go in `web/tests/e2e/screens.ts`, so the gate measures them. |
 | A design-system fix | Once, in the kit's theme ([UI package](ui-package.md#fix-a-shortfall-once)), not in a page. |
 
-The module's rules for people and agents are in its `AGENTS.md`.
+The module's rules for people and agents are in its `AGENTS.md`. It links back to the kit's backend and
+configuration guides, which are not copied into the module. From `web/`, `npm run astryx -- docs eneo-module`
+reads the UI package's guidance locally.
 
 ## 8. Register it in Eneo and go live
 

@@ -2,7 +2,7 @@
 
 Purpose: the UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell and brand.
 Read this when: you build a module's pages on it, or change the package.
-Related: [guide: the UI package](../../docs/guides/ui-package.md) (install, wiring, every name, colour mode, links, branding), [new module](../../docs/guides/new-module.md), [architecture](../../docs/architecture.md#the-ui-app-and-its-layers), [decisions K9, K10, K11](../../docs/decisions/README.md), [BFF README](../bff/README.md).
+Related: [guide: the UI package](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/ui-package.md) (install, wiring, every name, colour mode, links, branding), [new module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md), [architecture](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/architecture.md#the-ui-app-and-its-layers), [decisions K9, K10, K11](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/decisions/README.md), [BFF README](https://github.com/eneo-ai/eneo-module-kit/blob/main/packages/bff/README.md).
 
 The UI of an Eneo module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the
 colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a
@@ -29,7 +29,7 @@ createRoot(document.getElementById("root")!).render(
 );
 
 // a page
-<ModuleShell label="Tal till text" heading={<Brand productName="Tal till text" href="/flows" />} end={<AccountMenu />}>
+<ModuleShell label="Min modul" heading={<Brand productName="Min modul" href="/" />} end={<AccountMenu />}>
   …
 </ModuleShell>
 ```
@@ -55,11 +55,11 @@ page while the login has ended).
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.
 
-Install it from a packed tarball, not a `file:` folder (two copies of React): see the [guide](../../docs/guides/ui-package.md#install).
+Install it from a packed tarball, not a `file:` folder (two copies of React): see the [guide](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/ui-package.md#install).
 
 ## Astryx integration
 
-The installed package contributes `eneo-module-page` and `eneo-signin` reference TSX templates, the `eneo-module` documentation topic and eight agent guidance lines. Read or materialize them with the pinned CLI; the module owns their routing, data and states. Commands and package discovery: [UI guide](../../docs/guides/ui-package.md#astryx-integration).
+The installed package contributes `eneo-module-page` and `eneo-signin` reference TSX templates, the `eneo-module` documentation topic and eight agent guidance lines. Read or materialize them with the pinned CLI; the module owns their routing, data and states. Commands and package discovery: [UI guide](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/ui-package.md#astryx-integration).
 
 ## The session client: `@eneo-ai/module-kit/session`
 
@@ -69,22 +69,23 @@ The login of a page that can outlive its login. SSO only: it talks to the BFF's 
 
 ```tsx
 <RequireSession
-  productName="Tal till text"
-  signInTitle="Gör samtal och filer till text"
-  onIdentity={(user) => keepOnlyDraftsOf(user.id)}          // awaited before the page is shown
-  signedOutControls={<RecordingControls />}                  // stays reachable in the sign-in dialog
-  signedOutNote="en inspelning fortsätter och sparas på enheten."
+  productName="Min modul"
+  signInTitle="Logga in i modulen"
 >
-  <Routes />   {/* and a route at /inloggad that renders <SignedInAgain productName="Tal till text" /> */}
+  <Routes />   {/* and a route at /inloggad that renders <SignedInAgain productName="Min modul" /> */}
 </RequireSession>
 
-const response = await fetchWithSession("/api/eneo/flows/");   // instead of fetch
+const response = await fetchWithSession("/api/eneo/flows/");
 ```
+
+For module-owned state, `onIdentity(user)` is awaited before children are shown. `signedOutControls` and
+`signedOutNote` let a module keep selected actions reachable and explain what happens to its work while signed out.
+The module owns which state to keep or remove when the identity changes.
 
 | Export | What it is |
 |---|---|
 | `RequireSession` | The gate. Signed out: the sign-in screen (`signIn` replaces it; `navigate` with `signInPath` sends the person to a route of the app's own). Signed in: `children`, the keepalive (the backend's `refresh_in`), a status read when the page is seen and when a login window says it is done, the warning five minutes before the end, and, when the login has ended, the cover and the sign-in dialog. |
-| `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable (a recording's Pausa and Stoppa) into. |
+| `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable (module-owned actions) into. |
 | `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. Answers are returned as they came. |
 | `createSessionState()`, `sessionState`, `createFetchWithSession(state)` | The state (one instance per page, shared by the gate and `fetchWithSession`), and a way to build both over another one (tests). |
 | `SessionExpiredError`, `isSessionEndedAnswer(status, header)` | For a transport that is not `fetch` (an upload by XMLHttpRequest): refuse when `sessionState.signedOut`, take `const question = sessionState.ask()` before sending and call `sessionState.ended(question)` on a 401 with `X-Auth-Required: session`: a refusal that comes after a renewal belongs to the old login, and covers nothing. |

@@ -28,7 +28,7 @@ Peer dependencies, all exact except React: `@astryxdesign/core` `0.6.3`, `@style
 
 ## Astryx integration
 
-The installed package exposes `astryx.integration.mjs`, two templates and the `eneo-module` documentation topic. The pinned CLI discovers them from `node_modules`; there is no custom MCP server or skill. From a module's `web/` folder:
+The installed package exposes `astryx.integration.mjs`, two templates and the `eneo-module` documentation topic. The pinned CLI discovers them from `node_modules`. The copied template also carries a local module-development skill; it uses these CLI contributions. From a module's `web/` folder:
 
 ```bash
 npm run astryx -- build "en sida i en Eneo-modul"

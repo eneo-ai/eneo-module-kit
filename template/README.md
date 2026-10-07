@@ -24,7 +24,11 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   gate; builds first). If you set `PYTHON` for it, give an absolute path to a python that has `eneo-module-bff`.
 - **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
   release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
-- **Rules for people and agents:** `AGENTS.md`.
+- **Rules for people and agents:** `AGENTS.md`. The local [eneo-module skill](.agents/skills/eneo-module/SKILL.md)
+  guides setup and feature work. `CLAUDE.md` imports both the rules and the skill.
+- **Full guides:** [create a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md),
+  [add backend routes](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md), and
+  [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md) in the kit repository.
 - **The stub Eneo** (`stub-eneo/server.py`, development and tests only) signs everyone in as Erik Lund and answers what the backend
   asks of Eneo. Control routes, all `POST`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses every token
   from now on: the module's session ends at its next token refresh); `/__stub/session?ends_in=S&token_seconds=T` (the logins made

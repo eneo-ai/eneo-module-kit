@@ -4,7 +4,7 @@ Purpose: list the decisions behind the kit, one short page each.
 Read this when: you want to know why something is the way it is, or before you change it.
 Related: [docs index](../README.md), [design.md](../design.md) (the long form of K1 to K12), [architecture](../architecture.md).
 
-One decision per page: status, context, decision, consequences. The numbers K1 to K12 are those of [design.md](../design.md) section 3, which keeps the full text and the module contract with Eneo; K13 to K16 were added later. A new decision gets the next number. A decision that changes is superseded by a new page, and the old page says so.
+One decision per page: status, context, decision, consequences. The numbers K1 to K12 are those of [design.md](../design.md) section 3, which keeps the full text and the module contract with Eneo; K13 onward were added later. A new decision gets the next number. A decision that changes is superseded by a new page, and the old page says so.
 
 | ID | Decision | Built? |
 |---|---|---|
@@ -19,10 +19,11 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 | [K9](k09-colour-mode-in-the-ui-package.md) | Colour mode is the UI package's own | Built |
 | [K10](k10-branding-without-templating.md) | Branding without templating | Built |
 | [K11](k11-astryx-pinned.md) | Astryx is pinned to an exact version | Built |
-| [K12](k12-agent-setup.md) | For agents: AGENTS.md, the pinned Astryx CLI, and the UI package as an Astryx integration | Partly built |
+| [K12](k12-agent-setup.md) | For agents: AGENTS.md, the pinned Astryx CLI, and the UI package as an Astryx integration | Built; skill restriction superseded by K17 |
 | [K13](k13-httpx2.md) | The HTTP client is httpx2, not httpx | Built |
 | [K14](k14-body-limits-and-stream-cap.md) | Body limits and a cap on streaming files | Built |
 | [K15](k15-cover-for-an-ended-login.md) | The cover for an ended login is a native modal dialog | Built |
 | [K16](k16-heavy-io-admission.md) | Shared admission and upload reception deadlines | Built |
+| [K17](k17-module-development-skill.md) | A local skill for module setup and feature work | Built |
 
-"Built" means the code is in the repository and tested. "Partly built" means the decision is in place in part and the rest is planned (K12: the template's agent setup is built, the Astryx integration of the UI package is not).
+"Built" means the implementation is in the repository and verified. It does not imply that a package version is published.

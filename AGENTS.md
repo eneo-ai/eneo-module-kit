@@ -107,7 +107,7 @@ Page rules: start with `Purpose:`, `Read this when:` and `Related:`; one fact in
 
 - Built: `template/AGENTS.md` with the module's rules, a `template/CLAUDE.md` that imports it and `web/AGENTS.md`, the pinned Astryx CLI with an `astryx` npm script, and the block `astryx init --features agents` generates (in `template/web/AGENTS.md`, between its markers: do not edit by hand).
 - Built: the UI package registers two reference templates and the `eneo-module` topic with Astryx. `astryx build "en sida i en Eneo-modul"` proposes `eneo-module-page` first, and `astryx init --features agents` includes eight kit guidance lines. See `docs/guides/ui-package.md`.
-- No custom MCP server and no skill. Add a skill only when agents are seen skipping these files.
+- Built: `.agents/skills/eneo-module/SKILL.md` in the template, for module setup and feature work. The module's `AGENTS.md` links it and `CLAUDE.md` imports it. Keep technical facts in the existing rules and guides; the skill routes agents to them. No custom MCP server.
 
 ## Build scaffolding (temporary)
 

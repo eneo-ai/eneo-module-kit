@@ -45,6 +45,7 @@ Status: **current** matches the code today; **planned** describes something not 
 | [AGENTS.md](../AGENTS.md) | Directory map, commands, rules, how to find things | Coding agents | current |
 | `CLAUDE.md` | Imports `AGENTS.md` | Claude Code | current |
 | [template/AGENTS.md](../template/AGENTS.md) | The rules of a module made from the template (copied into every module) | Coding agents in a module | current |
+| [eneo-module skill](../template/.agents/skills/eneo-module/SKILL.md) | Setup and feature workflow using the module's existing examples, contract and checks | Coding agents in a module | current |
 
 ## Build scaffolding
 
