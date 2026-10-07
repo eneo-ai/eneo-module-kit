@@ -7,7 +7,7 @@
  * needs it.
  */
 import { writeFileSync } from "node:fs";
-import { axe, blocking, endlessAnimations, placeholderContrast, reflow, targetSizes, unnamedControls } from "./checks";
+import { axe, blocking, endlessAnimations, placeholderContrast, reflow, settle, targetSizes, unnamedControls } from "./checks";
 import { expect, stubFlows, test } from "./fixtures";
 import { STATES } from "./screens";
 
@@ -28,7 +28,10 @@ for (const state of STATES) {
     const edges = project.startsWith("phone-320") || project === "zoom-200" || project.startsWith("laptop");
     await state.go(page);
     // SHOTS=1: a picture of every state, for review (test-results/shots/<project>/<state>.png).
-    if (process.env.SHOTS) await page.screenshot({ path: `test-results/shots/${project}/${state.name}.png`, fullPage: true });
+    if (process.env.SHOTS) {
+      await settle(page);
+      await page.screenshot({ path: `test-results/shots/${project}/${state.name}.png`, fullPage: true, caret: "initial" });
+    }
 
     const scan = await axe(page);
     const unnamed = await unnamedControls(page);
