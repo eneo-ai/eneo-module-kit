@@ -210,6 +210,16 @@ export const eneoTheme = {
         "overflowWrap": "anywhere"
       }
     },
+    "top-nav": {
+      "base": {
+        "columnGap": "var(--spacing-2)"
+      }
+    },
+    "top-nav-heading": {
+      "base": {
+        "minInlineSize": "0"
+      }
+    },
     "text-input": {
       "base": {
         ":focus-within": {

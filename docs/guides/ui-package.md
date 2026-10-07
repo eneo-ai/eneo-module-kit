@@ -132,6 +132,7 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 - **The kit ships no organisation's mark.** `default` means the logo the module bundles in its own frontend: the module passes its URL as `defaultLogo` (a file under its `public/`). Without `defaultLogo`, an organisation whose logo is `default` shows its name as text. The BFF serves no file for `default`.
 - `Brand` takes the product's name as a prop: it is the page's own, never the kit's.
 - Sizing and the choice between a deployment's two logos are CSS in `base.css`, by the attribute `data-brand-logo` on the mark: `default`, `light`, `dark`, `plain` (one logo for both modes), `name` (no logo). The mode that decides is the document's `data-theme`.
+- The header lets the product name wrap beside the account control on narrow screens, including with wider system fonts and increased text spacing. The theme owns the gap; `base.css` handles Astryx 0.6.3's heading internals, which have no theme targets.
 
 ## The shell
 

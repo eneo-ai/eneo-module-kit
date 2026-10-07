@@ -1,7 +1,6 @@
 /**
- * The top bar at the narrowest width with the text spacing WCAG 1.4.12 lets a reader set. The design system's bar never
- * shrinks the brand, so a brand that is too wide runs into the account button beside it: the product's name is then
- * covered or cut. They keep a gap's width between them. (Copied in spirit from speech-to-text's header-fit test.)
+ * The top bar at the narrowest width with WCAG 1.4.12 text spacing. The full product name must remain readable
+ * beside the account control, including when the system font is wider than the development machine's.
  */
 import { expect, signIn, test } from "./fixtures";
 
@@ -18,6 +17,8 @@ test("at 320 px with text spacing the brand and the account button keep apart, a
     document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   }, TEXT_SPACING);
   const brand = page.getByRole("link", { name: /^Eneo-modul –/ });
+  await brand.locator('img[data-brand-logo="light"]').evaluate((image: HTMLImageElement) => image.decode());
+  await page.evaluate(() => document.fonts.ready);
   const account = page.getByRole("button", { name: /^Öppna konto för/ });
   const [brandBox, accountBox] = [await brand.boundingBox(), await account.boundingBox()];
   expect(brandBox && accountBox, "both are shown").toBeTruthy();

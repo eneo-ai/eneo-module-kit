@@ -358,6 +358,14 @@
     overflow-wrap: anywhere;
   }
 
+  .astryx-top-nav {
+    column-gap: var(--spacing-2);
+  }
+
+  .astryx-top-nav-heading {
+    min-inline-size: 0;
+  }
+
   .astryx-text-input:focus-within {
     outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
     outline-offset: calc(var(--border-width) * -1);

@@ -39,6 +39,8 @@ export const eneoTheme = defineTheme({
     // focus call as keyboard focus and would frame the headline on every visit.
     heading: {base: {overflowWrap: 'anywhere', ':focus-visible': {outline: 'none'}}},
     text: {base: {overflowWrap: 'anywhere'}},
+    'top-nav': {base: {columnGap: 'var(--spacing-2)'}},
+    'top-nav-heading': {base: {minInlineSize: '0'}},
     'text-input': {base: {':focus-within': fieldFocusRing}},
     'text-area': {base: {':focus-within': fieldFocusRing}},
     'number-input': {base: {':focus-within': fieldFocusRing}},

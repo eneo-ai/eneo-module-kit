@@ -20,7 +20,7 @@ export function ModuleShell({
   label: string;
   /** The brand, or on a flow's page the way back and the flow's name. */
   heading: ReactNode;
-  /** After the heading, where a long text may wrap: the heading's own place never shrinks. */
+  /** Navigation or context after the heading. Long labels may wrap. */
   start?: ReactNode;
   /** The account menu, or what a page shows in its place. */
   end?: ReactNode;

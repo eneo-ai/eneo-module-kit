@@ -8,6 +8,11 @@
    good and hide a focused control under it (WCAG 2.4.11, which scroll-padding only half answers). */
 .astryx-app-shell-header { position: static; }
 
+/* Astryx 0.6.3 exposes no theme targets for the heading slot or its text spans. Let the slot shrink and the name
+   wrap so wider system fonts and increased text spacing cannot push the brand into the account control. */
+.astryx-top-nav :has(> .astryx-top-nav-heading) { flex-shrink: 1; min-inline-size: 0; }
+.astryx-top-nav-heading span { white-space: normal; overflow-wrap: anywhere; }
+
 /* A heading takes the focus when its state appears, so a screen reader starts there; it is not a control, and a ring
    on it would only look like one. A page marks such a heading data-phase-heading (and tabindex -1). */
 [data-phase-heading]:focus { outline: none; }
@@ -43,8 +48,7 @@ img[data-brand-logo] {
   object-fit: contain;
   object-position: left;
 }
-/* The design system's top bar never shrinks the brand, so on the narrowest phones the mark is smaller to leave the account
-   button room, also with the text spacing WCAG 1.4.12 lets a reader set. */
+/* A smaller mark leaves more room for the product name on the narrowest phones. */
 @media (max-width: 359px) {
   :root img[data-brand-logo] { block-size: var(--spacing-8); max-inline-size: 5rem; }
 }
