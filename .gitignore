@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.py[cod]
+test-results/
+.env
+.DS_Store
+kit-context/

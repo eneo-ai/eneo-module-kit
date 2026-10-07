@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eneo-module-bff"
+version = "0.1.0"
+description = "The Eneo module contract for a FastAPI BFF: login handoff, session, deny-by-default proxy"
+requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+# Ranges with security floors, not exact pins: this is a library. A module's own requirements pin and lock them.
+dependencies = [
+  "fastapi>=0.142.2,<1",
+  "starlette>=1.7.0,<2",
+  "uvicorn[standard]>=0.54,<1",
+  "httpx2>=2.12.0,<3",
+  "itsdangerous>=2.2,<3",
+  "python-multipart>=0.0.31,<1",
+]
+
+[project.optional-dependencies]
+test = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eneo_module_bff"]

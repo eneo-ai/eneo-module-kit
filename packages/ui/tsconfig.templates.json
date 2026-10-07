@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "paths": {
+      "@eneo-ai/module-kit": ["./src/index.ts"],
+      "@eneo-ai/module-kit/session": ["./src/session/index.ts"]
+    }
+  },
+  "include": ["templates/**/*.tsx"]
+}

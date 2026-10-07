@@ -6,7 +6,7 @@
 
 **Architecture:** One repository. `packages/bff` and `packages/ui` are imported by modules; `template/` is copied. The UI is a static Vite app served by the BFF in one process. The BFF is extracted from `eneo-ai/eneo-mod-speech-to-text` with its tests; behaviour is carried over, not redesigned.
 
-**Tech stack:** Python 3.12, FastAPI 0.115, uvicorn 0.30, httpx 0.27, itsdangerous 2.2, python-multipart, unittest. Node >= 22.13, Vite 8, React 19.2, TypeScript, `@astryxdesign/core` 0.6.3, `@astryxdesign/cli` 0.6.3, `@stylexjs/stylex` 0.19.1, Playwright.
+**Tech stack:** Python 3.12, FastAPI 0.142, Starlette 1.7, uvicorn 0.54, httpx2 2.12, itsdangerous 2.2, python-multipart 0.0.31, unittest. Node >= 22.13, Vite 8, React 19.2, TypeScript, `@astryxdesign/core` 0.6.3, `@astryxdesign/cli` 0.6.3, `@stylexjs/stylex` 0.19.1, Playwright.
 
 **Spec:** `docs/design.md`. Read it in full before starting.
 
@@ -21,7 +21,7 @@
 - The proxy denies by default. The kit ships no allowlist entries. Routes for uploads and files are the module's; the kit ships the functions they call.
 - Out of the kit entirely: the live transcription relay (`STT/backend/app/main.py` from "Live transcription preview" down), `tests/test_live_relay.py`, artifact download naming (`_eneo_filename`, `_content_disposition`, `eneo_run_artifact_content`), `/api/config` and `FlowListScope`.
 - No import-time application state in `packages/bff`: no module-level `settings`, `app`, `http_client` or caches. Everything hangs off the app the factory returns.
-- Python: exact pins equal to `STT/backend/requirements.txt` (`fastapi==0.115.0`, `uvicorn[standard]==0.30.6`, `httpx==0.27.2`, `itsdangerous==2.2.0`, `python-multipart==0.0.12`). No new runtime dependency without a line in `docs/design.md`.
+- Python: the package is a library, so it declares ranges with security floors, not exact pins: `fastapi>=0.142.2,<1`, `starlette>=1.7.0,<2`, `uvicorn[standard]>=0.54,<1`, `httpx2>=2.12.0,<3`, `itsdangerous>=2.2,<3`, `python-multipart>=0.0.31,<1`. Speech-to-text's pins (`fastapi==0.115.0`, `python-multipart==0.0.12`, Starlette 0.38.6) carry 14 known advisories (`pip-audit`, 2026-10-01: multipart parser denial of service, unbounded multipart buffering, form limits ignored), and an exact-pinned library forces every module onto one stack. The floors are the fixed versions, except Starlette's: its floor is 1.7.0, the first release that answers a malformed multipart body with a 400 and closes a cut-off upload's file at once (`docs/design.md` section 6). Exact pins and a lock belong to the application (the template, Phase 3). The suite must pass at the floors and at the newest versions, and `pip-audit` must report nothing on both. No new runtime dependency without a line in `docs/design.md`.
 - JavaScript: `@astryxdesign/core` `0.6.3`, `@astryxdesign/cli` `0.6.3`, `@stylexjs/stylex` `0.19.1`, exact. Run the Astryx CLI only as `npm run astryx -- <command>`. Read `npm run astryx -- component <Name>` before using a component; never guess a prop.
 - No Next.js, no Tailwind, no second UI library, no Hono. No ejected Astryx component, no authored StyleX.
 - The UI package imports nothing from a router or a meta-framework, and nothing from the template.
@@ -133,12 +133,14 @@ name = "eneo-module-bff"
 version = "0.1.0"
 description = "The Eneo module contract for a FastAPI BFF: login handoff, session, deny-by-default proxy"
 requires-python = ">=3.12"
+# Ranges with security floors, not exact pins: this is a library. A module's own requirements pin and lock them.
 dependencies = [
-  "fastapi==0.115.0",
-  "uvicorn[standard]==0.30.6",
-  "httpx==0.27.2",
-  "itsdangerous==2.2.0",
-  "python-multipart==0.0.12",
+  "fastapi>=0.142.2,<1",
+  "starlette>=1.7.0,<2",
+  "uvicorn[standard]>=0.54,<1",
+  "httpx2>=2.12.0,<3",
+  "itsdangerous>=2.2,<3",
+  "python-multipart>=0.0.31,<1",
 ]
 
 [project.optional-dependencies]
@@ -174,7 +176,7 @@ Root `package.json`:
 Run: `.venv/bin/pip install -e "packages/bff[test]" && .venv/bin/python -m unittest discover -s packages/bff/tests -t packages/bff`
 Expected: `OK`.
 
-- [ ] **Step 5: CI** — `.github/workflows/ci.yml` with one job `bff`: checkout, Python 3.12, `pip install -e "packages/bff[test]"`, the unittest command. Later phases add jobs; do not add them now.
+- [ ] **Step 5: CI** — `.github/workflows/ci.yml` with one job `bff`, run twice (matrix `lowest-direct` and `highest`): checkout, Python 3.12, a venv from `uv pip install --resolution <matrix value> -e "packages/bff[test]"`, the unittest command, and `pip-audit` on the installed set. Later phases add jobs; do not add them now.
 
 - [ ] **Step 6: Commit.** `git add -A && git commit -m "chore: workspaces, the BFF package skeleton and CI"`
 
@@ -224,7 +226,8 @@ Changes from the source, and only these:
 - Removed: `AuthMode`, `auth_mode`, `app_access_code`, `demo_space_id`, `FlowListScope`, `flow_list_scope`, and every branch on them. `ENEO_PUBLIC_URL` is always required.
 - `DEFAULT_ORGANIZATION` (Sundsvall) becomes the `default_organization` argument; the kit's default is no organisation.
 - New: `home_path`. It replaces the literal `"/flows"` in `module_path` (Task 1.2).
-- Everything else, including the validation messages, `_parse_bool`, `_read_logo`, `_organization` and `_required_url`, is copied unchanged.
+- `module_origin` is the canonical origin of `MODULE_PUBLIC_URL` (lower-case scheme and host, a default port dropped), and the `Origin` header is compared with it in the same form, so `https://Mod.Example.SE:443` does not turn every write into a 403. `_required_url` also refuses a bare `?` or `#`.
+- Everything else, including the validation messages, `_parse_bool`, `_read_logo` and `_organization`, is copied unchanged.
 
 - [ ] **Step 1:** Carry over `test_config.py` as `test_settings.py`. Delete the cases that test `AUTH_MODE`, `APP_ACCESS_CODE`, `DEMO_SPACE_ID` and the flow-list scope. Change `from app.config import …` to `from eneo_module_bff.settings import …`. In cases that expect Sundsvall by default, pass `default_organization=Organization(name="Sundsvalls kommun", logo="default")`, and add one case: with no organisation variables and no default, `settings.organization is None`.
 - [ ] **Step 2:** Run. Expected: `ModuleNotFoundError: eneo_module_bff.settings`.
@@ -253,7 +256,7 @@ class ModuleSession(BaseModel):          # the source's EneoSsoSession, without 
 class ModuleSessionStore: create, get, replace, delete, clear   # unchanged
 
 class ModuleAuth:
-    def __init__(self, *, settings: Settings, http_client: httpx.AsyncClient) -> None: ...
+    def __init__(self, *, settings: Settings, http_client: httpx2.AsyncClient) -> None: ...
     router: APIRouter                      # GET /login, GET /callback, POST /logout, GET /status
     sessions: ModuleSessionStore
     async def require_session(self, connection: HTTPConnection, session_id: str | None) -> ModuleSession: ...
@@ -264,8 +267,10 @@ class ModuleAuth:
 Changes from the source, and only these:
 - Removed: `AccessCodeSession`, `AccessCodeLoginRequest`, `login_with_access_code`, the `POST /login` route, `_require_auth_mode` and its calls, the `auth_mode` key in `status` and the `session.auth_mode != …` check in `_live_session`.
 - `EneoSsoSession` is renamed `ModuleSession`; `ModuleSession = EneoSsoSession | AccessCodeSession` goes away; `isinstance(session, EneoSsoSession)` branches become unconditional.
-- `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`; `PendingLogin.next` has no default and is always set.
+- `module_path(value)` takes the fallback from `settings.home_path` instead of `"/flows"`, and falls back to it for a `next` above 512 characters (the state cookie carries it, and browsers drop a cookie of 8 KB); `PendingLogin.next` has no default and is always set. `with_query` puts the query before a `#` fragment, so `/page#top` becomes `/page?fel=...#top`, which the page can read.
 - `status` returns `{"authenticated": bool, "user": {...} | None, "session_ends_in": int, "refresh_in": int}` (the last two only when authenticated, `refresh_in` only when a refresh is still possible).
+- `ModuleSessionStore` sweeps expired sessions at most every 30 s (a monotonic `_next_prune`), not on every `get` and `create`: `get` refuses an expired id by itself, so correctness does not depend on the sweep, and a lookup no longer scans every session (340 us at 10 000 sessions).
+- A token's `session_expires_at` without a time zone is UTC (read as local time it ends a session hours early).
 - The Swedish query values `fel=utgangen` and `fel=annan-anvandare` stay as they are: the UI package reads them.
 
 - [ ] **Step 1:** Carry over `test_module_auth.py` as `test_auth.py`. Remove the access-code cases. Replace `from app import main` and its use of `main.app` / `main.module_auth` with a small helper at the top of the file that builds a `FastAPI()` app, a `ModuleAuth(settings=…, http_client=…)` and includes `auth.router` under `/api/auth` (Task 1.4 replaces the helper with `create_app`). Remove the `os.environ.setdefault` block: build `Settings(...)` directly in the helper.
@@ -325,13 +330,14 @@ def create_app(
     settings: Settings | None = None,        # None: load_settings()
     *,
     title: str = "Eneo module",
+    routers: Sequence[APIRouter] = (),       # the module's own routes, Task 1.9
     proxy_rules: Sequence[ProxyRule] = (),   # Task 1.5
     static_dir: Path | None = None,          # Task 1.7
-    http_client: httpx.AsyncClient | None = None,   # tests inject one; otherwise the lifespan owns one
+    http_client: httpx2.AsyncClient | None = None,   # tests inject one; otherwise the lifespan owns one
 ) -> FastAPI: ...
 ```
 
-The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. When no client is given, `create_app` creates `httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
+The app it returns has `app.state.settings`, `app.state.http` and `app.state.module_auth`, the auth router under `/api/auth`, `GET /api/healthz` and `GET /health` answering `{"ok": true}`, and the branding routes. Routes match in registration order: the kit's own, then `routers`, then the proxy, then the static app, so a module's route wins over the proxy and the page and cannot replace a route of the kit (Task 1.9). When no client is given, `create_app` creates `httpx2.AsyncClient(timeout=httpx2.Timeout(60.0, connect=10.0), follow_redirects=False)` at once (the auth router needs its `ModuleAuth` before the app starts), and the lifespan closes it on shutdown. An injected client is never closed by the app.
 
 - [ ] **Step 1:** `test_app.py`: health on both paths; `app.state` holds the three objects; a client created by the lifespan is closed after shutdown (use `with TestClient(app):`); an injected client is not closed. `test_branding.py`: carry over from the source, building the app with `create_app(Settings(...), http_client=…)`.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Implement `branding.py` (the two routes, copied, reading `request.app.state.settings`) and `app.py`. **Step 4:** Replace the helper in `test_auth.py` with `create_app`. Run everything, `OK`.
@@ -351,7 +357,7 @@ class ProxyRule(NamedTuple):
 
 RESOURCE_ID = r"[^/]+"
 def rule(methods: str | Iterable[str], pattern: str) -> ProxyRule: ...   # rule("GET", r"flows/$")
-def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, unchanged
+def leaves_route(path: str) -> bool: ...                                   # the source's _leaves_route, and a control character or backslash (compiled searches, not Python loops)
 def proxy_router(rules: Sequence[ProxyRule]) -> APIRouter: ...             # GET|POST|PATCH /api/eneo/{path:path}
 ```
 
@@ -359,7 +365,7 @@ Changes from the source, and only these:
 - The rules are an argument. The kit defines none.
 - `_resolve_proxy_path`'s acceptance of a path without its trailing slash is removed: it existed because `next dev` strips the slash. A path must match a rule as written.
 - `http_client`, `settings` and auth headers come from `request.app.state` and `deps.upstream_auth_headers`.
-- The hop-by-hop header sets, the 403 body (`"Eneo resource is not exposed"`), the 502 body and the response handling are copied unchanged. `x-space-id` and `x-upload-timeout-seconds` stay in the request set.
+- The 403 body (`"Eneo resource is not exposed"`) and the 502 body are copied unchanged. The response handling is too, with these additions: Eneo's `Set-Cookie` is not passed to the browser (several are merged into one line, and one named like the module's session would replace it), nor is its `Location` (it names Eneo's own host), a response gets `Cache-Control: private, no-store` when Eneo sent none, and a redirect from Eneo (301, 302, 303, 307, 308; not 304) is a 502 `upstream_redirect`, for the proxy, `forward_upload` and `stream_signed` alike. The request headers are the one deliberate departure from "copy unchanged": the source drops a denylist and forwards the rest, so `Transfer-Encoding`, `Forwarded`, `X-Forwarded-*` and the like reach Eneo, which serves every user on one pool with the service key. The kit forwards an allowlist instead, `FORWARDED_REQUEST_HEADERS = {accept, accept-language, content-type, idempotency-key, if-match, if-none-match}`, plus what a module adds with `create_app(forward_request_headers=...)` (never a credential or framing header). The credentials are still set by `upstream_auth_headers`.
 
 - [ ] **Step 1:** Carry over `test_eneo_proxy_auth.py` as `test_proxy.py`. Build the app with `create_app(..., proxy_rules=[rule("GET", r"flows/$"), rule({"GET", "POST"}, rf"flows/{RESOURCE_ID}/runs/$")], http_client=FakeProxyClient())`. Remove access-code cases and the slash-stripping cases. Add: with `proxy_rules=()` every path is 403 and the fake client records no call; `flows/%2E%2E/runs/`, a path containing `?` and one containing `#` are 403 with no upstream call.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Carry the code over; `create_app` includes `proxy_router(proxy_rules)`. **Step 4:** Run, `OK`.
@@ -373,17 +379,24 @@ Source: `STT/backend/app/main.py` lines 61–84, 309–359 and 464–593; `STT/b
 **Interfaces — Produces:**
 
 ```python
-async def forward_upload(request: Request, upstream_path: str, upload_file: UploadFile) -> Response:
-    """Re-post one multipart file to {ENEO_BACKEND_URL}/api/v1/{upstream_path} with both credentials.
+async def forward_upload(request: Request, upstream_path: str) -> Response:
+    """Re-post the one file of the request's multipart body to {ENEO_BACKEND_URL}/api/v1/{upstream_path} with both
+    credentials. It reads the body itself, after the route's dependencies (the route has no File(...) parameter):
+    Content-Length required (411) and at most settings.max_upload_bytes (413), one file part named upload_file and
+    no other field (400), no control character in its file name or content type (400).
     The time budget is settings.upload_proxy_timeout_seconds, lowered (never below 60 s) by the request's
     X-Upload-Timeout-Seconds header. 504 on timeout, 502 when Eneo cannot be reached, 403 for a path that
     leaves its route."""
 
-async def stream_signed(request: Request, *resource: str, mint_path: str, unavailable: str) -> Response:
-    """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range."""
+async def stream_signed(
+    request: Request, *resource: str, mint_path: str, unavailable: str, inline_types: Sequence[str] = ()
+) -> Response:
+    """Mint (or reuse, per session and mint path) Eneo's signed URL and stream the file through with Range.
+    The file is an attachment unless its media type is audio/*, video/*, application/pdf or image/png|jpeg|gif|webp
+    (or in inline_types, each a media type or type/*), with X-Content-Type-Options: nosniff."""
 ```
 
-Changes from the source, and only these: `upstream_url` becomes `upstream_path` (the function prepends the base URL); the signed-URL cache is `request.app.state.signed_urls`, created by `create_app`, not a module global; `settings`, the client and auth headers come from the app.
+Changes from the source, and only these: `upstream_url` becomes `upstream_path` (the function prepends the base URL); the signed-URL cache is kept by the session store (`ModuleSessionStore.signed_url`, `remember_signed_url`, `forget_signed_url`), by session and mint path, so an entry ends with its session on logout, expiry or a refresh that ends it, and is never a module global or a second dict to keep in step; `settings`, the client and auth headers come from the app. Changes beyond the extraction (Task 1.14): `forward_upload` takes the request and the path and parses the multipart itself, after the route's dependencies, instead of receiving an `UploadFile` that FastAPI had already parsed before them; `limits.py` caps every request body at `Settings.max_body_bytes` (10 MiB), whatever the content type (a pure-ASGI middleware that looks at no session, so a module's deliberately public route still works; a content-type exemption would let a client buy an unbounded read, because FastAPI reads a body whatever the content type says), and `forward_upload` alone lifts it to `Settings.max_upload_bytes` (1 GiB) for its own request, counting the bytes that arrive. `stream_signed` also holds one of `Settings.max_concurrent_streams` (64) slots for as long as its file streams, and answers 503 with `Retry-After` at once when none is free; `create_app` gives the shared client `pool=5` s. One addition: Eneo is asked for an inline file and a user's upload decides its own content type, so a file whose media type could run script (`text/html`, `image/svg+xml`) would be served inline from the module's origin; `stream_signed` makes it an attachment unless the type is in the safe list or the module's `inline_types`. Another: an answer to the mint request that the module cannot use (not JSON, no `url`, a URL that is not http(s), an `expires_at` that is not a finite number) is a 502 `upstream_invalid`, not a 500 or a URL built from `str(None)`; the log names the mint path and never the body.
 
 - [ ] **Step 1:** Carry over the two test files into `test_transport.py`. The test app is `create_app(...)` plus two routes declared in the test, each with `Depends(require_session)` (and `require_same_origin` for the upload), calling the two functions. Keep every case: timeout budget, 504, 502, Range headers forwarded, cache reuse, a rejected URL dropped from the cache, `Cache-Control: private, no-store`.
 - [ ] **Step 2:** Run, see failures. **Step 3:** Carry the code over. **Step 4:** Run, `OK`.
@@ -492,7 +505,7 @@ def serve(app: FastAPI | str, *, host: str = "0.0.0.0", port: int = 3001, **over
     uvicorn.run(app, **{**options, **overrides})
 ```
 
-`__init__.py` exports exactly: `__version__`, `create_app`, `serve`, `Settings`, `Organization`, `load_settings`, `ModuleSession`, `ModuleUser`, `ProxyRule`, `rule`, `RESOURCE_ID`, `require_session`, `require_same_origin`, `upstream_auth_headers`, `forward_upload`, `stream_signed`.
+`serve()` also sets `timeout_graceful_shutdown=8` (Docker kills a container ten seconds after SIGTERM). `__init__.py` exports exactly: `__version__`, `create_app`, `serve`, `Settings`, `Organization`, `load_settings`, `ModuleSession`, `ModuleUser`, `ProxyRule`, `rule`, `RESOURCE_ID`, `require_session`, `require_same_origin`, `upstream_auth_headers`, `forward_upload`, `stream_signed`.
 
 - [ ] **Step 1:** `test_serve.py`: patch `uvicorn.run`, call `serve("main:app")`, assert the six options; `serve(app, workers=2)` and `serve(app, access_log=True)` raise `ValueError`; `import eneo_module_bff` exposes exactly the names above (`__all__`).
 - [ ] **Step 2:** Run, fail. **Step 3:** Implement; write `packages/bff/README.md` with a 15-line usage example (the template's `main.py` in Task 3.2). **Step 4:** Run the whole suite, `OK`.
@@ -503,6 +516,7 @@ def serve(app: FastAPI | str, *, host: str = "0.0.0.0", port: int = 3001, **over
 - [ ] The whole suite passes. `grep -rn "access_code\|AUTH_MODE\|DEMO_SPACE\|flows/" packages/bff/src` prints nothing (no speech-to-text route, no access-code remnant).
 - [ ] `grep -n "^settings\|^app = \|^http_client\|^_signed_urls" -r packages/bff/src` prints nothing (no import-time state).
 - [ ] `.venv/bin/pip wheel packages/bff -w dist-check --no-deps` builds a wheel (delete `dist-check/` after); install it in a fresh venv and `python -c "import eneo_module_bff; print(eneo_module_bff.__all__)"` works.
+- [ ] The suite passes at the floors and at the newest versions, and `pip-audit --path <venv>/lib/python3.12/site-packages` reports nothing on both (CI runs both).
 - [ ] The pull request lists, per source test file, how many test methods were carried over and which were removed and why.
 
 ---
@@ -556,8 +570,8 @@ export function ModuleShell({ label, heading, end, banner, children }: {
 | | |
 |---|---|
 | Result | `template/` is the smallest working module: sign in through a stub Eneo, see one page that lists flows through the proxy, sign out; one container, port 3001. |
-| Backend | `template/backend/main.py`: `app = create_app(title=…, proxy_rules=[rule("GET", r"flows/$")], static_dir=…)`, with a comment showing where a module adds routes and rules. `requirements.txt` pins `eneo-module-bff`. Until the first release it pins a commit: `eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff`; CI installs the workspace copy with `pip install -e packages/bff` first. |
-| Backend test (Review Focus 5) | `template/backend/tests/test_routes.py` walks `app.routes`: every route under `/api/` except `/api/auth/*`, `/api/healthz` and `/api/branding*` must have `require_session` among its dependencies, and every route with a write method must also have `require_same_origin`. A module author who forgets one gets a failing test. |
+| Backend | `template/backend/main.py`: `app = create_app(title=…, routers=[router], proxy_rules=[rule("GET", r"flows/$")], static_dir=…)`, with a comment showing where a module adds routes (on `router`, an `APIRouter`) and rules. `requirements.txt` pins `eneo-module-bff`. Until the first release it pins a commit: `eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff`; CI installs the workspace copy with `pip install -e packages/bff` first. |
+| Backend test (Review Focus 5) | `template/backend/tests/test_routes.py` walks the module's own router(s), `router.routes`, with the helper `unguarded_routes` from `packages/bff/tests/test_deps.py` (copy it; it is covered there): every route must have `require_session` among its dependencies, found however deep (route `dependencies=`, a `Depends` parameter, or a dependency of the module's own), and every route with a write method must also have `require_same_origin`. Every WebSocket route needs both (`APIWebSocketRoute` has no `.methods`, so a walker that reads `.methods` skips it). A route the walker cannot check (a mount, a raw route, a nested include) is reported, not passed over. It walks the routers and not `app.routes` because FastAPI 0.142 keeps an included router as one object there; the kit's own routes (auth, branding, proxy) are guarded and tested in the kit. A module author who forgets a guard gets a failing test. |
 | Stub Eneo | `template/stub-eneo/server.py` (standard library or FastAPI): `/module-login` redirects to the callback with a ticket and the unchanged `state`; `POST /api/v1/module-auth/token/`, `GET …/session/`, `POST …/token/refresh/`; `GET /api/v1/flows/` with two flows. Model the payloads on `STT/backend/tests/test_module_auth.py` (`token_payload`) and `STT/frontend/tests/e2e/stub-server.py`. It checks that both credentials arrive and answers 401 otherwise. |
 | Web | `template/web`: Vite + React + TypeScript, `react-router` in library mode, `@eneo-ai/module-kit`. `src/main.tsx` imports `layers.css`, Astryx's `reset.css` and `astryx.css`, the kit's `theme.css`, wraps the app in `ModuleProviders`. Pages: `/` (sign-in button → `/api/auth/login`), `/flows` (a `List` of flows from `/api/eneo/flows/`). A minimal `RequireSession` component asks `/api/auth/status` and shows the sign-in page when unauthenticated; Phase 4 replaces it. `vite.config.ts` proxies `/api` to the BFF in development. The entry file shape ran in the 2026-10-01 trial. |
 | Container | `template/Dockerfile`: Node 22 builds `web/dist`; `python:3.12-slim` runtime installs the backend's requirements, copies `dist`, runs `python -c "from eneo_module_bff import serve; serve('main:app')"` as a non-root user; `HEALTHCHECK` on `http://127.0.0.1:3001/health`. No Node in the runtime image, no supervisord. `docker-compose.yml` with the module and the stub; `.env.example` with every variable `load_settings` reads. |
