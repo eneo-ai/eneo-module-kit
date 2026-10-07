@@ -12,9 +12,9 @@ test("the deployment accent stylesheet is applied when themed content first appe
   const colours = configured ? configured.slice(1) : ["#004595", "#52B1FF"];
   await page.addInitScript(() => {
     const observer = new MutationObserver(() => {
-      const root = document.querySelector('[data-astryx-theme="eneo"]');
-      if (!root) return;
-      (window as typeof window & { firstThemeAccent: string }).firstThemeAccent = getComputedStyle(root).getPropertyValue("--color-accent").trim();
+      const signIn = document.querySelector('a[href^="/api/auth/login"]');
+      if (!signIn) return;
+      (window as typeof window & { firstSignInAccent: string }).firstSignInAccent = getComputedStyle(signIn).backgroundColor;
       observer.disconnect();
     });
     observer.observe(document, { childList: true, subtree: true });
@@ -25,9 +25,9 @@ test("the deployment accent stylesheet is applied when themed content first appe
     await expect(page.locator('head link[rel="stylesheet"][href="/api/branding/theme.css"]')).toHaveCount(1);
     const signIn = page.getByRole("link", { name: "Logga in med Eneo" });
     await expect(signIn).toBeVisible();
-    const first = await page.evaluate(() => (window as typeof window & { firstThemeAccent: string }).firstThemeAccent);
-    expect(first).toBe(`light-dark(${colours[0]}, ${colours[1]})`);
     const rgb = colours[index].slice(1).match(/../g)!.map((hex) => parseInt(hex, 16)).join(", ");
+    const first = await page.evaluate(() => (window as typeof window & { firstSignInAccent: string }).firstSignInAccent);
+    expect(first).toBe(`rgb(${rgb})`);
     await expect(signIn).toHaveCSS("background-color", `rgb(${rgb})`);
     // WebKit's screenshot preparation injects an inline stylesheet. Photograph Chromium and keep CSP checks strict.
     if (process.env.SHOTS && browserName === "chromium") {
