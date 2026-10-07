@@ -4,7 +4,7 @@ Purpose: say how a module installs `@eneo-ai/module-kit`, wires it up, and what 
 Read this when: you build a module's pages, change the colour mode, the page shell or the brand lockup, or touch the theme.
 Related: [new module](new-module.md), [architecture](../architecture.md#the-ui-app-and-its-layers), [decisions K9](../decisions/k09-colour-mode-in-the-ui-package.md), [K10](../decisions/k10-branding-without-templating.md), [K11](../decisions/k11-astryx-pinned.md), [package README](../../packages/ui/README.md), [BFF README](../../packages/bff/README.md).
 
-`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, not released) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Planned: the Astryx integration.
+`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, not released) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those, the Astryx integration, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out).
 
 ## Install
 
@@ -171,6 +171,8 @@ When the login has ended the page is covered, not removed: it stays mounted with
 ## Fix a shortfall once
 
 A design-system shortfall (a target under 44 px, a missing focus ring, a label that cannot be read in dark mode) is fixed once, in `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` in `packages/ui`, and the regenerated `src/theme/built/` is committed. Astryx is pinned to an exact version in the package and in the template ([K11](../decisions/k11-astryx-pinned.md)); an upgrade is its own change. No ejected Astryx component and no authored StyleX.
+
+The shared theme gives fields one focus frame along their rounded edge, keeps supporting text at 14 px with the default root font size, and supplies error-text and control-edge colours that meet AA on the page, card and muted surface. A dialog initially focuses its heading for announcement without drawing a control frame around it; its keyboard controls retain visible focus. Token contrast checks live in `packages/ui/tests/contrast.test.ts`, and the template's `theme.spec.ts` verifies these rendered states.
 
 ## Develop the package
 

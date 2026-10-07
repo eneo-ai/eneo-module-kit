@@ -19,4 +19,5 @@ Astryx is pinned to an exact version in the UI package (its peers and what it bu
 - A test in `packages/ui/tests/package.test.ts` fails when `@astryxdesign/core`, `@stylexjs/stylex` or the CLI is not an exact version, or when the CLI is not the core's own version.
 - Upgrading Astryx is its own change, never part of a feature change.
 - A design-system shortfall is fixed once in the theme, not per module; `npm run theme:build` regenerates `src/theme/built/`, and CI fails on a stale one.
+- The theme's text, error, control-edge and focus colours are checked on their actual surfaces in `packages/ui/tests/contrast.test.ts`. The template verifies supporting-text size and field/dialog focus in a browser.
 - Menus and pickers are not anchored to their trigger on Safari before 26 and Firefox before 147: a known limit of this Astryx version.

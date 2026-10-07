@@ -6,6 +6,8 @@ const focusRing = {
 };
 // A menu's rows sit edge to edge in a clipping box: their ring is drawn inside them.
 const rowFocusRing = {...focusRing, outlineOffset: 'calc(var(--focus-outline-width) * -1)'};
+// A field's rounded edge owns its focus indicator; no second box or inner shadow.
+const fieldFocusRing = {...focusRing, outlineOffset: 'calc(var(--border-width) * -1)', boxShadow: 'none'};
 const TOUCH = '44px';
 
 export const eneoTheme = defineTheme({
@@ -24,6 +26,11 @@ export const eneoTheme = defineTheme({
     // The one action a screen exists for (Starta, Stoppa, Skapa dokument) is 48 px at every pointer; Astryx's
     // large control is 36 px with a mouse.
     '--size-element-lg': '48px',
+    // Supporting text is read at 14 px and still follows the reader's root font size.
+    '--font-size-sm': '0.875rem',
+    // Error text and control edges meet AA on the page, card and muted surface.
+    '--color-error': ['#AA181D', '#F47B7F'],
+    '--color-border-emphasized': ['#85868F', '#626972'],
   },
   components: {
     // A word with no break point (an e-mail address as a name, a long compound) wraps instead of reaching past a
@@ -32,21 +39,18 @@ export const eneoTheme = defineTheme({
     // focus call as keyboard focus and would frame the headline on every visit.
     heading: {base: {overflowWrap: 'anywhere', ':focus-visible': {outline: 'none'}}},
     text: {base: {overflowWrap: 'anywhere'}},
-    'text-input': {base: {':focus-within': focusRing}},
-    'text-area': {base: {':focus-within': focusRing}},
-    'number-input': {base: {':focus-within': focusRing}},
-    selector: {base: {':focus-within': focusRing}},
-    typeahead: {base: {':focus-within': focusRing}},
-    tokenizer: {base: {':focus-within': focusRing}},
+    'text-input': {base: {':focus-within': fieldFocusRing}},
+    'text-area': {base: {':focus-within': fieldFocusRing}},
+    'number-input': {base: {':focus-within': fieldFocusRing}},
+    selector: {base: {':focus-within': fieldFocusRing}},
+    typeahead: {base: {':focus-within': fieldFocusRing}},
+    tokenizer: {base: {':focus-within': fieldFocusRing}},
     // The radio rows of a menu show no focus at all (a plain row tints, a radio row does not).
     'dropdown-menu-item': {base: {':focus-visible': rowFocusRing}},
     // A long compound word or e-mail address wraps inside its row instead of being cut off by it.
     item: {base: {overflowWrap: 'anywhere'}},
     // The control is the slider's target (the track is 4 px, the thumb 20): the gate's 24 px, and 44 px below.
     'slider-control': {base: {minBlockSize: '24px'}},
-    // A dialog opens on its title (the title takes focus, which gives it no outline): where focus is on it, as on
-    // a keyboard's, its block shows the ring (WCAG 2.4.7).
-    'dialog-header-title-block': {base: {':has(:focus-visible)': focusRing}},
     // A label longer than its line wraps and the button grows with it: the design system keeps one line, cuts the rest
     // off with an ellipsis and fixes the height (WCAG 1.4.10 reflow at 320 px, 1.4.4 resize at 200 %). The block padding
     // is small enough that a one-line label still fills the size's own height: 28, 32 and 36 px.

@@ -39,7 +39,7 @@ export const eneoTheme = {
     "--color-background-popover": "light-dark(#FBFCFF, #2E3135)",
     "--color-background-inverted": "light-dark(#1B1B1F, #F9FCFF)",
     "--color-border": "light-dark(#1B1B1F1A, #EDF1F61A)",
-    "--color-border-emphasized": "light-dark(#8F909B, #626972)",
+    "--color-border-emphasized": "light-dark(#85868F, #626972)",
     "--color-skeleton": "light-dark(#A9AAB5, #414750)",
     "--color-track": "light-dark(#A9AAB5, #414750)",
     "--color-shadow": "light-dark(#0000001A, #0000004D)",
@@ -48,7 +48,7 @@ export const eneoTheme = {
     "--font-size-3xs": "0.5rem",
     "--font-size-2xs": "0.5625rem",
     "--font-size-xs": "0.6875rem",
-    "--font-size-sm": "0.8125rem",
+    "--font-size-sm": "0.875rem",
     "--font-size-base": "1rem",
     "--font-size-lg": "1.1875rem",
     "--font-size-xl": "1.4375rem",
@@ -102,7 +102,8 @@ export const eneoTheme = {
     "--font-family-heading": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Arial, sans-serif",
     "--font-family-code": "ui-monospace, \"SFMono-Regular\", Consolas, monospace",
     "--color-on-error": "light-dark(#FFFFFF, #1A0A0C)",
-    "--size-element-lg": "48px"
+    "--size-element-lg": "48px",
+    "--color-error": "light-dark(#AA181D, #F47B7F)"
   },
   components: {
     "heading": {
@@ -213,7 +214,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -221,7 +223,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -229,7 +232,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -237,7 +241,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -245,7 +250,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -253,7 +259,8 @@ export const eneoTheme = {
       "base": {
         ":focus-within": {
           "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
+          "outlineOffset": "calc(var(--border-width) * -1)",
+          "boxShadow": "none"
         }
       }
     },
@@ -273,14 +280,6 @@ export const eneoTheme = {
     "slider-control": {
       "base": {
         "minBlockSize": "24px"
-      }
-    },
-    "dialog-header-title-block": {
-      "base": {
-        ":has(:focus-visible)": {
-          "outline": "var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color)",
-          "outlineOffset": "var(--focus-outline-offset)"
-        }
       }
     },
     "button": {
