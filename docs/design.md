@@ -4,7 +4,7 @@ Purpose: the long-form design record: the module contract with Eneo, the decisio
 Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
 Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
 
-Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The Astryx integration and the first release are planned. Where this page and the code disagree, the code wins.
+Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The UI package includes its Astryx integration; the first release is pending. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under

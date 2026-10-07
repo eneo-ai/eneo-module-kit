@@ -3,23 +3,41 @@
   "version": "0.1.0",
   "description": "The UI of an Eneo module: the Eneo theme for Astryx, colour mode, providers, page shell, brand and the session client.",
   "type": "module",
-  "sideEffects": ["**/*.css"],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./theme.css": "./dist/theme.css",
     "./layers.css": "./dist/layers.css",
     "./base.css": "./dist/base.css",
-    "./session": { "types": "./dist/session/index.d.ts", "default": "./dist/session/index.js" }
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "default": "./dist/session/index.js"
+    },
+    "./templates/eneo-module-page.tsx": "./templates/eneo-module-page.tsx",
+    "./templates/eneo-signin.tsx": "./templates/eneo-signin.tsx"
   },
   "license": "AGPL-3.0-only",
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "templates",
+    "astryx.integration.mjs",
+    "docs"
+  ],
   "scripts": {
     "astryx": "astryx",
     "theme:build": "npm run astryx -- theme build src/theme/eneo.theme.ts -o src/theme/built/eneo.css",
-    "lint": "tsc --noEmit -p tsconfig.json",
+    "lint": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.templates.json",
     "build": "node scripts/build.mjs",
+    "prepack": "npm run lint && npm run build",
     "test": "node scripts/test.mjs"
   },
   "peerDependencies": {
@@ -45,5 +63,7 @@
     "semver": "7.8.5",
     "typescript": "5.6.3"
   },
-  "engines": { "node": ">=22.13.0" }
+  "engines": {
+    "node": ">=22.13.0"
+  }
 }

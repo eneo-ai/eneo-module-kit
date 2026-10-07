@@ -11,7 +11,7 @@ Every claim about code names the file, never a line. If a diagram and the code d
 | Part | Path | Status |
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
-| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Planned: the Astryx integration. |
+| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Includes the Astryx reference templates, topic and agent guidance. |
 | Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose file, module CI, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 

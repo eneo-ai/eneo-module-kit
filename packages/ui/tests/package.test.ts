@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const sources = (dir: string): string[] =>
@@ -29,13 +29,18 @@ test("Astryx and StyleX are pinned exactly, in the peers and in what the package
   assert.equal(manifest.peerDependencies["@astryxdesign/core"], manifest.devDependencies["@astryxdesign/cli"], "the CLI is the core's own version");
 });
 
-test("every file the package exports is one the build writes", () => {
+test("every public export is built code or a shipped template source", () => {
   const manifest = JSON.parse(readFileSync("package.json", "utf8"));
   const built = readFileSync("scripts/build.mjs", "utf8");
   for (const [name, target] of Object.entries<string | { default: string }>(manifest.exports)) {
     const file = (typeof target === "string" ? target : target.default).replace("./dist/", "");
     if (file.endsWith(".css")) assert.ok(built.includes(`"dist/${file}"`), `${name}: ${file} is copied by the build`);
-    else assert.match(file, /^(?:session\/)?index\.js$/, `${name}: the code is tsc's`);
+    else if (name.startsWith("./templates/")) {
+      assert.ok(typeof target === "string", `${name}: the CLI consumes source`);
+      assert.match(target, /^\.\/templates\/[\w-]+\.tsx$/);
+      assert.ok(existsSync(target), `${name}: the template source exists`);
+      assert.ok(manifest.files.includes("templates"), "template sources are in the tarball");
+    } else assert.match(file, /^(?:session\/)?index\.js$/, `${name}: the code is tsc's`);
   }
 });
 
@@ -72,7 +77,7 @@ test("the kit is AGPL-3.0-only, like Eneo: every manifest says so, and each pack
   }
   const manifest = JSON.parse(readFileSync("package.json", "utf8"));
   assert.equal(manifest.private, undefined, "the UI package is publishable");
-  assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE"], "what ships: the build, the README and the licence");
+  assert.deepEqual(manifest.files, ["dist", "README.md", "LICENSE", "templates", "astryx.integration.mjs", "docs"], "what ships: built code, licence and the CLI integration contributions");
   const pyproject = readFileSync("../bff/pyproject.toml", "utf8");
   assert.match(pyproject, /^license = "AGPL-3\.0-only"$/m, "the BFF says it in SPDX form (PEP 639)");
   assert.match(pyproject, /^license-files = \["LICENSE"\]$/m, "and ships the text");

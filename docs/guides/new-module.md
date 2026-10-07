@@ -4,7 +4,7 @@ Purpose: take `template/` from a copy to a module that signs in through Eneo, ru
 Read this when: you are creating a module, or you want to know what the template gives you and what CI proves about it.
 Related: [build a module](build-a-module.md) (the backend in detail), [UI package](ui-package.md), [local development](local-development.md), [configuration](configuration.md), [security checklist](security-checklist.md), [architecture](../architecture.md#the-template-and-its-image), `template/README.md`, `template/AGENTS.md`.
 
-`template/` is the smallest working module: a sign-in page, one page behind the login that lists Eneo's flows, one route of its own, and everything around them. It imports the two packages and copies none of their code. Built and tested, on the kit's session client (`@eneo-ai/module-kit/session`: it keeps the login, warns before it ends and covers the page for a new login in place). Not built yet: the Astryx integration and the first release of the packages.
+`template/` is the smallest working module: a sign-in page, one page behind the login that lists Eneo's flows, one route of its own, and everything around them. It imports the two packages and copies none of their code. Built and tested, on the kit's session client (`@eneo-ai/module-kit/session`: it keeps the login, warns before it ends and covers the page for a new login in place). The UI package also supplies Astryx reference templates and agent guidance. The first release of the packages is pending.
 
 ## What you get
 
@@ -88,6 +88,17 @@ python3.12 -m venv .venv
 ```
 
 `backend/requirements.lock` is generated, not edited: its header holds the `uv pip compile` command, and `--exclude-newer` fixes the index's state so the same command gives the same file. `requirements.txt` stays: Docker, CI and the devcontainer install it after the lock, and it is where the BFF's version is pinned (after the release its one line is `eneo-module-bff==x.y.z`). After the release a module lists `eneo-module-bff==x.y.z` and its own packages in a `requirements.in` and compiles its own lock.
+
+After installation, use the pinned CLI to discover the kit's components and page templates, then regenerate its agent instructions:
+
+```bash
+# in the module's web/ folder
+npm run astryx -- build "en sida i en Eneo-modul"
+npm run astryx -- docs eneo-module
+npm run astryx -- init --features agents
+```
+
+The page suggestion is `eneo-module-page`; `eneo-signin` uses the shared sign-in screen. Adapt reference source at the owning route, retaining the template's existing `Frame` where it already supplies the shell. [The UI guide](ui-package.md#astryx-integration) shows how to read or materialize the templates.
 
 ## 3. Set the environment
 

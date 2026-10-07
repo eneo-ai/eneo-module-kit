@@ -26,6 +26,22 @@ Node: a module that uses the package needs `>=22.13.0` (the Astryx CLI's own min
 
 Peer dependencies, all exact except React: `@astryxdesign/core` `0.6.3`, `@stylexjs/stylex` `0.19.1`, `react` and `react-dom` `>=19`. The module lists them itself (the template's `web/package.json` does).
 
+## Astryx integration
+
+The installed package exposes `astryx.integration.mjs`, two templates and the `eneo-module` documentation topic. The pinned CLI discovers them from `node_modules`; there is no custom MCP server or skill. From a module's `web/` folder:
+
+```bash
+npm run astryx -- build "en sida i en Eneo-modul"
+npm run astryx -- docs eneo-module
+npm run astryx -- template eneo-module-page
+npm run astryx -- template eneo-signin
+npm run astryx -- init --features agents
+```
+
+With a destination path, `template` writes the reference TSX, for example `npm run astryx -- template eneo-module-page src/pages/NewPage.tsx`. Read the component contracts before adapting it. `eneo-module-page` demonstrates a bounded flow list or empty state inside `ModuleShell`; `eneo-signin` delegates to `SignInScreen`. Neither template supplies an API client or routing. Private routes remain inside `RequireSession`; loading, errors and data belong to that route. If the module already uses `Frame`, retain its shell and adapt only the page content.
+
+`init --features agents` regenerates the managed block in `AGENTS.md`, including the kit's eight guidance lines. Do not edit that block by hand. Package maintainers check the contribution roots with `npm run -w packages/ui astryx -- integration pack --check`, then verify discovery and template type checking from a packed consumer outside the repository.
+
 ## Wire it up
 
 The package imports no stylesheet from its code; the module imports five, in this order:
@@ -60,7 +76,7 @@ A page is a `ModuleShell` with the brand in its heading:
 
 The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`.
 
-## The five exports of the package
+## Package exports
 
 | Import | What it is |
 |---|---|
@@ -69,6 +85,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
 | `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended. Unlayered on purpose: it wins over the design system's layered styles. |
 | `@eneo-ai/module-kit/session` | The session client, below. |
+| `@eneo-ai/module-kit/templates/eneo-module-page.tsx`, `@eneo-ai/module-kit/templates/eneo-signin.tsx` | Reference TSX source used by the Astryx CLI. Adapt it into the owning module route. |
 
 ## The code
 

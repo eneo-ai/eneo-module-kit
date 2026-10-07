@@ -27,7 +27,17 @@ MORE CLI:
   search "<query>"   find any component / hook / doc / template / block
   component --list   164 components by category
   template --list    page + block recipes
-  docs <topic>       browser-support, cli-integrations, color, elevation, getting-started, icons, illustrations, internationalization, layout, migration, motion, principles, shape, spacing, styling-libraries, styling, theme, tokens, typography, working-with-ai
+  docs <topic>       browser-support, cli-integrations, color, elevation, getting-started, icons, illustrations, internationalization, layout, migration, motion, principles, shape, spacing, styling-libraries, styling, theme, tokens, typography, working-with-ai, eneo-module
   swizzle <Name>     eject component source for deep customization
   upgrade --apply    run after any Astryx or integration dependency bump
+
+INTEGRATIONS:
+- `@eneo-ai/module-kit`: Run Astryx through npm run astryx --; keep its core and CLI at the exact pinned version.
+- `@eneo-ai/module-kit`: Read astryx docs eneo-module; start a page from eneo-module-page or eneo-signin and inspect every component prop.
+- `@eneo-ai/module-kit`: Use ModuleProviders once; ModuleShell owns navigation, the skip link and the one main region. Cap content with Layout.
+- `@eneo-ai/module-kit`: Private routes use RequireSession and fetchWithSession; close module-owned native dialogs while useSignedOut() is true.
+- `@eneo-ai/module-kit`: Backend routes require require_session; writes and WebSockets also require require_same_origin. The module owns its allowlist.
+- `@eneo-ai/module-kit`: Use Astryx components and Eneo theme tokens; no Next.js, Tailwind, authored StyleX or ejected components.
+- `@eneo-ai/module-kit`: User-facing text is Swedish; fonts and scripts stay on the module origin. Keep 44 px touch targets and visible focus.
+- `@eneo-ai/module-kit`: Add every page state to web/tests/e2e/screens.ts and run web build and test:e2e before finishing.
 <!-- ASTRYX:END -->

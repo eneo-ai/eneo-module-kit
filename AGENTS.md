@@ -1,6 +1,6 @@
 # Agent instructions: eneo-module-kit
 
-The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the Astryx integration of the UI package and the first release are planned. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
+The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package includes its Astryx integration, and the first release is pending. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
 
 ## Directory map
 
@@ -106,7 +106,7 @@ Page rules: start with `Purpose:`, `Read this when:` and `Related:`; one fact in
 ## What the template gives every new module
 
 - Built: `template/AGENTS.md` with the module's rules, a `template/CLAUDE.md` that imports it and `web/AGENTS.md`, the pinned Astryx CLI with an `astryx` npm script, and the block `astryx init --features agents` generates (in `template/web/AGENTS.md`, between its markers: do not edit by hand).
-- Planned: the UI package registered as an Astryx integration, so `astryx build` proposes the Eneo shell and the generated block carries the kit's own lines.
+- Built: the UI package registers two reference templates and the `eneo-module` topic with Astryx. `astryx build "en sida i en Eneo-modul"` proposes `eneo-module-page` first, and `astryx init --features agents` includes eight kit guidance lines. See `docs/guides/ui-package.md`.
 - No custom MCP server and no skill. Add a skill only when agents are seen skipping these files.
 
 ## Build scaffolding (temporary)

@@ -113,7 +113,7 @@ This repository has an [AGENTS.md](AGENTS.md) (directory map, commands, rules) a
 
 - `AGENTS.md` with the module's rules, and a `CLAUDE.md` that imports it and `web/AGENTS.md`.
 - The Astryx CLI, pinned, behind an `astryx` npm script, and the block `astryx init --features agents` generates (`web/AGENTS.md`).
-- Planned: the UI package as an Astryx integration, so that `astryx build` proposes the Eneo shell first and the generated block carries the kit's own lines.
+- The UI package registers its page and sign-in templates, `eneo-module` topic and eight agent guidance lines with the pinned Astryx CLI. See [the UI guide](docs/guides/ui-package.md#astryx-integration).
 
 There is no custom MCP server and no skill. Astryx's hosted MCP server is optional for discovery; the pinned CLI is the source of truth. See [K12](docs/decisions/k12-agent-setup.md).
 
@@ -143,7 +143,8 @@ There is no custom MCP server and no skill. Astryx's hosted MCP server is option
 | Template skeleton | Done |
 | UI package: theme, colour mode, providers, shell, brand | Done |
 | UI package: the session client and screens | Done |
-| Astryx integration, the first release of both packages | Planned. Public packages under `@eneo-ai` and AGPL-3.0-only are decided; registry access must be verified before publishing ([design.md](docs/design.md) section 7) |
+| Astryx integration | Built: two reference templates, the `eneo-module` topic and generated agent guidance |
+| First release of both packages | Pending. Public packages under `@eneo-ai` and AGPL-3.0-only are decided; registry access must be verified before publishing ([design.md](docs/design.md) section 7) |
 | Speech-to-text running on the kit | After its Astryx port, on a released kit version |
 
 ## Licence

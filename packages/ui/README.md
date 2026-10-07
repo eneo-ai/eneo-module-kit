@@ -57,6 +57,10 @@ exact version, here and in the peers.
 
 Install it from a packed tarball, not a `file:` folder (two copies of React): see the [guide](../../docs/guides/ui-package.md#install).
 
+## Astryx integration
+
+The installed package contributes `eneo-module-page` and `eneo-signin` reference TSX templates, the `eneo-module` documentation topic and eight agent guidance lines. Read or materialize them with the pinned CLI; the module owns their routing, data and states. Commands and package discovery: [UI guide](../../docs/guides/ui-package.md#astryx-integration).
+
 ## The session client: `@eneo-ai/module-kit/session`
 
 The login of a page that can outlive its login. SSO only: it talks to the BFF's `GET /api/auth/status`
