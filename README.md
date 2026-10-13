@@ -99,7 +99,7 @@ A new module starts as a copy of `template/` and imports the two packages. It do
 - A presentational page shell and brand lockup.
 - The session client, `@eneo-ai/module-kit/session`: the sign-in screen, keeping the login (a keepalive, a warning five minutes before the end), and a cover over the page, with a sign-in dialog, when the login has ended, so nothing on the page is lost.
 
-**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, compose file, module CI, devcontainer, agent instructions, an accessibility gate in three browsers, and a stub Eneo for development.
+**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, compose file, module CI, devcontainer, agent instructions, browser tests in three browsers, an accessibility gate in Chromium at eight screen settings, and a stub Eneo for development.
 
 ## What stays in each module
 

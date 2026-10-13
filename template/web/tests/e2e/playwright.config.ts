@@ -24,7 +24,7 @@ const touch = (width: number, height: number): Use => ({ viewport: { width, heig
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
 
 const flow = /(flow|session-cover)\.spec\.ts/;
-const gate = /(a11y|harness|header-fit|keyboard|theme)\.spec\.ts/;
+const gate = /(a11y|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
@@ -62,7 +62,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: false,
   workers: 1,
-  reporter: [["list"]],
+  // The JSON report is what `npm run ci:failure` reads from a failed CI job; it lies in the output folder, beside the traces.
+  reporter: [["list"], ["json", { outputFile: "../../test-results/results.json" }]],
   use: { baseURL: external ?? `http://127.0.0.1:${APP}`, locale: "sv-SE", timezoneId: "Europe/Stockholm", trace: "retain-on-failure" },
   projects: [
     // The module in the browsers it supports: sign in, the page, the proxied route, sign out, a clean console.

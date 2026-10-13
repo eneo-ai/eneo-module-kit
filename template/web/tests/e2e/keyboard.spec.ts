@@ -8,7 +8,7 @@
 import { writeFileSync } from "node:fs";
 import type { Locator, Page } from "@playwright/test";
 import { clippedFocus, focusStop, orderProblems, settle, stopProblems, tabWalk } from "./checks";
-import { expect, signIn, stubControl, stubDefaults, stubFlows, test } from "./fixtures";
+import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 import { STATES } from "./screens";
 
 test.afterEach(async ({ page }) => {
@@ -74,6 +74,7 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   expect.soft(problems, "focus stays inside and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
   // A tooltip leaves a moment after focus does, and takes the first Escape if it is still there.
   await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await untilModal(page);
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
   await expect(trigger, "Escape gives focus back to what opened it").toBeFocused();
@@ -126,6 +127,7 @@ test("the warning before the login ends takes focus, holds it, and gives it back
   }
   expect.soft(problems, "focus stays inside the warning and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await untilModal(page);
   await page.keyboard.press("Escape");
   await expect(warning).toBeHidden();
   await expect(opener, "focus goes back to where it was").toBeFocused();
