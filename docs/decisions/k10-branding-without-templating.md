@@ -18,7 +18,7 @@ The template's static document head also links the same-origin `/api/branding/th
 
 ## Consequences
 
-- The header may show the name first and the organisation a moment later; it never shows another organisation's mark.
+- The header may show the name first and the organisation a moment later; it never shows another organisation's mark. The bar keeps the mark's height from the first frame, so only the product's name moves, along the bar; nothing under it moves (`template/web/tests/e2e/still.spec.ts` declares it).
 - A logo that cannot be used is logged once at start and the organisation's name is shown instead.
 - Logos are served with a sandboxing Content-Security-Policy, so an SVG opened on its own runs nothing in the module's origin.
 - The choice between a deployment's light and dark logo is CSS (`base.css`), so no script runs for it.
