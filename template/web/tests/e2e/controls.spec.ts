@@ -18,7 +18,7 @@
  * judges it are in controls.ts, which the checks' own tests run too (harness.spec.ts).
  */
 import { sweep, type Declared } from "./controls";
-import { expect, LOGIN_WINDOW_CLOSES, test } from "./fixtures";
+import { expect, test } from "./fixtures";
 import { STATES } from "./screens";
 
 // Which projects press every control is the config's to say (playwright.config.ts). A trace of every copy would be large.
@@ -27,17 +27,8 @@ test.use({ trace: "off" });
 /** Controls that are not activated (a press the shared stub Eneo could not take back), `<state> | <role> "<name>"`, and why. None today. */
 const SKIPPED: Declared["skipped"] = {};
 
-/** Failures a control is meant to cause, `<state> | <role> "<name>"`, as a state declares its own (screens.ts). */
-const EXPECTS: Declared["expects"] = {
-  'session-warning | button "Fortsätt arbeta"': {
-    reason: "it opens the login window, which closes itself on /inloggad while the UI package may still read the organisation (LOGIN_WINDOW_CLOSES)",
-    expects: [LOGIN_WINDOW_CLOSES],
-  },
-  'signed-out | button "Logga in igen"': {
-    reason: "it opens the login window, which closes itself on /inloggad while the UI package may still read the organisation (LOGIN_WINDOW_CLOSES)",
-    expects: [LOGIN_WINDOW_CLOSES],
-  },
-};
+/** Failures a control is meant to cause, `<state> | <role> "<name>"`, as a state declares its own (screens.ts). None today. */
+const EXPECTS: Declared["expects"] = {};
 
 /** Presses that change nothing by design, `<state> | <role> "<name>"`, and why: they are still activated, and judged on everything else. None today. */
 const NO_RESPONSE: Declared["noResponse"] = {};

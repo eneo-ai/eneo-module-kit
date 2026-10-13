@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -24,12 +24,15 @@ interface BrandingState {
   /** Null until the answer, and after an answer that is none. */
   organization: Organization | null;
   defaultLogo?: string;
+  /** Asks for the branding; the first lockup shown calls it. */
+  read?: () => void;
 }
 
 const BrandingContext = createContext<BrandingState>({ organization: null });
 
 /**
- * The deployment's branding, asked of the module's backend once, when the app starts. It is optional, so a backend
+ * The deployment's branding, asked of the module's backend once, when a lockup first shows: a page that shows none (the
+ * login window's, which closes itself) asks nothing, so it leaves no read to be cut short. It is optional, so a backend
  * that is slow, refuses or fails must not hold the page: the read has one deadline, and without an answer the lockup
  * is the product name alone (design K10). Until it has answered nothing of an organisation is shown, so no page
  * shows one municipality's mark before another's.
@@ -48,25 +51,32 @@ export function BrandingProvider({
   fetchImpl?: typeof fetch;
 }) {
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const asked = useRef(false);
+  const mounted = useRef(true);
   useEffect(() => {
-    let current = true;
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // Once: the answer is the deployment's, and does not change while the page is open.
+  const read = useCallback(() => {
+    if (asked.current) return;
+    asked.current = true;
     const get = fetchImpl ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
-    (async () => {
+    void (async () => {
       try {
         const response = await get("/api/branding", { cache: "no-store", signal: AbortSignal.timeout(deadlineMs) });
         if (!response.ok) throw new Error(`answered ${response.status}`);
         const body = (await response.json()) as Branding;
-        if (current) setOrganization(body.organization ?? null);
+        if (mounted.current) setOrganization(body.organization ?? null);
       } catch (error) {
         console.error(`GET /api/branding failed (${String(error)}); the header shows the product name alone.`);
       }
     })();
-    return () => {
-      current = false;
-    };
-    // Once: the answer is the deployment's, and does not change while the page is open.
-  }, []);
-  return <BrandingContext.Provider value={{ organization, defaultLogo }}>{children}</BrandingContext.Provider>;
+  }, [fetchImpl, deadlineMs]);
+  const value = useMemo(() => ({ organization, defaultLogo, read }), [organization, defaultLogo, read]);
+  return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }
 
 /**
@@ -110,7 +120,8 @@ export function Brand({
   /** Asked before the link leaves the page; call preventDefault to stay. */
   onClickCapture?: ComponentProps<typeof TopNavHeading>["onClickCapture"];
 }) {
-  const { organization, defaultLogo } = useContext(BrandingContext);
+  const { organization, defaultLogo, read } = useContext(BrandingContext);
+  useEffect(() => read?.(), [read]);
   const mark = organization && (
     <HStack gap={4} vAlign="center">
       <OrganizationMark organization={organization} defaultLogo={defaultLogo} />

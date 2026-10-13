@@ -117,8 +117,6 @@ declare(page, [{ console: /status of 500.*\/api\/eneo\/flows\// }]);
 declare(page, [{ console: /net::ERR_FAILED.*\/api\/auth\/logout/ }, { requestFailed: /POST .*\/api\/auth\/logout: net::ERR_FAILED/ }]);
 ```
 
-A declaration marked `optional` may happen and need not: it is for a race the test cannot decide, and there is one. A login window lands on `/inloggad`, which closes the window while the UI package's `BrandingProvider` may still be reading the organisation; WebKit then fails that read ("Load failed") and the package logs it as an error. `LOGIN_WINDOW_CLOSES` in `web/tests/e2e/fixtures.ts` declares it wherever a test opens a login window. The fix is the UI package's: no error for a read that the page's own leaving cut short.
-
 The engines say a failure in their own words. The sentinel writes each in Chromium's, so a failure is declared once for all three, and a declared one that does not happen is missed in every engine:
 
 | Engine | Writes to the console for a resource that did not load | Calls an aborted request | The sentinel |
@@ -150,7 +148,7 @@ What is the person's choice or page already (a chosen radio, the link to the pag
 | `KEYBOARD_ONLY` | A control no pointer reaches by design: one kept out of sight until it has focus | Is given focus and Enter |
 | `CLICKED_IN_WEBKIT` | A control that Safari takes a tap on and Playwright's WebKit cannot tap, with the evidence from Safari | Is clicked on a WebKit project with touch |
 
-`EXPECTS` has the two controls that open a login window (`Fortsätt arbeta` in `session-warning`, `Logga in igen` in `signed-out`), with `LOGIN_WINDOW_CLOSES` ([above](#what-every-test-watches-for)); the other four lists are empty in the template. The press and its judgement are in `web/tests/e2e/controls.ts`, which `harness.spec.ts` also runs on pages built to fail it. A new state is pressed as soon as it is in `screens.ts`.
+The five lists are empty in the template. The press and its judgement are in `web/tests/e2e/controls.ts`, which `harness.spec.ts` also runs on pages built to fail it. A new state is pressed as soon as it is in `screens.ts`.
 
 ## What a screen reader is given
 

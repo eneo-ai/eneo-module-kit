@@ -13,8 +13,6 @@ export interface Expectation {
   console?: RegExp;
   /** A failed request as `METHOD url: reason`, e.g. an abort: `/POST .*\/api\/auth\/logout: net::ERR_FAILED/`. */
   requestFailed?: RegExp;
-  /** The failure may happen and need not: a race the test cannot decide (a window that closes while it still reads). */
-  optional?: true;
 }
 
 /** The sentinel of each browser context, so a state can declare what it causes without being handed one. */
@@ -146,7 +144,7 @@ export class Sentinel {
     const unexpectedConsole = this.unexpected(logged, (expectation) => expectation.console);
     const unexpectedFailed = this.unexpected(this.failed, (expectation) => expectation.requestFailed);
     const missing = this.declared
-      .filter(({ seen, expectation }) => !seen && !expectation.optional)
+      .filter(({ seen }) => !seen)
       .map(({ expectation }) => String(expectation.console ?? expectation.requestFailed));
     return { unexpectedConsole, unexpectedFailed, missing };
   }
@@ -201,14 +199,6 @@ export async function stubFlows(page: Page, mode: "normal" | "empty" | "error") 
   const response = await page.request.post(`http://127.0.0.1:${STUB}/__stub/flows?mode=${mode}`);
   expect(response.ok()).toBe(true);
 }
-
-/**
- * What a login window may leave on the console as it closes itself. It lands on `/inloggad`, which closes the window while
- * the UI package's branding read (`BrandingProvider`) is still on its way; WebKit then fails that read ("Load failed") and
- * the package logs it as an error. Optional: it happens only when the window closes first. The fix is the UI package's:
- * no error for a read that the page's own leaving cut short.
- */
-export const LOGIN_WINDOW_CLOSES: Expectation = { console: /^GET \/api\/branding failed \(TypeError: Load failed\)/, optional: true };
 
 /** Signs in through the stub Eneo: the module's login, Eneo's, the callback, and back to the flows. */
 export async function signIn(page: Page) {
