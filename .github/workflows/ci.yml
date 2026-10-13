@@ -89,6 +89,13 @@ jobs:
       # Builds the template's app against the workspace UI package, serves it with the workspace BFF over the stub
       # Eneo, and runs the browser tests and the gate.
       - run: npm run -w template/web test:e2e
+      # A failed run keeps Playwright's report and the trace of each failed test. `npm run -w template/web ci:failure`
+      # finds them by the job's name up to its parenthesis, with `-results` after it, and reads them.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: template-web-results
+          path: template/web/test-results
 
   template-image:
     name: template image (this commit's UI and BFF)

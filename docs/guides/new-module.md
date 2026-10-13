@@ -19,6 +19,7 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `web/` | A Vite + React + react-router app on `@eneo-ai/module-kit`: `main.tsx` (providers, stylesheets), `App.tsx` (routes), `Frame.tsx` (the shell every page uses), `config.ts` (`PRODUCT_NAME`), `session.ts` (`signOut`, which says `false` when the backend refuses or gives no answer so that `AccountMenu` can say so in a toast, and `getJson` over `fetchWithSession`), `AccountMenu.tsx`, `pages/Flows.tsx`. The sign-in screen, the gate and the page a login window lands on (`/inloggad`) come from the kit; `App.tsx` routes them. |
 | `web/package-lock.json`, `web/vendor/`, `web/scripts/relock.mjs` | The web app's own lock, with hashes. Before the release it finds `@eneo-ai/module-kit` in `web/vendor/` (the packed tarball, not committed); `relock.mjs` regenerates the lock. Both go when the package is published. |
 | `web/tests/e2e/` | Playwright against the built app, and the accessibility gate. |
+| `web/scripts/ci-failure.mjs` | `npm run ci:failure`: what failed in a CI run, read on your machine ([quality](quality.md#a-red-ci-job)). |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` | One image, one process, port 3001. The compose file runs the module and the stub. `.env.example` lists every variable the backend reads. |
 | `.devcontainer/` | Python 3.12 and Node 22, ports 3001, 5173 and 8411 forwarded. |
 | `.github/workflows/ci.yml` | A module's own CI. |
@@ -157,7 +158,7 @@ To work on the UI with hot reload: the stub, the backend (as above, but `MODULE_
 cd web && PYTHON="$(pwd)/../.venv/bin/python" npm run test:e2e
 ```
 
-`npm run test:e2e` needs the Playwright browsers once: `npx playwright install --with-deps chromium webkit firefox`. It builds first, then starts the stub and the backend on ports of its own: `E2E_APP_PORT` (default 3011) and `E2E_STUB_PORT` (default 8011); `PYTHON` names, as an absolute path (a relative one fails), the interpreter with `eneo-module-bff` installed (without it the config looks for `../.venv` beside the kit's checkout, then `python3`); `E2E_EXTERNAL_URL` tests a module that is already running (the container) instead. What it proves: [below](#what-ci-proves). Read a failure from `web/test-results/`: the trace of a failed test is kept (`npx playwright show-trace <trace.zip>`), each gate test writes `findings.json` (the measurements), and `SHOTS=1` also writes a picture of every state to `web/test-results/shots/`.
+`npm run test:e2e` needs the Playwright browsers once: `npx playwright install --with-deps chromium webkit firefox`. It builds first, then starts the stub and the backend on ports of its own: `E2E_APP_PORT` (default 3011) and `E2E_STUB_PORT` (default 8011); `PYTHON` names, as an absolute path (a relative one fails), the interpreter with `eneo-module-bff` installed (without it the config looks for `../.venv` beside the kit's checkout, then `python3`); `E2E_EXTERNAL_URL` tests a module that is already running (the container) instead. What it proves: [below](#what-ci-proves). Read a failure from `web/test-results/`: the trace of a failed test is kept (`npx playwright show-trace <trace.zip>`), `results.json` is Playwright's report of the run, each gate test writes `findings.json` (the measurements), and `SHOTS=1` also writes a picture of every state to `web/test-results/shots/`.
 
 ## 6. Build the image
 
@@ -212,7 +213,7 @@ In Eneo's admin, register the module: its module key, the callback URL `https://
 
 ## CI
 
-A module's own CI is `template/.github/workflows/ci.yml`. In a module's repository, move it to the root as `.github/workflows/ci.yml`.
+A module's own CI is `template/.github/workflows/ci.yml`. In a module's repository, move it to the root as `.github/workflows/ci.yml`. When its `web` job fails it keeps `web/test-results` as the artifact `web-results`, which `npm run ci:failure` reads ([quality](quality.md#a-red-ci-job)); the kit's `template-web` job does the same, as `template-web-results`.
 
 ## What CI proves
 

@@ -43,6 +43,13 @@ jobs:
       # accessibility gate.
       - run: npm run test:e2e
         working-directory: web
+      # A failed run keeps Playwright's report and the trace of each failed test. `npm run ci:failure`, in web/, finds
+      # them by the job's name with `-results` after it, and reads them.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: web-results
+          path: web/test-results
   image:
     runs-on: ubuntu-latest
     steps:

@@ -66,3 +66,30 @@ Error: what moved on screen when no one pressed anything
 | A move that is left for now | One line in `KNOWN` of the spec: the page, the layout, the answer and the reason. It must still happen: when the page stands still, the line fails the test until it is taken out |
 
 `KNOWN` has one move, on every page, in `laptop-1440-light`: the organisation's mark is 40 px high (`packages/ui/src/base.css`) and arrives when `GET /api/branding` answers, in a top bar that is 48 px with a mouse and grows to 56 px, so the page under it moves 8 px down. On a touch screen the bar is 60 px from the first draw and stands still.
+
+## A red CI job
+
+The job that runs the browser tests keeps its evidence when it fails: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the job: `web-results`, and `template-web-results` in the kit's own CI. Read it on your machine:
+
+```bash
+npm run ci:failure                   # the latest CI run of the branch that is checked out
+npm run ci:failure -- 26             # the latest CI run of pull request 26
+npm run ci:failure -- 38303520954    # that run
+```
+
+It needs the GitHub CLI (`gh`), signed in. It prints the run's failed jobs. For the browser job it downloads the results to a new folder under the system's temporary folder, never into the checkout, and lists every test whose outcome was not the expected one, with its errors and the paths of what Playwright kept for it. Open a trace with `npx playwright show-trace <trace.zip>`.
+
+| Outcome of a test | Listed |
+|---|---|
+| It failed | Yes, as `failed` or `timedOut` |
+| It is marked to fail (`test.fail()`) and passed | Yes, as `passed, and was marked to fail` |
+| It failed and passed when tried again | Yes, as `flaky`. Only with `retries` in the Playwright config; the template sets none |
+| It is marked to fail and failed, or it passed | No |
+
+For any other failed job it prints the command that shows the job's log (`gh run view <run> --job <job> --log-failed`). When the results cannot be downloaded (they have expired, the sign-in has lapsed) it prints the download's own error and the same command.
+
+| Part | Where |
+|---|---|
+| The report | `reporter` in `web/tests/e2e/playwright.config.ts` writes `web/test-results/results.json` on every run |
+| The upload | The last step of the `web` job in `.github/workflows/ci.yml` (`template-web` in the kit's own), when the job has failed |
+| The script | `web/scripts/ci-failure.mjs`. It finds the artifact from the job's name: the name up to a parenthesis, a dash for each space, then `-results` |

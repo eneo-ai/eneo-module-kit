@@ -10,7 +10,8 @@
     "lint": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test:e2e": "npm run build && playwright test --config tests/e2e/playwright.config.ts"
+    "test:e2e": "npm run build && playwright test --config tests/e2e/playwright.config.ts",
+    "ci:failure": "node scripts/ci-failure.mjs"
   },
   "dependencies": {
     "@astryxdesign/core": "0.6.3",
