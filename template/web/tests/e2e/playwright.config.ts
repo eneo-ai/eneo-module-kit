@@ -28,8 +28,9 @@ const flow = /(flow|session-cover)\.spec\.ts/;
 // specs that run there.
 const flowAndSentinel = /(flow|session-cover|sentinel)\.spec\.ts/;
 const gate = /(a11y|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
-// The press on every control of every state (controls.spec.ts, the gate's longest part), on a phone and a laptop.
-const gateAndControls = /(a11y|controls|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
+// The press on every control of every state (controls.spec.ts, the gate's longest part) and what a screen reader is given
+// (aria.spec.ts), on a phone and a laptop.
+const gateAndControls = /(a11y|aria|controls|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [

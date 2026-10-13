@@ -18,6 +18,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | The keyboard: focus is visible and not hidden, leaves the page at the end, follows the reading order; a menu and a dialog hold focus and give it back | `keyboard.spec.ts` | The gate's eight |
 | Nothing on screen moves when an answer arrives ([below](#what-is-on-screen-stands-still)) | `still.spec.ts` | `phone-320-light`, `phone-390-light`, `laptop-1440-light` |
 | Every control of every state does something, and breaks nothing ([below](#every-control-does-something)) | `controls.spec.ts`, with the press in `controls.ts` | `phone-390-light`, `laptop-1440-light` |
+| What a screen reader is given in each state, against curated snapshots ([below](#what-a-screen-reader-is-given)) | `aria.spec.ts`, with the files in `aria.spec.ts-snapshots/` | `phone-390-light`, `laptop-1440-light` |
 | The brand and the account button keep apart at 320 px with text spacing | `header-fit.spec.ts` | `phone-320-light` |
 | Supporting text stays readable, a focused field has one frame, the warning's title takes focus without a ring | `theme.spec.ts` | The gate's eight |
 | The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light` |
@@ -133,6 +134,28 @@ What is the person's choice or page already (a chosen radio, the link to the pag
 
 All five are empty in the template. The press and its judgement are in `web/tests/e2e/controls.ts`, which `harness.spec.ts` also runs on pages built to fail it. A new state is pressed as soon as it is in `screens.ts`.
 
+## What a screen reader is given
+
+`web/tests/e2e/aria.spec.ts` holds each state's region (the shell for a page, the dialog or menu open over one) to an ARIA snapshot: names, roles, heading levels, states and the words that are read. The files are in `web/tests/e2e/aria.spec.ts-snapshots/`, one a width (`<state>-390.aria.yml`, `<state>-1440.aria.yml`), and curated by hand:
+
+| A curated file has | And not |
+|---|---|
+| The nodes that say something: a landmark, a heading and its level, a control and its name, a link's address, a state such as `[checked]`, the words that are read | A node that says nothing (`- status`, `- text: ""`), or text that repeats its control's name |
+| A pattern where a value varies: `/Inloggningen upphör kl\. \d\d:\d\d\. …/` | A generated id |
+
+A snapshot matches when the region has every node it lists, in that order; what it leaves out may be there too. Playwright's own update would write its raw tree over a curated file, so no run writes there:
+
+| Run | The test |
+|---|---|
+| A state with no file yet | Fails, writes the region's raw tree to its results folder, and names both paths: copy the tree to the curated file, and curate it |
+| `--update-snapshots` | Fails the same way for every state it runs: carry what changed over to the curated file by hand, read the diff, then run without the flag |
+
+```bash
+npm run test:e2e -- aria.spec.ts --update-snapshots -g "flows" --project=laptop-1440-light   # the raw tree, after a change on purpose
+```
+
+Where an engine rightly gives a state another tree (the page itself differs there), that engine has a file of its own for it, `<state>-<width>-<engine>.aria.yml`, a copy that differs in that one thing. The template has none. A new state gets its files as the first run of it says.
+
 ## What is on screen stands still
 
 Nothing on screen moves when an answer arrives: a control that moves is pressed by mistake, and a line that moves is lost by the eye reading it. `web/tests/e2e/still.spec.ts` opens each page by its address, hands it the backend's answers one at a time, in the order the page asked for them, and measures what is on screen before and after each. It runs in `phone-320-light`, `phone-390-light` and `laptop-1440-light`; the template has no tablet project.
@@ -178,3 +201,4 @@ These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit ea
 | The `sentinel` fixture of `web/tests/e2e/fixtures.ts`, `web/tests/e2e/sentinel.spec.ts` | `frontend/tests/e2e/sentinel.ts`, `frontend/tests/e2e/sentinel.spec.ts` | `b8c3804` |
 | The measurements of `web/tests/e2e/checks.ts`, and their own tests in `web/tests/e2e/harness.spec.ts` | `frontend/tests/e2e/checks.ts`, `frontend/tests/e2e/harness.spec.ts` | `b8c3804` |
 | `web/tests/e2e/controls.ts`, `web/tests/e2e/controls.spec.ts` | `frontend/tests/e2e/controls.ts`, `frontend/tests/e2e/controls.spec.ts` | `b8c3804` |
+| `web/tests/e2e/aria.spec.ts`, and the way its files are kept | `frontend/tests/e2e/aria.spec.ts` | `b8c3804` |

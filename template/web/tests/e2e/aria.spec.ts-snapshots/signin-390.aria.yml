@@ -1,0 +1,11 @@
+- link "Hoppa till innehåll":
+  - /url: "#astryx-app-shell-main"
+- banner:
+  - navigation "Eneo-modul":
+    - img "Exempelkommunen"
+    - text: Eneo-modul
+- main:
+  - heading "Eneo-modul" [level=1]
+  - paragraph: Logga in med ditt Eneo-konto för att fortsätta.
+  - link "Logga in med Eneo":
+    - /url: /api/auth/login?next=%2Fflows

@@ -1,0 +1,5 @@
+- alertdialog "Du loggas snart ut":
+  - heading "Du loggas snart ut" [level=2]
+  - button "Stäng"
+  - paragraph: /Inloggningen upphör kl\. \d\d:\d\d\. Fortsätt arbeta loggar in dig igen i ett nytt fönster\. Allt på den här sidan finns kvar\./
+  - button "Fortsätt arbeta"
