@@ -23,12 +23,7 @@ const state = (name: string) => STATES.find((s) => s.name === name)!;
  * where it is fixed. Never a pattern. An entry must still happen: when the stop is right, the line fails the test until
  * it is taken out.
  */
-const KNOWN: { state: string; engine: string; problem: string; why: string }[] = ["flows", "flows-empty", "flows-error"].map((state) => ({
-  state,
-  engine: "webkit",
-  problem: 'a "Eneo-modul – Exempelkommunen": no visible focus indicator (2.4.7)',
-  why: "the top bar's brand link is one the design system does not style, and WebKit's own ring on it is under 3:1; the UI package is to give it the design system's ring (packages/ui/src/base.css)",
-}));
+const KNOWN: { state: string; engine: string; problem: string; why: string }[] = [];
 
 for (const name of ["signin", "flows", "flows-empty", "flows-error"]) {
   const screen = state(name);

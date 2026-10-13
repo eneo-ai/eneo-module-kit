@@ -230,7 +230,7 @@ What the engines do differently, and what the gate does about it:
 
 What a page plays goes to no speaker: Chromium starts with `--mute-audio` and Firefox with `media.volume_scale` at 0 (Playwright's WebKit has no such switch). On Linux, Firefox runs Web Audio only with a sound server, so CI's `firefox` part starts one that plays into a sink of nothing; Playwright's WebKit for Linux has no MediaRecorder, which the template does not use.
 
-A walk's problem that is left for now is one line in `KNOWN` of `web/tests/e2e/keyboard.spec.ts`: the state, the engine, the problem as the walk says it, and the reason. It must still happen: when the stop is right, the line fails the test until it is taken out. It has one, in WebKit on `flows`, `flows-empty` and `flows-error`: the top bar's brand link is one the design system does not style, and WebKit draws no ring of 3:1 on it (0 px² of the 618 that a one-pixel line around it needs; Chromium's own ring gives 1198, Firefox's 1182). The fix is the UI package's: the design system's ring on that link, in the kit's `packages/ui/src/base.css`.
+A walk's problem that is left for now is one line in `KNOWN` of `web/tests/e2e/keyboard.spec.ts`: the state, the engine, the problem as the walk says it, and the reason. It must still happen: when the stop is right, the line fails the test until it is taken out. It is empty. What the design system leaves to the browser gets its ring from the UI package (`packages/ui/src/base.css`): the top bar's brand link, on which WebKit's own ring is under 3:1, and the slider's thumb.
 
 ## Where these tools come from
 

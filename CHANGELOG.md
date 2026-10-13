@@ -10,6 +10,7 @@ Related: [README](README.md), [new module](docs/guides/new-module.md), [UI packa
 - Deployment accent settings validate contrast against the Eneo theme and derive a dark-mode colour when omitted. The template loads their same-origin stylesheet from the BFF before themed content appears; no custom theme or inline script is needed.
 - `@eneo-ai/module-kit`: the pinned Astryx theme, colour mode, providers, shell, branding and session client. Its Astryx integration adds two reference page templates, a documentation topic and generated agent guidance.
 - The top bar has the brand mark's height from the first frame, so a page does not move down when the organisation arrives.
+- The top bar's brand link and the slider's thumb have the design system's focus ring in every engine; Safari's own ring on the link was under 3:1.
 - Shared form fields have one focus frame along their rounded edge, supporting text follows a 14 px default, and error text and control edges meet AA contrast. Dialog headings receive initial focus without a control frame.
 - The module template supplies a guarded backend, Swedish UI, stub Eneo, browser and accessibility checks, one-process image, local development and CI configuration.
 
