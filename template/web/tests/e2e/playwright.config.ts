@@ -24,6 +24,9 @@ const touch = (width: number, height: number): Use => ({ viewport: { width, heig
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
 
 const flow = /(flow|session-cover)\.spec\.ts/;
+// The sentinel's own tests (sentinel.spec.ts) run in Chromium's: the other engines' words for a failure are proved by the
+// specs that run there.
+const flowAndSentinel = /(flow|session-cover|sentinel)\.spec\.ts/;
 const gate = /(a11y|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
@@ -66,8 +69,8 @@ export default defineConfig({
   reporter: [["list"], ["json", { outputFile: "../../test-results/results.json" }]],
   use: { baseURL: external ?? `http://127.0.0.1:${APP}`, locale: "sv-SE", timezoneId: "Europe/Stockholm", trace: "retain-on-failure" },
   projects: [
-    // The module in the browsers it supports: sign in, the page, the proxied route, sign out, a clean console.
-    { name: "chromium", testMatch: flow, use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
+    // The module in the browsers it supports: sign in, the page, the proxied route, sign out, under the sentinel.
+    { name: "chromium", testMatch: flowAndSentinel, use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
     { name: "webkit", testMatch: flow, use: { ...devices["Desktop Safari"], colorScheme: "light" } },
     { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], colorScheme: "light" } },
     // The accessibility gate: every state at every width and theme, and the keyboard on the real screens.

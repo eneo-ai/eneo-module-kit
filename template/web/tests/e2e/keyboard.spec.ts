@@ -20,9 +20,7 @@ const state = (name: string) => STATES.find((s) => s.name === name)!;
 
 for (const name of ["signin", "flows", "flows-empty", "flows-error"]) {
   const screen = state(name);
-  // The state may provoke console messages on purpose (the failed list); anything else still fails the test.
-  const walk = test.extend({ allowConsole: screen.allowConsole ?? [] });
-  walk(`tab through ${name}`, async ({ page }, info) => {
+  test(`tab through ${name}`, async ({ page }, info) => {
     await screen.go(page);
     const { stops, left } = await tabWalk(page);
     writeFileSync(info.outputPath("stops.json"), JSON.stringify(stops, null, 2));

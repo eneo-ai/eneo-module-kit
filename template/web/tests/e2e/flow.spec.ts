@@ -1,5 +1,5 @@
 import type { Route } from "@playwright/test";
-import { expect, signIn, stubFlows, test } from "./fixtures";
+import { declare, expect, signIn, stubFlows, test, type Expectation } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
@@ -65,17 +65,24 @@ test("sign in through the stub Eneo, see the shell and the flows, call the modul
 });
 
 // Signing out that did not happen must not look like it did: no walk to the sign-in page while the login lives on, and a
-// menu item that is not left saying "Loggar ut…". The shared fixture also fails on an unhandled rejection (a page error).
-const FAILED_LOGOUTS = [
-  { name: "the backend refuses it", provoked: /status of 403/, answer: (route: Route) => route.fulfill({ status: 403, json: { detail: "Refused" } }) },
-  { name: "the connection is lost", provoked: /ERR_FAILED|NS_ERROR|Load failed|Fetch API cannot load/, answer: (route: Route) => route.abort() },
+// menu item that is not left saying "Loggar ut…". The sentinel also fails on an unhandled rejection (an uncaught error).
+const FAILED_LOGOUTS: { name: string; provoked: Expectation[]; answer: (route: Route) => Promise<void> }[] = [
+  {
+    name: "the backend refuses it",
+    provoked: [{ console: /status of 403.*\/api\/auth\/logout/ }],
+    answer: (route) => route.fulfill({ status: 403, json: { detail: "Refused" } }),
+  },
+  {
+    name: "the connection is lost",
+    provoked: [{ console: /net::ERR_FAILED.*\/api\/auth\/logout/ }, { requestFailed: /POST .*\/api\/auth\/logout: net::ERR_FAILED/ }],
+    answer: (route) => route.abort(),
+  },
 ];
 for (const failure of FAILED_LOGOUTS) {
   test.describe(`when signing out fails because ${failure.name}`, () => {
-    // The browser reports the failed request the test provoked.
-    test.use({ allowConsole: [failure.provoked] });
-
     test("the person stays signed in and is told so, the control is usable again, and trying again signs out", async ({ page }) => {
+      // The browser reports the failed request the test provoked.
+      declare(page, failure.provoked);
       await signIn(page);
       await page.route("**/api/auth/logout", failure.answer);
       await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
@@ -175,10 +182,9 @@ test.describe("colour mode", () => {
 });
 
 test.describe("when Eneo cannot list the flows", () => {
-  // The browser reports the 500 the stub was told to answer.
-  test.use({ allowConsole: [/status of 500/] });
-
   test("the page says so and offers to try again", async ({ page }) => {
+    // The browser reports the 500 the stub was told to answer.
+    declare(page, [{ console: /status of 500.*\/api\/eneo\/flows\// }]);
     await signIn(page);
     await stubFlows(page, "error");
     await page.reload();

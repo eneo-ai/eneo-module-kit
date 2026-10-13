@@ -20,7 +20,8 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | The brand and the account button keep apart at 320 px with text spacing | `header-fit.spec.ts` | `phone-320-light` |
 | Supporting text stays readable, a focused field has one frame, the warning's title takes focus without a ring | `theme.spec.ts` | The gate's eight |
 | The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light` |
-| No console error and no Content Security Policy violation, in every test | The `clean` fixture of `fixtures.ts` | Every spec that imports `test` from it |
+| No policy violation, no redirect, and no console error, uncaught error or failed request that the test did not declare ([below](#what-every-test-watches-for)) | The `sentinel` fixture of `fixtures.ts` | Every spec that imports `test` from it |
+| The sentinel itself, made to see each thing it fails a test for | `sentinel.spec.ts` | `chromium` |
 
 ## A red CI job
 
@@ -79,6 +80,35 @@ A test waits for the state its key needs, never for a time. A dialog has its ope
 
 A test that asserts that a key did nothing also proves that the key arrived: a key that was lost on the way leaves the page unchanged too, and passes for the wrong reason. `web/tests/e2e/session-cover.spec.ts` ("nothing but the new login closes the sign-in dialog") lets the dialog mark itself when Escape reaches it while it is modal, and asserts the mark.
 
+## What every test watches for
+
+A test that imports `test` from `web/tests/e2e/fixtures.ts` has the sentinel on its browser context: its pages and the windows they open. It judges when the test ends, and filters nothing silently:
+
+| What happens | The test |
+|---|---|
+| A Content Security Policy violation | Fails, always: the policy is never relaxed to make a test pass |
+| A redirect (301, 302, 303, 307 or 308) on a fetch, a frame, an image or a page | Fails, but the sign-in's own: the backend's `/api/auth/login` and `/api/auth/callback`, and the stub Eneo's `/module-login` |
+| A console error, an uncaught error or a failed request | Fails unless the test or its state declared it |
+| A declared failure that does not happen | Fails: a state that is meant to cause an error proves that it does |
+| A request that the browser or the page cancelled (`net::ERR_ABORTED`, and the other engines' words for it) | Passes: it is no failed request |
+
+A state declares what it causes in its `go` (`web/tests/e2e/screens.ts`), before it causes it; a test does the same at its start. A console error is its text and, in brackets, the address it came from; a failed request is `METHOD address: reason`:
+
+```ts
+declare(page, [{ console: /status of 500.*\/api\/eneo\/flows\// }]);
+declare(page, [{ console: /net::ERR_FAILED.*\/api\/auth\/logout/ }, { requestFailed: /POST .*\/api\/auth\/logout: net::ERR_FAILED/ }]);
+```
+
+The engines say a failure in their own words. The sentinel writes each in Chromium's, so a failure is declared once for all three, and a declared one that does not happen is missed in every engine:
+
+| Engine | Writes to the console for a resource that did not load | Calls an aborted request | The sentinel |
+|---|---|---|---|
+| Chromium | "Failed to load resource: the server responded with a status of 500 (Internal Server Error)", and "Failed to load resource: net::ERR_FAILED" | `net::ERR_FAILED` | Records what it says |
+| WebKit | The status line only | `Blocked by Web Inspector` | Writes the failure line, and records the abort as `net::ERR_FAILED` |
+| Firefox | Neither | `NS_ERROR_FAILURE` | Writes both lines, and records the abort as `net::ERR_FAILED` |
+
+`web/tests/e2e/sentinel.spec.ts` causes each thing the sentinel fails a test for and looks at what it saw, in Chromium; the engines' words are proved by the specs that declare a failure in WebKit and Firefox (`flow.spec.ts`).
+
 ## What is on screen stands still
 
 Nothing on screen moves when an answer arrives: a control that moves is pressed by mistake, and a line that moves is lost by the eye reading it. `web/tests/e2e/still.spec.ts` opens each page by its address, hands it the backend's answers one at a time, in the order the page asked for them, and measures what is on screen before and after each. It runs in `phone-320-light`, `phone-390-light` and `laptop-1440-light`; the template has no tablet project.
@@ -112,12 +142,13 @@ Error: what moved on screen when no one pressed anything
 
 ## Where these tools come from
 
-`still.spec.ts`, `GATE_CPU`, `untilModal`, `ci-failure.mjs` and the kept results are adapted from `eneo-ai/eneo-mod-speech-to-text` at commit `194ae4c`: known debt, like the rest of the gate, to become a package export when a second module needs it.
+These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit each row names: known debt, like the rest of the gate, to become a package export when a second module needs it.
 
-| In the template | In speech-to-text |
-|---|---|
-| `web/tests/e2e/still.spec.ts` | `frontend/tests/e2e/still.spec.ts` |
-| The `cpu` fixture of `web/tests/e2e/fixtures.ts` | `frontend/tests/e2e/gate.ts` |
-| `untilModal` in `web/tests/e2e/fixtures.ts` | `cycle` in `frontend/tests/e2e/leaks.spec.ts` |
-| `web/scripts/ci-failure.mjs` | `frontend/scripts/ci-failure.mjs` |
-| The JSON report and the upload of a failed job's results | The `frontend-browser` job of `.github/workflows/ci.yml` |
+| In the template | In speech-to-text | At commit |
+|---|---|---|
+| `web/tests/e2e/still.spec.ts` | `frontend/tests/e2e/still.spec.ts` | `194ae4c` |
+| The `cpu` fixture of `web/tests/e2e/fixtures.ts` | `frontend/tests/e2e/gate.ts` | `194ae4c` |
+| `untilModal` in `web/tests/e2e/fixtures.ts` | `cycle` in `frontend/tests/e2e/leaks.spec.ts` | `194ae4c` |
+| `web/scripts/ci-failure.mjs` | `frontend/scripts/ci-failure.mjs` | `194ae4c` |
+| The JSON report and the upload of a failed job's results | The `frontend-browser` job of `.github/workflows/ci.yml` | `194ae4c` |
+| The `sentinel` fixture of `web/tests/e2e/fixtures.ts`, `web/tests/e2e/sentinel.spec.ts` | `frontend/tests/e2e/sentinel.ts`, `frontend/tests/e2e/sentinel.spec.ts` | `b8c3804` |

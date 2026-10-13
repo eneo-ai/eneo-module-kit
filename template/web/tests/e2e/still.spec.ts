@@ -160,9 +160,7 @@ test.afterEach(async ({ page }) => {
 for (const [name, shown] of Object.entries(BY_ADDRESS)) {
   const state = STATES.find((candidate) => candidate.name === name);
   if (!state) throw new Error(`still.spec.ts: no state named ${name} in screens.ts`);
-  // The state may provoke console messages on purpose (the failed list); anything else still fails the test.
-  const still = test.extend({ allowConsole: state.allowConsole ?? [] });
-  still(`${name} stands still when an answer arrives`, async ({ page }, info) => {
+  test(`${name} stands still when an answer arrives`, async ({ page }, info) => {
     test.skip(!LAYOUTS.includes(info.project.name), "two phones and one laptop");
     test.setTimeout(180_000);
 
