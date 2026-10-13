@@ -22,15 +22,23 @@ type Use = NonNullable<PlaywrightTestConfig["use"]>;
 // A touch screen: Chromium then matches (pointer: coarse) and (hover: none).
 const touch = (width: number, height: number): Use => ({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
 const desktop = (width: number, height: number): Use => ({ viewport: { width, height } });
+// WebKit and Firefox, each with its own launch options in place of Chromium's (the shared `use` below). Firefox keeps what a
+// page plays out of the speakers with a preference; Playwright's WebKit has no such switch.
+const webkit: Use = { browserName: "webkit", launchOptions: {} };
+const firefox: Use = { browserName: "firefox", launchOptions: { firefoxUserPrefs: { "media.volume_scale": "0.0" } } };
 
-const flow = /(flow|session-cover)\.spec\.ts/;
-// The sentinel's own tests (sentinel.spec.ts) run in Chromium's: the other engines' words for a failure are proved by the
-// specs that run there.
-const flowAndSentinel = /(flow|session-cover|sentinel)\.spec\.ts/;
-const gate = /(a11y|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
-// The press on every control of every state (controls.spec.ts, the gate's longest part) and what a screen reader is given
-// (aria.spec.ts), on a phone and a laptop.
-const gateAndControls = /(a11y|aria|controls|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
+// Which specs a project runs. The specs about the module's logic stay in Chromium, which several of them need (the
+// DevTools protocol, GATE_CPU); in a spec, what only Chromium can do is chosen by `browserName === "chromium"`, and what a
+// finger does by the project's `hasTouch`.
+const specs = (...names: string[]) => new RegExp(`(${names.join("|")})\\.spec\\.ts`);
+// The module as a person uses it, in each browser it supports; the sentinel's own tests in Chromium's (the other engines'
+// words for a failure are proved by the specs that run there).
+const flow = specs("flow", "session-cover");
+// Every state at every width and theme, the keyboard on the real screens, and the checks that each name their own project.
+const gate = ["a11y", "header-fit", "keyboard", "still", "theme"];
+// What another engine can change: the scan, the keyboard walks, the press on every control and the snapshots. The checks'
+// own tests (harness.spec.ts) run once in each engine, on its laptop.
+const portable = ["a11y", "keyboard", "controls", "aria"];
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
@@ -70,22 +78,42 @@ export default defineConfig({
   workers: 1,
   // The JSON report is what `npm run ci:failure` reads from a failed CI job; it lies in the output folder, beside the traces.
   reporter: [["list"], ["json", { outputFile: "../../test-results/results.json" }]],
-  use: { baseURL: external ?? `http://127.0.0.1:${APP}`, locale: "sv-SE", timezoneId: "Europe/Stockholm", trace: "retain-on-failure" },
+  use: {
+    baseURL: external ?? `http://127.0.0.1:${APP}`,
+    locale: "sv-SE",
+    timezoneId: "Europe/Stockholm",
+    trace: "retain-on-failure",
+    // Chromium's: what a page plays goes to no speaker, and plays as it does with sound.
+    launchOptions: { args: ["--mute-audio"] },
+  },
   projects: [
     // The module in the browsers it supports: sign in, the page, the proxied route, sign out, under the sentinel.
-    { name: "chromium", testMatch: flowAndSentinel, use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
-    { name: "webkit", testMatch: flow, use: { ...devices["Desktop Safari"], colorScheme: "light" } },
-    { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], colorScheme: "light" } },
-    // The accessibility gate: every state at every width and theme, and the keyboard on the real screens.
-    { name: "phone-320-light", testMatch: gate, use: { ...touch(320, 568), colorScheme: "light" } },
-    { name: "phone-390-light", testMatch: gateAndControls, use: { ...touch(390, 844), colorScheme: "light" } },
-    { name: "phone-390-dark", testMatch: gate, use: { ...touch(390, 844), colorScheme: "dark" } },
-    { name: "laptop-1440-light", testMatch: gateAndControls, use: { ...desktop(1440, 900), colorScheme: "light" } },
-    { name: "laptop-1440-dark", testMatch: gate, use: { ...desktop(1440, 900), colorScheme: "dark" } },
+    { name: "chromium", testMatch: specs("flow", "session-cover", "sentinel"), use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
+    { name: "webkit", testMatch: flow, use: { ...devices["Desktop Safari"], ...webkit, colorScheme: "light" } },
+    { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], ...firefox, colorScheme: "light" } },
+    // The accessibility gate: every state at every width and theme, and the keyboard on the real screens. The press on
+    // every control (controls.spec.ts, the gate's longest part) and the snapshots (aria.spec.ts) on a phone and a laptop.
+    { name: "phone-320-light", testMatch: specs(...gate), use: { ...touch(320, 568), colorScheme: "light" } },
+    { name: "phone-390-light", testMatch: specs(...gate, "controls", "aria"), use: { ...touch(390, 844), colorScheme: "light" } },
+    { name: "phone-390-dark", testMatch: specs(...gate), use: { ...touch(390, 844), colorScheme: "dark" } },
+    { name: "laptop-1440-light", testMatch: specs(...gate, "controls", "aria", "harness"), use: { ...desktop(1440, 900), colorScheme: "light" } },
+    { name: "laptop-1440-dark", testMatch: specs(...gate), use: { ...desktop(1440, 900), colorScheme: "dark" } },
     // 200 % zoom of a 1280 x 800 window.
-    { name: "zoom-200", testMatch: gate, use: { viewport: { width: 640, height: 400 }, deviceScaleFactor: 2, colorScheme: "light" } },
-    { name: "forced-colors", testMatch: gate, use: { ...desktop(1440, 900), colorScheme: "light", forcedColors: "active" } },
-    { name: "reduced-motion", testMatch: gate, use: { ...touch(390, 844), colorScheme: "light", reducedMotion: "reduce" } },
+    { name: "zoom-200", testMatch: specs(...gate), use: { viewport: { width: 640, height: 400 }, deviceScaleFactor: 2, colorScheme: "light" } },
+    { name: "forced-colors", testMatch: specs(...gate), use: { ...desktop(1440, 900), colorScheme: "light", forcedColors: "active" } },
+    { name: "reduced-motion", testMatch: specs(...gate), use: { ...touch(390, 844), colorScheme: "light", reducedMotion: "reduce" } },
+    // A tablet is a finger on a laptop's layout (landscape) or on the stacked one at its widest (portrait): the scan, its
+    // own keyboard walks and its own presses; upright, also the stand-still test's tablet.
+    { name: "tablet-portrait", testMatch: specs("a11y", "keyboard", "controls", "still"), use: { ...touch(768, 1024), isMobile: false, colorScheme: "light" } },
+    { name: "tablet-landscape", testMatch: specs("a11y", "keyboard", "controls"), use: { ...touch(1024, 768), isMobile: false, colorScheme: "light" } },
+    // A phone on its side: as wide as a tablet, as low as 200 % zoom. Scanned in every state.
+    { name: "landscape-844", testMatch: specs("a11y"), use: { ...touch(844, 390), colorScheme: "light" } },
+    // The other engines, as engine checks and not as the products built on them (Playwright's WebKit is ahead of Safari):
+    // WebKit where an iPhone, an iPad and a Mac have it, Firefox on a laptop. The tablet has no snapshots, as Chromium's.
+    { name: "phone-390-webkit", testMatch: specs(...portable), use: { ...touch(390, 844), ...webkit, colorScheme: "light" } },
+    { name: "tablet-landscape-webkit", testMatch: specs("a11y", "keyboard", "controls"), use: { ...touch(1024, 768), isMobile: false, ...webkit, colorScheme: "light" } },
+    { name: "laptop-1440-webkit", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...webkit, colorScheme: "light" } },
+    { name: "laptop-1440-firefox", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...firefox, colorScheme: "light" } },
   ],
   webServer: external ? undefined : servers,
 });

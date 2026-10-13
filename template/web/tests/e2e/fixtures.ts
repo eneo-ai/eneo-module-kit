@@ -46,6 +46,14 @@ const FAILED = new Map([["NS_ERROR_FAILURE", "net::ERR_FAILED"], ["Blocked by We
 const WRITES_NO_STATUS = new Set(["firefox"]);
 const WRITES_NO_FAILURE = new Set(["firefox", "webkit"]);
 
+/**
+ * Playwright's, not the page's: in WebKit each screenshot adds a <style> to the page and takes it away again, to bring the
+ * page's animations into step. The policy refuses it, with a violation that names no source file, and WebKit writes a line
+ * about it to the console. Code of the page always has a file (the policy allows no inline script and no eval).
+ */
+const SCREENSHOT_STYLE = /^style-src-elem blocked inline \(the page:\d+\)/;
+const REFUSED_STYLE = /^Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive/;
+
 /** The redirects of the sign-in handshake: the backend's login and callback, and the stub Eneo's login. */
 const HANDSHAKE = new Set(["/api/auth/login", "/api/auth/callback", "/module-login"]);
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
@@ -80,6 +88,8 @@ export class Sentinel {
   private readonly console: string[] = [];
   private readonly failed: string[] = [];
   private readonly declared: { expectation: Expectation; seen: boolean }[] = [];
+  /** How many of Playwright's screenshot styles WebKit refused (`SCREENSHOT_STYLE`). */
+  private screenshotStyles = 0;
 
   /** The failures this test is meant to cause. */
   expect(...expectations: Expectation[]) {
@@ -89,7 +99,10 @@ export class Sentinel {
   async watch(context: BrowserContext) {
     const engine = context.browser()?.browserType().name() ?? "chromium";
     watching.set(context, this);
-    await context.exposeBinding("__sentinelViolation", (_source, report: string) => void this.violations.push(report));
+    await context.exposeBinding("__sentinelViolation", (_source, report: string) => {
+      if (engine === "webkit" && SCREENSHOT_STYLE.test(report)) this.screenshotStyles += 1;
+      else this.violations.push(report);
+    });
     await context.addInitScript(LISTEN);
     context.on("console", (message) => {
       // The URL is where the browser says the message came from: for a failed resource, the resource.
@@ -122,7 +135,13 @@ export class Sentinel {
 
   /** What was not declared; and what was declared and did not happen. */
   verify() {
-    const unexpectedConsole = this.unexpected(this.console, (expectation) => expectation.console);
+    // WebKit's console line for each of Playwright's screenshot styles goes with it.
+    const logged = [...this.console];
+    for (let left = this.screenshotStyles; left > 0; left--) {
+      const at = logged.findIndex((text) => REFUSED_STYLE.test(text));
+      if (at >= 0) logged.splice(at, 1);
+    }
+    const unexpectedConsole = this.unexpected(logged, (expectation) => expectation.console);
     const unexpectedFailed = this.unexpected(this.failed, (expectation) => expectation.requestFailed);
     const missing = this.declared.filter(({ seen }) => !seen).map(({ expectation }) => String(expectation.console ?? expectation.requestFailed));
     return { unexpectedConsole, unexpectedFailed, missing };
@@ -131,6 +150,7 @@ export class Sentinel {
   /** Forgets what was seen and declared: for the sentinel's own tests, which cause what it watches for. */
   reset() {
     for (const list of [this.violations, this.redirects, this.console, this.failed, this.declared]) list.length = 0;
+    this.screenshotStyles = 0;
   }
 
   /** The assertions at the end of a test. `expect.soft`: every kind is reported, not only the first. */

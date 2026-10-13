@@ -1,16 +1,15 @@
 /**
  * The gate's own checks against pages built to fail them: a check that passes these would pass the module's faults too.
- * They run once, at one width. Copied from speech-to-text's gate (known debt, like checks.ts).
+ * They run once in each engine, on the project the config names (playwright.config.ts): every engine must see each check
+ * fail. Copied from speech-to-text's gate (known debt, like checks.ts).
  */
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { axe, blocking, clippedFocus, focusStop, reflow, settle, stopProblems, tabWalk, targetSizes } from "./checks";
+import { axe, blocking, clippedFocus, focusStop, reflow, settle, stopProblems, tabKey, tabWalk, targetSizes } from "./checks";
 import { sweep, type Use } from "./controls";
-import { signIn, stubFlows } from "./fixtures";
+import { Sentinel, signIn, stubFlows } from "./fixtures";
 import type { State } from "./screens";
-
-test.beforeEach(({}, info) => test.skip(info.project.name !== "laptop-1440-light", "the checks' own tests run once"));
 
 /**
  * A page of the checks' own, as a state that the press on every control (controls.ts) can copy. It is served at an
@@ -91,9 +90,9 @@ test("a focus outline that cannot be seen is not taken for a focus indicator", a
     </style>
     <p><button id="white">Vit ring</button></p>
     <p><button id="black">Svart ring</button></p>`);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   expect((await focusStop(page))?.indicator, "white on white").toBe(false);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   expect((await focusStop(page))?.indicator, "black on white").toBe(true);
 });
 
@@ -108,10 +107,10 @@ test("a region taller than the window is held to the ring on its edges that show
     <div class="region" id="ringed" tabindex="0" role="region" aria-label="Med ring"></div>
     <div class="region" id="bare" tabindex="0" role="region" aria-label="Utan ring"></div>`);
   // Its top and 80 px of its sides show, as a long list below the fold does; its bottom is far past the window's.
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   await page.evaluate(() => window.scrollTo(0, 0));
   expect((await focusStop(page))?.indicator, "a ring on the top and the sides that show").toBe(true);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   await page.evaluate(() => document.getElementById("bare")!.scrollIntoView({ block: "start" }));
   expect((await focusStop(page))?.indicator, "no ring at all").toBe(false);
 });
@@ -128,7 +127,7 @@ test("a list that holds the focus itself is measured by its own ring", async ({ 
     <div role="listbox" tabindex="0" aria-label="Talare" aria-activedescendant="erik">
       <div role="option" id="erik" aria-selected="true">Erik Lund</div><div role="option" id="sara">Sara Holm</div>
     </div>`);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   expect((await focusStop(page))?.indicator).toBe(true);
 });
 
@@ -142,7 +141,7 @@ test("a focus ring is measured under a policy that refuses data: pictures", asyn
     }),
   );
   await page.goto("/fixture/policy");
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   expect((await focusStop(page))?.indicator).toBe(true);
 });
 
@@ -221,12 +220,35 @@ test("a redirect behind a press fails it", async ({ browser }, info) => {
   }
 });
 
+test("in WebKit the sentinel sets a screenshot's own style aside, and a style the page's script adds is still a violation", async ({ browser, browserName, baseURL }) => {
+  test.skip(browserName !== "webkit", "only WebKit's screenshot adds a style to the page");
+  const context = await browser.newContext({ baseURL });
+  const sentinel = new Sentinel();
+  await sentinel.watch(context);
+  const page = await context.newPage();
+  const policy = { "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'" };
+  await page.route("**/fixture/page", (route) =>
+    route.fulfill({ contentType: "text/html; charset=utf-8", headers: policy, body: `<!doctype html><html lang="sv"><title>Prov</title><main><h1>Prov</h1></main><script src="/fixture/style.js"></script>` }),
+  );
+  await page.route("**/fixture/style.js", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: `window.addStyle = () => document.head.append(Object.assign(document.createElement("style"), { textContent: "h1 { color: red }" }));` }),
+  );
+  await page.goto("/fixture/page");
+  await page.screenshot();
+  await page.evaluate(() => (window as unknown as { addStyle(): void }).addStyle());
+  // In the order they came: the screenshot's first, set aside, then the page's own, with its file.
+  await expect.poll(() => sentinel.violations).toEqual([expect.stringMatching(/^style-src-elem blocked inline \(http:.*\/fixture\/style\.js:1\)/)]);
+  expect(sentinel.verify().unexpectedConsole, "the page's own refused style is on the console; the screenshot's is not").toEqual([expect.stringMatching(/^Refused to apply a stylesheet/)]);
+  await context.close();
+});
+
 test("text past the window's left edge is reported, as text past its right is", async ({ page }) => {
   await page.setContent(`<main><h1>Prov</h1><p style="position: relative; left: -60px">Utanför till vänster</p></main>`);
   expect((await reflow(page)).beyond).toEqual([expect.stringContaining("Utanför till vänster")]);
 });
 
-test("focus is measured where a phone shows it, also on a page wider than the phone", async ({ browser }) => {
+test("focus is measured where a phone shows it, also on a page wider than the phone", async ({ browser, browserName }) => {
+  test.skip(browserName === "firefox", "Firefox has no phone to emulate (Playwright's isMobile): its layout viewport is the window's");
   // Content past the edge makes a phone's layout viewport wider than the screen; scrolled down, the box a script
   // reads and the picture of the screen then disagree by the visual viewport's offset.
   const context = await browser.newContext({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -241,7 +263,7 @@ test("focus is measured where a phone shows it, also on a page wider than the ph
     <div style="width: 360px; height: 1200px"></div>
     <button>Längst ner</button>
     <div style="height: 900px"></div>`);
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(tabKey(page));
   expect((await focusStop(page))?.indicator, "a black ring on white").toBe(true);
   await context.close();
 });
@@ -262,7 +284,7 @@ test("a field's box counts as its control's target only for the control it activ
     <style>
       .astryx-text-input, .plain { display: flex; align-items: center; height: 44px; width: 240px; border: 1px solid #767676; }
       input { height: 20px; border: 0; }
-      button { flex-shrink: 0; width: 20px; height: 20px; padding: 0; margin-left: 40px; }
+      button { flex: none; width: 20px; height: 20px; padding: 0; margin-left: 40px; }
     </style>
     <div class="astryx-text-input"><input aria-label="I fältets ruta"><button aria-label="Rensa"></button></div>
     <div class="plain" style="margin-top: 40px"><input aria-label="I en vanlig ruta"></div>`);
@@ -294,7 +316,8 @@ test("the design system's field box does activate its control, so crediting it i
 });
 
 test("a target in an open modal dialog is measured even under an inert ancestor", async ({ page }) => {
-  await page.setContent(`<div inert><dialog><button aria-label="Liten" style="width: 10px; height: 10px; padding: 0"></button></dialog></div>`);
+  // Without its native look: WebKit draws a native button no lower than 15 px, whatever height it is given.
+  await page.setContent(`<div inert><dialog><button aria-label="Liten" style="appearance: none; width: 10px; height: 10px; padding: 0"></button></dialog></div>`);
   await page.evaluate(() => document.querySelector("dialog")!.showModal());
   expect(await targetSizes(page, 24, false)).toEqual(['button "Liten" 10×10']);
 });

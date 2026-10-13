@@ -8,20 +8,27 @@ Paths are in `template/`, which is the repository root of a module made from it.
 
 ## What is checked, and where
 
-`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo. The projects are in `web/tests/e2e/playwright.config.ts`: three browsers for the module as a person uses it, and the gate's eight in Chromium (`phone-320-light`, `phone-390-light`, `phone-390-dark`, `laptop-1440-light`, `laptop-1440-dark`, `zoom-200`, `forced-colors`, `reduced-motion`).
+`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo. The projects are in `web/tests/e2e/playwright.config.ts`, which also says which specs each one runs:
+
+| Projects | For |
+|---|---|
+| `chromium`, `webkit`, `firefox` | The module as a person uses it, in the browsers it supports |
+| `phone-320-light`, `phone-390-light`, `phone-390-dark`, `laptop-1440-light`, `laptop-1440-dark`, `zoom-200`, `forced-colors`, `reduced-motion` | The gate's eight, in Chromium |
+| `tablet-portrait` (768 x 1024), `tablet-landscape` (1024 x 768), `landscape-844` (a phone on its side) | The gate on a tablet and on a phone on its side, in Chromium |
+| `phone-390-webkit`, `tablet-landscape-webkit`, `laptop-1440-webkit`, `laptop-1440-firefox` | The gate in the other engines ([below](#webkit-and-firefox)) |
 
 | Check | Lives in | Runs in |
 |---|---|---|
 | Sign-in, the page, the proxied route, sign-out, the strict Content Security Policy, colour mode, the organisation's logo | `flow.spec.ts` | `chromium`, `webkit`, `firefox` |
 | The login ending while a page is open: the cover, the sign-in dialog, the warning before the end | `session-cover.spec.ts` | `chromium`, `webkit`, `firefox` |
-| Every state of `screens.ts`: axe, named controls, placeholder contrast, target sizes, reflow, text spacing, motion | `a11y.spec.ts`, with the measurements in `checks.ts` | The gate's eight |
-| The keyboard: focus is visible and not hidden, leaves the page at the end, follows the reading order; a menu and a dialog hold focus and give it back | `keyboard.spec.ts` | The gate's eight |
-| Nothing on screen moves when an answer arrives ([below](#what-is-on-screen-stands-still)) | `still.spec.ts` | `phone-320-light`, `phone-390-light`, `laptop-1440-light` |
-| Every control of every state does something, and breaks nothing ([below](#every-control-does-something)) | `controls.spec.ts`, with the press in `controls.ts` | `phone-390-light`, `laptop-1440-light` |
-| What a screen reader is given in each state, against curated snapshots ([below](#what-a-screen-reader-is-given)) | `aria.spec.ts`, with the files in `aria.spec.ts-snapshots/` | `phone-390-light`, `laptop-1440-light` |
+| Every state of `screens.ts`: axe, named controls, placeholder contrast, target sizes, reflow, text spacing, motion | `a11y.spec.ts`, with the measurements in `checks.ts` | Every gate project |
+| The keyboard: focus is visible and not hidden, leaves the page at the end, follows the reading order; a menu and a dialog hold focus and give it back | `keyboard.spec.ts` | Every gate project but `landscape-844` |
+| Nothing on screen moves when an answer arrives ([below](#what-is-on-screen-stands-still)) | `still.spec.ts` | `phone-320-light`, `phone-390-light`, `tablet-portrait`, `laptop-1440-light` |
+| Every control of every state does something, and breaks nothing ([below](#every-control-does-something)) | `controls.spec.ts`, with the press in `controls.ts` | `phone-390-light`, both tablets, `laptop-1440-light`, and the four WebKit and Firefox projects |
+| What a screen reader is given in each state, against curated snapshots ([below](#what-a-screen-reader-is-given)) | `aria.spec.ts`, with the files in `aria.spec.ts-snapshots/` | `phone-390-light`, `laptop-1440-light`, `phone-390-webkit`, `laptop-1440-webkit`, `laptop-1440-firefox` |
 | The brand and the account button keep apart at 320 px with text spacing | `header-fit.spec.ts` | `phone-320-light` |
 | Supporting text stays readable, a focused field has one frame, the warning's title takes focus without a ring | `theme.spec.ts` | The gate's eight |
-| The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light` |
+| The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light`, `laptop-1440-webkit`, `laptop-1440-firefox`: once in each engine |
 | No policy violation, no redirect, and no console error, uncaught error or failed request that the test did not declare ([below](#what-every-test-watches-for)) | The `sentinel` fixture of `fixtures.ts` | Every spec that imports `test` from it |
 | The sentinel itself, made to see each thing it fails a test for | `sentinel.spec.ts` | `chromium` |
 
@@ -63,7 +70,7 @@ GATE_CPU=8 npm run test:e2e -- keyboard.spec.ts --project=laptop-1440-light
 | Fact | Detail |
 |---|---|
 | The value | A number of 1 or more. Anything else stops the run with an error |
-| The browser | Chromium only. A test in the `webkit` or `firefox` project fails with `GATE_CPU slows Chromium only`; it never runs unslowed |
+| The browser | Chromium only. A test in a WebKit or Firefox project fails with `GATE_CPU slows Chromium only`; it never runs unslowed |
 | What is slowed | The test's own page, before the test touches it. A window the page opens (the login's) is not |
 | In the report | Each slowed test carries the annotation `cpu: 8 times slower` |
 | Where it lives | The `cpu` fixture of `web/tests/e2e/fixtures.ts`. A spec gets it by importing `test` from there; `harness.spec.ts` uses Playwright's own `test` and is not slowed |
@@ -158,7 +165,7 @@ Where an engine rightly gives a state another tree (the page itself differs ther
 
 ## What is on screen stands still
 
-Nothing on screen moves when an answer arrives: a control that moves is pressed by mistake, and a line that moves is lost by the eye reading it. `web/tests/e2e/still.spec.ts` opens each page by its address, hands it the backend's answers one at a time, in the order the page asked for them, and measures what is on screen before and after each. It runs in `phone-320-light`, `phone-390-light` and `laptop-1440-light`; the template has no tablet project.
+Nothing on screen moves when an answer arrives: a control that moves is pressed by mistake, and a line that moves is lost by the eye reading it. `web/tests/e2e/still.spec.ts` opens each page by its address, hands it the backend's answers one at a time, in the order the page asked for them, and measures what is on screen before and after each. It runs in `phone-320-light`, `phone-390-light`, `tablet-portrait` and `laptop-1440-light`.
 
 A page satisfies the rule in one of three ways:
 
@@ -187,6 +194,33 @@ Error: what moved on screen when no one pressed anything
 
 `KNOWN` has one move, on every page and layout: the organisation is read after the page is drawn ([K10](../decisions/k10-branding-without-templating.md)), and its mark then takes its place before the product's name, which moves along the top bar. The bar itself has the mark's height from the first frame (`packages/ui/src/base.css`), so nothing under it moves.
 
+## WebKit and Firefox
+
+The WebKit and Firefox projects check the engines, not the browsers built on them: Playwright's WebKit is ahead of Safari, and Chromium is neither Chrome nor Edge. They run what an engine can change: the scan, the keyboard walks, the press on every control and the snapshots, and each engine's laptop runs the checks' own tests. The specs about the module's logic, and the stand-still test, stay in Chromium. In a spec, what only Chromium can do is chosen by `browserName === "chromium"`, and what a finger does by the project's `hasTouch`.
+
+| Measured | Chromium | WebKit and Firefox |
+|---|---|---|
+| axe, placeholder contrast, target sizes, reflow, motion, the keyboard, every control, the snapshots | Yes | Yes |
+| Text spacing | On the phones and the laptops | In every project |
+| Names in the browser's own tree, and `GATE_CPU` (both over the DevTools protocol) | Yes | No: axe finds a missing name |
+
+What the engines do differently, and what the gate does about it:
+
+| Engine | Does | The gate |
+|---|---|---|
+| WebKit on a Mac | Gives Tab to text fields and lists only, and Option+Tab to every control, as Safari does (its setting "Press Tab to highlight each item" swaps the two) | Presses Option+Tab there (`tabKey` in `web/tests/e2e/checks.ts`) |
+| Firefox, WebKit | Firefox keeps the focus on the page's last control when Tab has nowhere to go, as a trap would; what WebKit does there is its build's | The walk adds a stop of its own after the page's last: reaching it is leaving the page (`tabWalk` in `checks.ts`) |
+| Firefox | Stops on a box that scrolls on its own, also before the controls inside it (Chromium only on one with no control inside, WebKit never) | The walk measures it as any stop: the box needs a ring that it does not clip itself |
+| Firefox | Gives a dialog's first control the focus when it opens, where Chromium and WebKit give it the dialog's title | The page's dialog test holds Firefox to the ring on that control; the first Escape then closes the control's tooltip (WCAG 1.4.13), the second the dialog |
+| WebKit | After a tap on a control that prevents its own `pointerdown` (a clear button that keeps its field focused), Playwright's WebKit fires no click; Safari does | Such a control is clicked in WebKit, listed in `CLICKED_IN_WEBKIT` with the evidence from Safari ([above](#every-control-does-something)) |
+| WebKit | Each Playwright screenshot adds a `<style>` to the page and takes it away again, which the strict policy refuses | The sentinel sets that violation aside, and WebKit's console line for it: it names no source file, and code of the page always has one. `harness.spec.ts` shows that a style the page's own script adds still fails |
+| Firefox | Has no phone to emulate (Playwright's `isMobile`) | Its project is a laptop |
+| WebKit, Firefox | Say a failed resource in their own words | The sentinel writes it in Chromium's ([above](#what-every-test-watches-for)) |
+
+What a page plays goes to no speaker: Chromium starts with `--mute-audio` and Firefox with `media.volume_scale` at 0 (Playwright's WebKit has no such switch). On Linux, Firefox runs Web Audio only with a sound server; Playwright's WebKit for Linux has no MediaRecorder, which the template does not use.
+
+A walk's problem that is left for now is one line in `KNOWN` of `web/tests/e2e/keyboard.spec.ts`: the state, the engine, the problem as the walk says it, and the reason. It must still happen: when the stop is right, the line fails the test until it is taken out. It has one, in WebKit on `flows`, `flows-empty` and `flows-error`: the top bar's brand link is one the design system does not style, and WebKit draws no ring of 3:1 on it (0 px² of the 618 that a one-pixel line around it needs; Chromium's own ring gives 1198, Firefox's 1182). The fix is the UI package's: the design system's ring on that link, in the kit's `packages/ui/src/base.css`.
+
 ## Where these tools come from
 
 These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit each row names: known debt, like the rest of the gate, to become a package export when a second module needs it.
@@ -202,3 +236,4 @@ These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit ea
 | The measurements of `web/tests/e2e/checks.ts`, and their own tests in `web/tests/e2e/harness.spec.ts` | `frontend/tests/e2e/checks.ts`, `frontend/tests/e2e/harness.spec.ts` | `b8c3804` |
 | `web/tests/e2e/controls.ts`, `web/tests/e2e/controls.spec.ts` | `frontend/tests/e2e/controls.ts`, `frontend/tests/e2e/controls.spec.ts` | `b8c3804` |
 | `web/tests/e2e/aria.spec.ts`, and the way its files are kept | `frontend/tests/e2e/aria.spec.ts` | `b8c3804` |
+| The projects and their specs in `web/tests/e2e/playwright.config.ts` (the tablets, `landscape-844`, the WebKit and Firefox projects, the muted audio), `tabKey` and the walk's own end in `checks.ts` | `frontend/playwright.config.ts`, `frontend/tests/e2e/checks.ts` | `b8c3804` |

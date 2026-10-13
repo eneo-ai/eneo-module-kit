@@ -24,8 +24,8 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, stubFlows, test } from "./fixtures";
 import { STATES } from "./screens";
 
-// The narrowest phone, a phone and a laptop: the layouts a late answer can move differently.
-const LAYOUTS = ["phone-320-light", "phone-390-light", "laptop-1440-light"];
+// The narrowest phone, a phone, a tablet and a laptop: the layouts a late answer can move differently.
+const LAYOUTS = ["phone-320-light", "phone-390-light", "tablet-portrait", "laptop-1440-light"];
 // Less than this is a rounding of the layout, not a move.
 const MOVED_PX = 4;
 
@@ -161,7 +161,7 @@ for (const [name, shown] of Object.entries(BY_ADDRESS)) {
   const state = STATES.find((candidate) => candidate.name === name);
   if (!state) throw new Error(`still.spec.ts: no state named ${name} in screens.ts`);
   test(`${name} stands still when an answer arrives`, async ({ page }, info) => {
-    test.skip(!LAYOUTS.includes(info.project.name), "two phones and one laptop");
+    test.skip(!LAYOUTS.includes(info.project.name), "two phones, a tablet and a laptop");
     test.setTimeout(180_000);
 
     await page.addInitScript(watch);
