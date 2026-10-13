@@ -70,8 +70,27 @@ jobs:
           git diff --exit-code -- template/backend/requirements.lock
 
   template-web:
-    name: template web (this commit's UI and BFF, three browsers, the accessibility gate)
+    # The browser tests in four parts, as a module's own CI runs them (template/.github/workflows/ci.yml): the module in
+    # three browsers and the gate in Chromium (main), the tablets and a phone on its side (devices), and the gate in WebKit
+    # and in Firefox. Together the four are every project of template/web/tests/e2e/playwright.config.ts.
+    name: template web ${{ matrix.part }} (this commit's UI and BFF)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: main
+            browsers: chromium webkit firefox
+            projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
+          - part: devices
+            browsers: chromium
+            projects: --project=tablet-portrait --project=tablet-landscape --project=landscape-844
+          - part: webkit
+            browsers: webkit
+            projects: --project=phone-390-webkit --project=tablet-landscape-webkit --project=laptop-1440-webkit
+          - part: firefox
+            browsers: firefox
+            projects: --project=laptop-1440-firefox
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -85,16 +104,21 @@ jobs:
       - run: pip install --no-deps -e packages/bff
       - run: npm ci
       - run: npm run -w packages/ui build
-      - run: npx playwright install --with-deps chromium webkit firefox
+      - run: npx playwright install --with-deps ${{ matrix.browsers }}
+      # Firefox runs Web Audio only with a sound server, which a runner has none of: one that plays into a sink of nothing
+      # stands in for a computer's.
+      - if: matrix.part == 'firefox'
+        run: sudo apt-get install -y --no-install-recommends pulseaudio && pulseaudio --start --exit-idle-time=-1
       # Builds the template's app against the workspace UI package, serves it with the workspace BFF over the stub
-      # Eneo, and runs the browser tests and the gate.
-      - run: npm run -w template/web test:e2e
+      # Eneo, and runs the part's projects.
+      - run: npm run -w template/web test:e2e -- ${{ matrix.projects }}
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run -w template/web ci:failure`
-      # finds them by the job's name up to its parenthesis, with `-results` after it, and reads them.
+      # finds them by the job's name up to its parenthesis, with `-results` after it (`template-web-main-results`), and
+      # reads them.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: template-web-results
+          name: template-web-${{ matrix.part }}-results
           path: template/web/test-results
 
   template-image:

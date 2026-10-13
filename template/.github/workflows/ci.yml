@@ -20,7 +20,30 @@ jobs:
       - run: python -m unittest discover -s backend/tests -t backend
       - run: python -m unittest discover -s stub-eneo
   web:
+    # The browser tests in four parts, each on a runner of its own, so that the other engines do not lengthen the part
+    # every change waits for. The projects are named here (web/tests/e2e/playwright.config.ts has each one), so what a
+    # pull request runs is what this file says; together the four are every project of the config.
+    name: web ${{ matrix.part }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The module in three browsers, and the accessibility gate in Chromium.
+          - part: main
+            browsers: chromium webkit firefox
+            projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
+          # Both tablets, with their own keyboard walks and presses, and a phone on its side.
+          - part: devices
+            browsers: chromium
+            projects: --project=tablet-portrait --project=tablet-landscape --project=landscape-844
+          # The gate in the other engines: what an engine can change, and the checks' own tests on each one's laptop.
+          - part: webkit
+            browsers: webkit
+            projects: --project=phone-390-webkit --project=tablet-landscape-webkit --project=laptop-1440-webkit
+          - part: firefox
+            browsers: firefox
+            projects: --project=laptop-1440-firefox
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,18 +60,21 @@ jobs:
       # packed UI package there first. After the release `npm ci` needs nothing else.
       - run: npm ci
         working-directory: web
-      - run: npx playwright install --with-deps chromium webkit firefox
+      - run: npx playwright install --with-deps ${{ matrix.browsers }}
         working-directory: web
-      # Builds the app, then runs it as the backend serves it, over the stub Eneo, in three browsers, and the
-      # accessibility gate.
-      - run: npm run test:e2e
+      # Firefox runs Web Audio only with a sound server, which a runner has none of: one that plays into a sink of nothing
+      # stands in for a computer's.
+      - if: matrix.part == 'firefox'
+        run: sudo apt-get install -y --no-install-recommends pulseaudio && pulseaudio --start --exit-idle-time=-1
+      # Builds the app, then runs it as the backend serves it, over the stub Eneo, in the part's projects.
+      - run: npm run test:e2e -- ${{ matrix.projects }}
         working-directory: web
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run ci:failure`, in web/, finds
-      # them by the job's name with `-results` after it, and reads them.
+      # them by the job's name with `-results` after it (`web-main-results`), and reads them.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: web-results
+          name: web-${{ matrix.part }}-results
           path: web/test-results
   image:
     runs-on: ubuntu-latest

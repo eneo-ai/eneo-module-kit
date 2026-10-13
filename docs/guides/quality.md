@@ -34,7 +34,16 @@ Paths are in `template/`, which is the repository root of a module made from it.
 
 ## A red CI job
 
-The job that runs the browser tests keeps its evidence when it fails: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the job: `web-results`, and `template-web-results` in the kit's own CI. Read it on your machine:
+The browser tests run in CI as one job in four parts, each on a runner of its own and each naming its projects:
+
+| Part | Runs |
+|---|---|
+| `main` | The module in three browsers, and the gate's eight in Chromium |
+| `devices` | Both tablets and the phone on its side |
+| `webkit` | The gate in WebKit: a phone, a tablet and a laptop |
+| `firefox` | The gate in Firefox, on a laptop, with a sound server |
+
+A part that fails keeps its evidence: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the part's job: `web-main-results`, `web-devices-results`, `web-webkit-results` and `web-firefox-results`, and `template-web-main-results` and so on in the kit's own CI. Read it on your machine:
 
 ```bash
 npm run ci:failure                   # the latest CI run of the branch that is checked out
@@ -42,7 +51,7 @@ npm run ci:failure -- 26             # the latest CI run of pull request 26
 npm run ci:failure -- 38303520954    # that run
 ```
 
-It needs the GitHub CLI (`gh`), signed in. It prints the run's failed jobs. For the browser job it downloads the results to a new folder under the system's temporary folder, never into the checkout, and lists every test whose outcome was not the expected one, with its errors and the paths of what Playwright kept for it. Open a trace with `npx playwright show-trace <trace.zip>`.
+It needs the GitHub CLI (`gh`), signed in. It prints the run's failed jobs. For a part of the browser job it downloads the results to a new folder under the system's temporary folder, never into the checkout, and lists every test whose outcome was not the expected one, with its errors and the paths of what Playwright kept for it. Open a trace with `npx playwright show-trace <trace.zip>`.
 
 | Outcome of a test | Listed |
 |---|---|
@@ -56,7 +65,7 @@ For any other failed job it prints the command that shows the job's log (`gh run
 | Part | Where |
 |---|---|
 | The report | `reporter` in `web/tests/e2e/playwright.config.ts` writes `web/test-results/results.json` on every run |
-| The upload | The last step of the `web` job in `.github/workflows/ci.yml` (`template-web` in the kit's own), when the job has failed |
+| The parts and the upload | The `web` job of `.github/workflows/ci.yml` (`template-web` in the kit's own): its matrix names each part's projects, and its last step uploads a failed part's results |
 | The script | `web/scripts/ci-failure.mjs`. It finds the artifact from the job's name: the name up to a parenthesis, a dash for each space, then `-results` |
 
 ## A test that fails only in CI
@@ -219,7 +228,7 @@ What the engines do differently, and what the gate does about it:
 | Firefox | Has no phone to emulate (Playwright's `isMobile`) | Its project is a laptop |
 | WebKit, Firefox | Say a failed resource in their own words | The sentinel writes it in Chromium's ([above](#what-every-test-watches-for)) |
 
-What a page plays goes to no speaker: Chromium starts with `--mute-audio` and Firefox with `media.volume_scale` at 0 (Playwright's WebKit has no such switch). On Linux, Firefox runs Web Audio only with a sound server; Playwright's WebKit for Linux has no MediaRecorder, which the template does not use.
+What a page plays goes to no speaker: Chromium starts with `--mute-audio` and Firefox with `media.volume_scale` at 0 (Playwright's WebKit has no such switch). On Linux, Firefox runs Web Audio only with a sound server, so CI's `firefox` part starts one that plays into a sink of nothing; Playwright's WebKit for Linux has no MediaRecorder, which the template does not use.
 
 A walk's problem that is left for now is one line in `KNOWN` of `web/tests/e2e/keyboard.spec.ts`: the state, the engine, the problem as the walk says it, and the reason. It must still happen: when the stop is right, the line fails the test until it is taken out. It has one, in WebKit on `flows`, `flows-empty` and `flows-error`: the top bar's brand link is one the design system does not style, and WebKit draws no ring of 3:1 on it (0 px² of the 618 that a one-pixel line around it needs; Chromium's own ring gives 1198, Firefox's 1182). The fix is the UI package's: the design system's ring on that link, in the kit's `packages/ui/src/base.css`.
 
