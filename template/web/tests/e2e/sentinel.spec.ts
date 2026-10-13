@@ -45,11 +45,11 @@ test("a console error and a failed request fail unless declared, a declared one 
   expect(sentinel.verify().unexpectedFailed[0], "the abort of the network is a failure; the browser's own cancel is not").toMatch(/GET .*\/api\/nope: net::ERR_FAILED/);
   expect(sentinel.verify().unexpectedConsole.some((line) => line.startsWith("boom"))).toBe(true);
 
-  sentinel.expect({ console: /^boom/ }, { requestFailed: /GET .*\/api\/nope: net::ERR_FAILED/ });
+  sentinel.expect({ console: /^boom/ }, { requestFailed: /GET .*\/api\/nope: net::ERR_FAILED/ }, { console: /may or may not/, optional: true });
   const declared = sentinel.verify();
   expect(declared.unexpectedFailed).toEqual([]);
   expect(declared.unexpectedConsole.filter((line) => line.startsWith("boom"))).toEqual([]);
-  expect(declared.missing, "what was declared happened").toEqual([]);
+  expect(declared.missing, "what was declared happened, and an optional one need not").toEqual([]);
 
   sentinel.expect({ console: /never happens/ });
   expect(sentinel.verify().missing).toEqual(["/never happens/"]);

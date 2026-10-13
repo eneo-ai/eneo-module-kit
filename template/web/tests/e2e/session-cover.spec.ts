@@ -7,7 +7,7 @@
  * asks for within a few seconds (tokens of four seconds, refreshed at half).
  */
 import type { Page } from "@playwright/test";
-import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
+import { declare, expect, LOGIN_WINDOW_CLOSES, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 
 const SIGN_IN = { name: "Du behöver logga in igen" };
 
@@ -42,6 +42,7 @@ async function endLogin(page: Page) {
 
 /** The login in a window of its own, as the dialog's button opens it; resolves when that window has closed itself. */
 async function signInAgainInWindow(page: Page, context: import("@playwright/test").BrowserContext, button: string) {
+  declare(page, [LOGIN_WINDOW_CLOSES]);
   const popup = context.waitForEvent("page");
   await page.getByRole("alertdialog").getByRole("button", { name: button }).click();
   const window = await popup;
