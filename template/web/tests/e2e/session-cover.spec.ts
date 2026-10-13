@@ -7,7 +7,7 @@
  * asks for within a few seconds (tokens of four seconds, refreshed at half).
  */
 import type { Page } from "@playwright/test";
-import { expect, signIn, stubControl, stubDefaults, stubFlows, test } from "./fixtures";
+import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 
 const SIGN_IN = { name: "Du behöver logga in igen" };
 
@@ -101,7 +101,18 @@ test("nothing but the new login closes the sign-in dialog: not Escape, not a cli
   await endLogin(page);
   const dialog = page.getByRole("alertdialog", SIGN_IN);
   await expect(dialog.getByRole("button", { name: "Stäng" })).toHaveCount(0);
+  // The dialog must have the key to refuse it: one pressed at a dialog that is not modal yet is heard by nothing, and
+  // leaves it open as well. The dialog says itself that it had the key while it was modal.
+  await untilModal(page);
+  await dialog.evaluate((element) =>
+    addEventListener(
+      "keydown",
+      (event) => element.toggleAttribute("data-had-escape", event.key === "Escape" && element.matches(":modal") && element.contains(event.target as Node)),
+      { once: true, capture: true },
+    ),
+  );
   await page.keyboard.press("Escape");
+  await expect(dialog, "Escape reached the dialog while it was modal").toHaveAttribute("data-had-escape", "");
   await page.mouse.click(2, 2);
   await expect(dialog).toBeVisible();
   // A second close request without a new user action (Android's back is one) closes a dialog no handler can keep.

@@ -63,6 +63,18 @@ export async function signIn(page: Page) {
   await expect(page.getByRole("heading", { level: 1, name: "Välj ett flöde" })).toBeVisible();
 }
 
+/**
+ * Every dialog on screen is modal: wait for it before a key meant for a dialog. A dialog has its open style from the
+ * render and is made modal by an effect after it (`showModal()`), and only a modal one hears Escape: a key pressed in
+ * between is lost, on a slow machine first.
+ */
+export const untilModal = (page: Page) =>
+  expect
+    .poll(() => page.evaluate(() => [...document.querySelectorAll("dialog")].every((dialog) => !dialog.checkVisibility() || dialog.matches(":modal"))), {
+      message: "every dialog on screen is modal",
+    })
+    .toBe(true);
+
 /** A control route of the stub Eneo (template/stub-eneo/server.py). */
 export async function stubControl(page: Page, route: string) {
   const response = await page.request.post(`http://127.0.0.1:${STUB}/__stub/${route}`);
