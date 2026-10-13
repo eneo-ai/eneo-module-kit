@@ -359,7 +359,7 @@ flowchart TB
   commit["A commit or pull request"] --> bff["bff: the suite at the lowest and the newest versions, pip-audit"]
   commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
   commit --> tb["template-backend: the template's tests on this commit's BFF"]
-  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF, three browsers and the gate"]
+  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers and the gate, in four parts"]
   commit --> ti["template-image: build the image from this commit's packages, run it, GET /health"]
 ```
 

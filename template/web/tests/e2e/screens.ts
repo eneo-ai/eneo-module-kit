@@ -1,15 +1,15 @@
 /**
  * How to reach every state of the module for the accessibility gate: each is a name and the steps a person takes to
- * get there, against the stub Eneo. A new page of the module adds its states here.
+ * get there, against the stub Eneo. A new page of the module adds its states here. A state that causes a failure on
+ * purpose (an error answer, an aborted request) declares it in its `go` with `declare`: the sentinel of fixtures.ts
+ * fails every other one, and a declared one that does not happen.
  */
 import { expect, type Page } from "@playwright/test";
-import { signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
+import { declare, signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
 
 export interface State {
   name: string;
   go: (page: Page) => Promise<void>;
-  /** Console messages the state provokes on purpose (a failure the test caused); anything else on the console fails the gate. */
-  allowConsole?: RegExp[];
 }
 
 export const STATES: State[] = [
@@ -48,9 +48,9 @@ export const STATES: State[] = [
   },
   {
     name: "flows-error",
-    // The browser reports the 500 the stub was told to answer.
-    allowConsole: [/status of 500/],
     go: async (page) => {
+      // The browser reports the 500 the stub was told to answer.
+      declare(page, [{ console: /status of 500.*\/api\/eneo\/flows\// }]);
       await stubFlows(page, "error");
       await signIn(page);
       await expect(page.getByText("Flödena kunde inte visas.")).toBeVisible();

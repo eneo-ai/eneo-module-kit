@@ -49,6 +49,21 @@ test("until the answer comes the lockup is the product name alone, with no organ
   assert.equal(server.calls[0].init?.cache, "no-store", "a replaced logo shows after a reload");
 });
 
+test("a page that shows no lockup does not ask, and two lockups ask once", async () => {
+  const { BrandingProvider, Brand } = await import("../src/branding.js");
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  // The login window's page shows no lockup and closes itself: a read would only be cut short.
+  const quiet = backend({ organization: null });
+  const page = await mount(createElement(ModuleProviders, { children: createElement(BrandingProvider, { fetchImpl: quiet.fetchImpl, children: createElement("p", null, "Du är inloggad igen") }) }));
+  assert.equal(quiet.calls.length, 0, "no lockup, no read");
+  await page.unmount();
+
+  const twice = backend({ organization: null });
+  const lockups = createElement("header", null, createElement(Brand, { productName: "Tal till text" }), createElement(Brand, { productName: "Tal till text" }));
+  await mount(createElement(ModuleProviders, { children: createElement(BrandingProvider, { fetchImpl: twice.fetchImpl, children: lockups }) }));
+  assert.equal(twice.calls.length, 1, "asked once");
+});
+
 test("the organisation's own logo, one that serves both modes, is one image from the module", async () => {
   const server = backend({ organization: { name: "Kommunen", logo: "custom", dark_logo: false } });
   const view = await lockup({ backend: server });

@@ -1,0 +1,7 @@
+- main:
+  - heading "Välj ett flöde" [level=1]
+  - paragraph: Hej Erik Lund
+  - button "Anteckning"
+  - alert:
+    - text: Flödena kunde inte visas. Eneo svarade inte som väntat.
+    - button "Försök igen"

@@ -7,7 +7,7 @@
  */
 import { writeFileSync } from "node:fs";
 import type { Locator, Page } from "@playwright/test";
-import { clippedFocus, focusStop, orderProblems, settle, stopProblems, tabWalk } from "./checks";
+import { clippedFocus, engine, focusStop, orderProblems, settle, stopProblems, tabKey, tabWalk } from "./checks";
 import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 import { STATES } from "./screens";
 
@@ -18,17 +18,28 @@ test.afterEach(async ({ page }) => {
 
 const state = (name: string) => STATES.find((s) => s.name === name)!;
 
+/**
+ * A walk's problems that are left for now, each in one state and one engine, as the walk says it, with why it is left and
+ * where it is fixed. Never a pattern. An entry must still happen: when the stop is right, the line fails the test until
+ * it is taken out.
+ */
+const KNOWN: { state: string; engine: string; problem: string; why: string }[] = [];
+
 for (const name of ["signin", "flows", "flows-empty", "flows-error"]) {
   const screen = state(name);
-  // The state may provoke console messages on purpose (the failed list); anything else still fails the test.
-  const walk = test.extend({ allowConsole: screen.allowConsole ?? [] });
-  walk(`tab through ${name}`, async ({ page }, info) => {
+  test(`tab through ${name}`, async ({ page, browserName }, info) => {
     await screen.go(page);
     const { stops, left } = await tabWalk(page);
     writeFileSync(info.outputPath("stops.json"), JSON.stringify(stops, null, 2));
     expect(stops.length, "something to focus").toBeGreaterThan(0);
     expect.soft(left, `focus never leaves the page after ${stops.length} stops (WCAG 2.1.2)`).toBe(true);
-    expect.soft(stopProblems(stops), "focus visible and unobscured").toEqual([]);
+    const problems = stopProblems(stops);
+    const declared = KNOWN.filter((known) => known.state === name && known.engine === browserName);
+    for (const known of declared) {
+      info.annotations.push({ type: "known", description: known.why });
+      expect.soft(problems, `listed as still happening (${known.why}), and it did not: take it off the list`).toContain(known.problem);
+    }
+    expect.soft(problems.filter((problem) => !declared.some((known) => known.problem === problem)), "focus visible and unobscured").toEqual([]);
     if (!info.project.name.startsWith("laptop")) {
       expect.soft(orderProblems(stops), "focus order follows the reading order (WCAG 2.4.3)").toEqual([]);
     }
@@ -65,14 +76,21 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   const problems: string[] = [];
   for (const key of [undefined, ...keys]) {
     if (key) await page.keyboard.press(key);
-    if (!key && initialHeading) {
-      // The announced title is a static initial focus target; keyboard controls still need a visible indicator.
+    // The announced title is a static initial focus target, where Chromium and WebKit put the focus; Firefox gives it to
+    // the dialog's first control, which then shows its ring as any control does.
+    if (!key && initialHeading && engine(page) !== "firefox") {
       await expect(initialHeading).toBeFocused();
       await expect(initialHeading).toHaveAttribute("tabindex", "-1");
     } else if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, popup)));
   }
   expect.soft(problems, "focus stays inside and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
-  // A tooltip leaves a moment after focus does, and takes the first Escape if it is still there.
+  // The keys can end on a control whose own tooltip is up (the close button, where Firefox's Tab ends): that tooltip
+  // takes the first Escape (WCAG 1.4.13), and the next one is the popup's. Another control's tooltip leaves a moment after
+  // focus does, and would take the first Escape if it were still there.
+  const ownTooltip = await page.evaluate(() =>
+    (document.activeElement?.getAttribute("aria-describedby") ?? "").split(/\s+/).some((id) => document.getElementById(id)?.matches('[role="tooltip"]:popover-open')),
+  );
+  if (ownTooltip) await page.keyboard.press("Escape");
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   await untilModal(page);
   await page.keyboard.press("Escape");
@@ -97,14 +115,8 @@ test("the page's dialog holds focus and gives it back", async ({ page }) => {
   await stubFlows(page, "normal");
   await signIn(page);
   const dialog = page.getByRole("dialog", { name: "Anteckning" });
-  await holdsFocus(page, page.getByRole("button", { name: "Anteckning" }), dialog, [
-    "Tab",
-    "Tab",
-    "Tab",
-    "Tab",
-    "Shift+Tab",
-    "Shift+Tab",
-  ], dialog.getByRole("heading", { name: "Anteckning" }));
+  const [next, back] = [tabKey(page), tabKey(page, true)];
+  await holdsFocus(page, page.getByRole("button", { name: "Anteckning" }), dialog, [next, next, next, next, back, back], dialog.getByRole("heading", { name: "Anteckning" }));
 });
 
 test("the warning before the login ends takes focus, holds it, and gives it back on Escape", async ({ page }) => {
@@ -121,7 +133,7 @@ test("the warning before the login ends takes focus, holds it, and gives it back
   // The dialog takes focus on its own controls or its title, which names it (no Tab stop, so it needs no ring).
   await focusMovesInto(warning);
   const problems: string[] = [];
-  for (const key of ["Tab", "Tab", "Shift+Tab", "Tab", "Tab"]) {
+  for (const key of [tabKey(page), tabKey(page), tabKey(page, true), tabKey(page), tabKey(page)]) {
     await page.keyboard.press(key);
     if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, warning)));
   }
@@ -141,7 +153,7 @@ test("signed out, the sign-in dialog holds focus, with its action inside it", as
   const problems: string[] = [];
   const reached = new Set<string>();
   for (let i = 0; i < 8; i++) {
-    await page.keyboard.press(i % 3 === 2 ? "Shift+Tab" : "Tab");
+    await page.keyboard.press(tabKey(page, i % 3 === 2));
     if (await inBrowser(page)) continue;
     const found = await focusProblems(page, dialog);
     problems.push(...found);

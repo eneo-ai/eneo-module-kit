@@ -1,0 +1,7 @@
+- menu "Öppna konto för Erik Lund":
+  - text: Erik Lund erik.lund@example.test
+  - group "Tema":
+    - menuitemradio "Ljust"
+    - menuitemradio "Mörkt"
+    - menuitemradio "System" [checked]
+  - menuitem "Logga ut"

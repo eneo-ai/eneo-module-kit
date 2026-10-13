@@ -36,9 +36,10 @@ const failed = jobs.filter((job) => job.conclusion === "failure");
 const waiting = jobs.filter((job) => job.status !== "completed").length;
 console.log(`${url}\ncommit ${headSha.slice(0, 7)}: ${failed.length} failed of ${jobs.length} jobs${waiting ? `, ${waiting} still running` : ""}`);
 
-// The job that runs the browser tests: `web` in a module's own CI, `template web (…)` in the kit's. CI keeps its results
-// under the job's name up to any parenthesis, with a dash for a space and `-results` after it: `web-results`.
-const BROWSER = /^(template )?web( \(|$)/;
+// The jobs that run the browser tests, one for each part: `web main` in a module's own CI, `template web main (…)` in the
+// kit's. CI keeps each one's results under the job's name up to any parenthesis, with a dash for a space and `-results`
+// after it: `web-main-results`.
+const BROWSER = /^(template )?web /;
 const kept = (name) => `${name.split(" (")[0].replaceAll(" ", "-")}-results`;
 
 /**
