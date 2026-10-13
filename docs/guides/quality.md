@@ -101,14 +101,14 @@ Error: what moved on screen when no one pressed anything
 
 | Fact | Detail |
 |---|---|
-| What is measured | Controls (links, buttons, fields, the interactive roles) and `h1` to `h6`, `p`, `li`, `dt`, `dd`, `th`, `td`, `label`, `img`, `video`, `canvas`. A move is 4 px or more |
-| What is not | Text in a bare `span` or `div`. The product name in the top bar moves right when the organisation's mark arrives, and the check does not see it |
+| What is measured | Every control (links, buttons, fields, the interactive roles), every picture (`img`, `svg`, `video`, `canvas`) and every element that holds words of its own, whatever its tag. A move is 4 px or more |
+| What is not | Words kept for a screen reader only (a box of one pixel) |
 | Why the machine's speed does not decide | Each answer is fetched whole before it is handed over, in the page's own order, and a measurement waits until the document has stopped changing and no script is on its way. Nothing is pressed |
 | A new page | Its states go in `web/tests/e2e/screens.ts`; a state that is the page as it opens also goes in `BY_ADDRESS` of the spec, with what shows that the page is drawn |
 | A state reached by a press | Not in `BY_ADDRESS`: the spec fails it with `this state is reached by a press on its page`, because a press and the answers race. Give it a test of its own that holds one answer with `page.route` |
 | A move that is left for now | One line in `KNOWN` of the spec: the page, the layout, the answer and the reason. It must still happen: when the page stands still, the line fails the test until it is taken out |
 
-`KNOWN` has one move, on every page, in `laptop-1440-light`: the organisation's mark is 40 px high (`packages/ui/src/base.css`) and arrives when `GET /api/branding` answers, in a top bar that is 48 px with a mouse and grows to 56 px, so the page under it moves 8 px down. On a touch screen the bar is 60 px from the first draw and stands still.
+`KNOWN` has one move, on every page and layout: the organisation is read after the page is drawn ([K10](../decisions/k10-branding-without-templating.md)), and its mark then takes its place before the product's name, which moves along the top bar. The bar itself has the mark's height from the first frame (`packages/ui/src/base.css`), so nothing under it moves.
 
 ## Where these tools come from
 

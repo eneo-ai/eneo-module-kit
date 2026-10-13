@@ -46,10 +46,12 @@ const BY_ADDRESS: Record<string, (page: Page) => Locator> = {
 // mouse the top bar is 48 px until then and 56 px after, and the page under it moves; on a touch screen the bar is
 // 60 px from the first draw and stands still. The fix is the package's: the bar keeps the mark's height from the
 // first draw.
+// The organisation is read after the page is drawn (decision K10 of the kit: the same built page serves every
+// deployment, and nothing is written into it). Its mark then takes its place before the product's name, which moves
+// along the bar; the bar itself keeps its height (base.css), so nothing under it moves.
 const BRAND = {
-  layout: "laptop-1440-light",
-  when: / moved [48] px down and 0 px right when GET \/api\/branding answered$/,
-  why: "the organisation's mark is taller than the top bar it arrives in, and the bar does not hold its room before the brand is read",
+  when: / moved 0 px down and \d+ px right when GET \/api\/branding answered$/,
+  why: "the organisation's mark arrives before the product's name in the top bar (K10: branding is read at runtime)",
 };
 
 /**
@@ -59,13 +61,7 @@ const BRAND = {
  */
 const KNOWN: { page: string; layout: string; when: RegExp; why: string }[] = process.env.E2E_EXTERNAL_URL
   ? []
-  : [
-      { page: "signin", ...BRAND },
-      { page: "flows", ...BRAND },
-      { page: "flows-empty", ...BRAND },
-      { page: "flows-error", ...BRAND },
-      { page: "session-warning", ...BRAND },
-    ];
+  : ["signin", "flows", "flows-empty", "flows-error", "session-warning"].flatMap((page) => LAYOUTS.map((layout) => ({ page, layout, ...BRAND })));
 
 type Anchor = { id: number; name: string; x: number; y: number; height: number; onScreen: boolean };
 type Measure = { anchors: Anchor[]; presses: number };
@@ -88,9 +84,18 @@ function watch() {
   if (document.documentElement) observe();
   else document.addEventListener("readystatechange", observe, { once: true });
 
-  const controls =
-    'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"], [role="menuitem"]';
-  const content = "h1, h2, h3, h4, h5, h6, p, li, dt, dd, th, td, label, img, video, canvas";
+  // What a person sees: every control, every picture, and every element that holds words of its own, whatever its tag
+  // (a product name in a bare span moves as surely as a heading).
+  const seen =
+    'a[href], button, input, select, textarea, summary, [role="button"], [role="link"], [role="tab"], [role="radio"], [role="switch"], [role="checkbox"], [role="menuitem"], img, svg, video, canvas';
+  const visible = () => {
+    const elements = new Set(document.querySelectorAll<HTMLElement>(seen));
+    const words = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let node = words.nextNode(); node; node = words.nextNode()) {
+      if (node.nodeValue?.trim() && node.parentElement) elements.add(node.parentElement);
+    }
+    return elements;
+  };
   const still: Still = {
     // The document has not changed for a moment (five frames' worth), or a second and a half has passed: a page that
     // never rests is measured as it is.
@@ -111,10 +116,11 @@ function watch() {
         return animation.playState === "running" && target ? [target] : [];
       });
       const anchors: Anchor[] = [];
-      for (const element of document.querySelectorAll<HTMLElement>(`${controls}, ${content}`)) {
+      for (const element of visible()) {
         if (!element.checkVisibility({ visibilityProperty: true })) continue;
         const box = element.getBoundingClientRect();
-        if (box.width === 0 || box.height === 0) continue;
+        // No box, or the one pixel of words kept for a screen reader only.
+        if (box.width <= 1 || box.height <= 1) continue;
         if (moving.some((target) => target.contains(element))) continue;
         const numbered = element as HTMLElement & { __still?: number };
         numbered.__still ??= state.next++;

@@ -48,6 +48,12 @@ img[data-brand-logo] {
   object-fit: contain;
   object-position: left;
 }
+/* With a mouse the lockup has the mark's height from the first frame: the organisation is read after the page is drawn
+   (K10), and a bar that grew when its logo arrived would move the whole page down. A finger's lockup is a 44 px target
+   already, taller than the mark. */
+@media not (pointer: coarse) {
+  .astryx-top-nav-heading { min-block-size: var(--spacing-10); }
+}
 /* A smaller mark leaves more room for the product name on the narrowest phones. */
 @media (max-width: 359px) {
   :root img[data-brand-logo] { block-size: var(--spacing-8); max-inline-size: 5rem; }
