@@ -2,11 +2,33 @@
  * The gate's own checks against pages built to fail them: a check that passes these would pass the module's faults too.
  * They run once, at one width. Copied from speech-to-text's gate (known debt, like checks.ts).
  */
-import { expect, test } from "@playwright/test";
-import { axe, blocking, clippedFocus, focusStop, reflow, settle, tabWalk, targetSizes } from "./checks";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { axe, blocking, clippedFocus, focusStop, reflow, settle, stopProblems, tabWalk, targetSizes } from "./checks";
+import { sweep, type Use } from "./controls";
 import { signIn, stubFlows } from "./fixtures";
+import type { State } from "./screens";
 
 test.beforeEach(({}, info) => test.skip(info.project.name !== "laptop-1440-light", "the checks' own tests run once"));
+
+/**
+ * A page of the checks' own, as a state that the press on every control (controls.ts) can copy. It is served at an
+ * address of the app's origin, so the page can ask for other addresses, which `answers` serves.
+ */
+const fixture = (name: string, html: string, answers?: (page: Page) => Promise<unknown>): State => ({
+  name,
+  go: async (page) => {
+    // The viewport line makes the page as wide as a phone's screen, so a tap lands where the control is.
+    const body = `<!doctype html><html lang="sv"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Prov</title>${html}`;
+    await page.route("**/fixture/page", (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body }));
+    await answers?.(page);
+    await page.goto("/fixture/page");
+  },
+});
+
+/** The project's browser context with a mouse, or with a finger. */
+const held = (info: TestInfo, hasTouch: boolean): Use => ({ ...info.project.use, hasTouch });
 
 test("a keyboard trap that cycles between two controls is caught", async ({ page }) => {
   await page.setContent(`
@@ -122,6 +144,81 @@ test("a focus ring is measured under a policy that refuses data: pictures", asyn
   await page.goto("/fixture/policy");
   await page.keyboard.press("Tab");
   expect((await focusStop(page))?.indicator).toBe(true);
+});
+
+test("a main command under another layer is caught: no pointer presses it, and the keyboard's focus on it is hidden", async ({ browser, page }, info) => {
+  const covered = fixture("covered", `
+    <main><h1>Prov</h1><p id="said"></p><button onclick="document.getElementById('said').textContent = 'Skapat'">Skapa dokument</button></main>
+    <div style="position: fixed; inset: 0; background: #fff">Ett lager över sidan</div>`);
+  for (const [pointer, hasTouch] of [["mouse", false], ["finger", true]] as const) {
+    const { problems } = await sweep(browser, covered, {}, held(info, hasTouch));
+    // Enter on the button would have been answered: a press that cannot land is not made with the keyboard instead.
+    expect(problems, `with a ${pointer}`).toEqual([expect.stringContaining(`button "Skapa dokument" (1 of 1): a ${pointer} cannot press it`)]);
+  }
+  await covered.go(page);
+  const { stops } = await tabWalk(page);
+  expect(stopProblems(stops)).toContainEqual(expect.stringContaining('button "Skapa dokument": entirely hidden by div'));
+});
+
+test("a control that answers a mouse and not a finger is caught on a touch screen", async ({ browser }, info) => {
+  const deaf = fixture("deaf-to-touch", `
+    <main><h1>Prov</h1><p id="said"></p><button>Skicka</button></main>
+    <script>
+      const button = document.querySelector("button");
+      button.addEventListener("click", () => (document.getElementById("said").textContent = "Skickat"));
+      // A handler that keeps the touch for itself (a swipe that never came): the browser then makes no click of the tap.
+      button.addEventListener("touchend", (event) => event.preventDefault());
+    </script>`);
+  expect((await sweep(browser, deaf, {}, held(info, false))).problems, "a mouse's click is answered").toEqual([]);
+  expect((await sweep(browser, deaf, {}, held(info, true))).problems, "a finger's tap is not").toEqual(['button "Skicka" (1 of 1): nothing happened that a person could see']);
+});
+
+test("a control that only a keyboard reaches is pressed with the keyboard where it is declared so, and fails where it is not", async ({ browser }, info) => {
+  // Off the screen until it has focus, as a way past a long list is.
+  const skip = fixture("skip", `
+    <style>button { position: absolute; left: -999px; } button:focus { left: 0; }</style>
+    <button onclick="document.querySelector('main').focus()">Hoppa förbi listan</button><main tabindex="-1"><h1>Prov</h1></main>`);
+  const undeclared = await sweep(browser, skip, {}, held(info, false));
+  expect(undeclared.problems).toEqual([expect.stringContaining('button "Hoppa förbi listan" (1 of 1): a mouse cannot press it')]);
+  const declared = await sweep(browser, skip, { keyboardOnly: { 'skip | button "Hoppa förbi listan"': "off the screen until it has focus" } }, held(info, false));
+  expect(declared.problems).toEqual([]);
+  expect(declared.notes).toEqual(['keyboard skip | button "Hoppa förbi listan": off the screen until it has focus']);
+});
+
+test("a failure that is declared and does not happen fails the press, as one that happens and is not declared", async ({ browser }, info) => {
+  // The button asks for an address that answers 503 when it is refused, and shows the answer either way.
+  const asks = (refused: boolean) =>
+    fixture(
+      "asks",
+      `<main><h1>Prov</h1><p id="said"></p><button onclick="fetch('/fixture/answer').then((answer) => (document.getElementById('said').textContent = answer.status))">Hämta</button></main>`,
+      (page) => page.route("**/fixture/answer", (route) => route.fulfill({ status: refused ? 503 : 200, body: "" })),
+    );
+  const declared = { expects: { 'asks | button "Hämta"': { reason: "the address refuses", expects: [{ console: /status of 503.*\/fixture\/answer/ }] } } };
+  expect((await sweep(browser, asks(true), declared, info.project.use)).problems, "declared, and it happens").toEqual([]);
+  expect((await sweep(browser, asks(true), {}, info.project.use)).problems, "it happens, and is not declared").toEqual([
+    expect.stringContaining('button "Hämta" (1 of 1): console errors: Failed to load resource: the server responded with a status of 503'),
+  ]);
+  expect((await sweep(browser, asks(false), declared, info.project.use)).problems, "declared, and it does not happen").toEqual([
+    'button "Hämta" (1 of 1): declared failures that did not occur: /status of 503.*\\/fixture\\/answer/',
+  ]);
+});
+
+test("a redirect behind a press fails it", async ({ browser }, info) => {
+  // A server of the test's own: a redirect has to come over the network, since WebKit lets no route answer with one.
+  const server = createServer((request, response) => {
+    if (request.url === "/moved") return void response.writeHead(302, { location: "/there" }).end();
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    response.end(`<!doctype html><html lang="sv"><title>Prov</title><main><h1>Prov</h1><p id="said"></p>
+      <button onclick="fetch('/moved').then(() => (document.getElementById('said').textContent = 'Hämtat'))">Hämta</button></main>`);
+  });
+  await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
+  const address = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const { problems } = await sweep(browser, { name: "moved", go: async (page) => void (await page.goto(address)) }, {}, info.project.use);
+    expect(problems).toEqual([`button "Hämta" (1 of 1): redirects: 302 GET ${address}/moved to /there`]);
+  } finally {
+    server.close();
+  }
 });
 
 test("text past the window's left edge is reported, as text past its right is", async ({ page }) => {

@@ -17,6 +17,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | Every state of `screens.ts`: axe, named controls, placeholder contrast, target sizes, reflow, text spacing, motion | `a11y.spec.ts`, with the measurements in `checks.ts` | The gate's eight |
 | The keyboard: focus is visible and not hidden, leaves the page at the end, follows the reading order; a menu and a dialog hold focus and give it back | `keyboard.spec.ts` | The gate's eight |
 | Nothing on screen moves when an answer arrives ([below](#what-is-on-screen-stands-still)) | `still.spec.ts` | `phone-320-light`, `phone-390-light`, `laptop-1440-light` |
+| Every control of every state does something, and breaks nothing ([below](#every-control-does-something)) | `controls.spec.ts`, with the press in `controls.ts` | `phone-390-light`, `laptop-1440-light` |
 | The brand and the account button keep apart at 320 px with text spacing | `header-fit.spec.ts` | `phone-320-light` |
 | Supporting text stays readable, a focused field has one frame, the warning's title takes focus without a ring | `theme.spec.ts` | The gate's eight |
 | The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light` |
@@ -109,6 +110,29 @@ The engines say a failure in their own words. The sentinel writes each in Chromi
 
 `web/tests/e2e/sentinel.spec.ts` causes each thing the sentinel fails a test for and looks at what it saw, in Chromium; the engines' words are proved by the specs that declare a failure in WebKit and Firefox (`flow.spec.ts`).
 
+## Every control does something
+
+`web/tests/e2e/controls.spec.ts` presses every control of every state of `screens.ts`, each in a fresh copy of the state: a browser context of its own, so that what one press stores or sends is not there for the next. A control is a visible, enabled button, link, menu item, tab, switch, checkbox or radio, in the modal dialog or the open menu on top when there is one. The press is the project's person's: a finger's tap on a touch screen (`hasTouch`), a mouse's click elsewhere. A failure names the control as `<role> "<name>" (<n> of <all>)` and says what is wrong:
+
+| The press fails when | Said as |
+|---|---|
+| The pointer cannot reach the control: it is under something, off the screen, or never still | `a finger cannot press it (…)`, `a mouse cannot press it (…)` |
+| Nothing a person could see happened: not the address, the focus, an overlay, an `aria-` state, a live region, the page's own content, a new tab, a download or a native dialog | `nothing happened that a person could see` |
+| What it opened closes neither on Escape nor on its own close control (`Stäng`, `Avbryt`, `Nej`, `Ångra`, `Behåll`) | `opened …, and neither Escape nor a close control closed it` |
+| The sentinel would fail a test for it ([above](#what-every-test-watches-for)) | `console errors: …`, `failed requests: …`, `redirects: …`, `declared failures that did not occur: …`, `Content Security Policy: …` |
+
+What is the person's choice or page already (a chosen radio, the link to the page that is open) is not pressed: it does nothing by design. An external link is checked for its address only. Anything else that is not pressed as the others are is declared in `controls.spec.ts`, keyed `<state> | <role> "<name>"`, with its reason; never a pattern:
+
+| List | For | The control |
+|---|---|---|
+| `SKIPPED` | A press the shared stub Eneo could not take back | Is not pressed |
+| `EXPECTS` | A failure the press causes on purpose, declared as a state declares its own | Is pressed, and the failure must happen |
+| `NO_RESPONSE` | A press that changes nothing by design | Is pressed, and judged on everything else |
+| `KEYBOARD_ONLY` | A control no pointer reaches by design: one kept out of sight until it has focus | Is given focus and Enter |
+| `CLICKED_IN_WEBKIT` | A control that Safari takes a tap on and Playwright's WebKit cannot tap, with the evidence from Safari | Is clicked on a WebKit project with touch |
+
+All five are empty in the template. The press and its judgement are in `web/tests/e2e/controls.ts`, which `harness.spec.ts` also runs on pages built to fail it. A new state is pressed as soon as it is in `screens.ts`.
+
 ## What is on screen stands still
 
 Nothing on screen moves when an answer arrives: a control that moves is pressed by mistake, and a line that moves is lost by the eye reading it. `web/tests/e2e/still.spec.ts` opens each page by its address, hands it the backend's answers one at a time, in the order the page asked for them, and measures what is on screen before and after each. It runs in `phone-320-light`, `phone-390-light` and `laptop-1440-light`; the template has no tablet project.
@@ -153,3 +177,4 @@ These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit ea
 | The JSON report and the upload of a failed job's results | The `frontend-browser` job of `.github/workflows/ci.yml` | `194ae4c` |
 | The `sentinel` fixture of `web/tests/e2e/fixtures.ts`, `web/tests/e2e/sentinel.spec.ts` | `frontend/tests/e2e/sentinel.ts`, `frontend/tests/e2e/sentinel.spec.ts` | `b8c3804` |
 | The measurements of `web/tests/e2e/checks.ts`, and their own tests in `web/tests/e2e/harness.spec.ts` | `frontend/tests/e2e/checks.ts`, `frontend/tests/e2e/harness.spec.ts` | `b8c3804` |
+| `web/tests/e2e/controls.ts`, `web/tests/e2e/controls.spec.ts` | `frontend/tests/e2e/controls.ts`, `frontend/tests/e2e/controls.spec.ts` | `b8c3804` |

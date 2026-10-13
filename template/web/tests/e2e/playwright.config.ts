@@ -28,6 +28,8 @@ const flow = /(flow|session-cover)\.spec\.ts/;
 // specs that run there.
 const flowAndSentinel = /(flow|session-cover|sentinel)\.spec\.ts/;
 const gate = /(a11y|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
+// The press on every control of every state (controls.spec.ts, the gate's longest part), on a phone and a laptop.
+const gateAndControls = /(a11y|controls|harness|header-fit|keyboard|still|theme)\.spec\.ts/;
 
 // The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
@@ -75,9 +77,9 @@ export default defineConfig({
     { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], colorScheme: "light" } },
     // The accessibility gate: every state at every width and theme, and the keyboard on the real screens.
     { name: "phone-320-light", testMatch: gate, use: { ...touch(320, 568), colorScheme: "light" } },
-    { name: "phone-390-light", testMatch: gate, use: { ...touch(390, 844), colorScheme: "light" } },
+    { name: "phone-390-light", testMatch: gateAndControls, use: { ...touch(390, 844), colorScheme: "light" } },
     { name: "phone-390-dark", testMatch: gate, use: { ...touch(390, 844), colorScheme: "dark" } },
-    { name: "laptop-1440-light", testMatch: gate, use: { ...desktop(1440, 900), colorScheme: "light" } },
+    { name: "laptop-1440-light", testMatch: gateAndControls, use: { ...desktop(1440, 900), colorScheme: "light" } },
     { name: "laptop-1440-dark", testMatch: gate, use: { ...desktop(1440, 900), colorScheme: "dark" } },
     // 200 % zoom of a 1280 x 800 window.
     { name: "zoom-200", testMatch: gate, use: { viewport: { width: 640, height: 400 }, deviceScaleFactor: 2, colorScheme: "light" } },
