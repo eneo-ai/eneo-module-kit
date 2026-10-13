@@ -26,7 +26,7 @@ Status: **current** matches the code today; **planned** describes something not 
 | [configuration](guides/configuration.md) | Every environment variable, default and check | Module developers, operators | current |
 | [local development](guides/local-development.md) | The template's stub Eneo and a walk through the login | Module developers | current |
 | [security checklist](guides/security-checklist.md) | What the kit enforces, what a module must do, known limits | Module developers, reviewers | current |
-| [quality](guides/quality.md) | What the template's browser gate checks, and how to find the cause when a test fails here or in CI | Module developers, agents | current |
+| [quality](guides/quality.md) | What the template's browser tests and gate check and where each check lives; reading a red CI job, a race only a slow runner loses, the stand-still rule | Module developers, agents | current |
 
 ## Reference and decisions
 

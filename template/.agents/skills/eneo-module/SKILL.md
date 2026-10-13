@@ -53,6 +53,7 @@ For UI work, add relevant loading, empty, error and signed-out states to
 for example `npm run test:e2e -- --project=chromium tests/e2e/flow.spec.ts`. Inspect the
 changed states visually, including mobile and both themes when layout or color changes.
 Run the full `npm run test:e2e` on the final unchanged candidate, as required by `AGENTS.md`.
+When a browser test fails, here or only in CI, follow the kit's [quality guide](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/quality.md).
 
 Use an absolute `PYTHON` path for the browser tests. If default ports are occupied, set
 both `E2E_APP_PORT` and `E2E_STUB_PORT`; stop only processes started for this work.
