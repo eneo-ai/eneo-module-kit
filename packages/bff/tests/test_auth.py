@@ -940,7 +940,12 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
         waiting = asyncio.create_task(self.get_flows(stalled))
         await started.wait()
 
-        response = await asyncio.wait_for(self.get_flows(other), timeout=2)
+        # The other session's request is answered while the stalled renewal still waits: the order proves it, not the
+        # clock. The bound only turns a request held behind the stalled one into a failure instead of a hang; a shared
+        # CI runner once took more than 2 s for the answer.
+        response = await asyncio.wait_for(self.get_flows(other), timeout=10)
+        self.assertFalse(release.is_set())
+        self.assertFalse(waiting.done(), "the stalled session's request is still waiting for its renewal")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
