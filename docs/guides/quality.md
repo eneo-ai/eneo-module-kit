@@ -152,3 +152,4 @@ These tools are adapted from `eneo-ai/eneo-mod-speech-to-text`, at the commit ea
 | `web/scripts/ci-failure.mjs` | `frontend/scripts/ci-failure.mjs` | `194ae4c` |
 | The JSON report and the upload of a failed job's results | The `frontend-browser` job of `.github/workflows/ci.yml` | `194ae4c` |
 | The `sentinel` fixture of `web/tests/e2e/fixtures.ts`, `web/tests/e2e/sentinel.spec.ts` | `frontend/tests/e2e/sentinel.ts`, `frontend/tests/e2e/sentinel.spec.ts` | `b8c3804` |
+| The measurements of `web/tests/e2e/checks.ts`, and their own tests in `web/tests/e2e/harness.spec.ts` | `frontend/tests/e2e/checks.ts`, `frontend/tests/e2e/harness.spec.ts` | `b8c3804` |

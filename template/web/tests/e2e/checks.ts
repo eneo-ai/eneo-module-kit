@@ -58,7 +58,7 @@ export function targetSizes(page: Page, min: number, spacing: boolean) {
   return page.evaluate(
     ([min, spacing]) => {
       const SELECTOR =
-        'a[href], button, input:not([type="hidden"]), select, textarea, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="combobox"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"]';
+        'a[href], button, input:not([type="hidden"]), select, textarea, summary, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="combobox"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], .astryx-radio-list-item';
       type Box = { left: number; top: number; right: number; bottom: number };
       const box = (r: DOMRect | Box): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
       const shown = (el: Element) => {
@@ -83,16 +83,18 @@ export function targetSizes(page: Page, min: number, spacing: boolean) {
             bottom: own.bottom - px(s.borderBottomWidth) - px(after.bottom),
           });
         }
-        // A field's box takes the click for the control inside it (the design system's inputs and pickers).
+        // A field's box takes the click for the control inside it (the design system's inputs and pickers). The date
+        // field's box does too on a touch device: a tap inside it above the input focuses the input, so the 44 px box,
+        // not the 24 px input line, is what a finger meets.
         const fieldBox = el.matches('input, textarea, [role="combobox"]')
-          ? el.closest('.astryx-text-input, .astryx-text-area, .astryx-number-input, .astryx-selector, .astryx-typeahead, .astryx-tokenizer')
+          ? el.closest('.astryx-text-input, .astryx-text-area, .astryx-number-input, .astryx-date-input, .astryx-selector, .astryx-typeahead, .astryx-tokenizer')
           : null;
         if (fieldBox) out.push(box(fieldBox.getBoundingClientRect()));
         const labels = (el as HTMLInputElement).labels;
         if (labels) for (const label of Array.from(labels)) out.push(box(label.getBoundingClientRect()));
         if (el.getAttribute("role") === "slider") {
-          // The thumb is small by design; a press anywhere on the slider's control moves it. The design system's control
-          // is the box (its rail is 4 px and hidden from the tree); Radix's root, still on the old widgets, is the other.
+          // The thumb is small by design; a press anywhere on the slider's control moves it. The control is the box
+          // (its rail is 4 px and hidden from the tree).
           const control = el.parentElement?.closest(".astryx-slider-control, [data-orientation]");
           if (control) out.push(box(control.getBoundingClientRect()));
         }
@@ -190,7 +192,10 @@ export async function axNode(locator: Locator) {
   }
 }
 
-/** WCAG 1.4.10: no horizontal scroll, nothing past the right edge, nothing cut off; ellipsis is listed apart. */
+/**
+ * WCAG 1.4.10: no horizontal scroll, no text or control past the window's left or right edge, nothing cut off by a box that
+ * clips it (wider or taller than its overflow-hidden ancestor); ellipsis is listed apart.
+ */
 export function reflow(page: Page) {
   return page.evaluate(() => {
     const width = document.documentElement.clientWidth;
@@ -208,7 +213,8 @@ export function reflow(page: Page) {
       const scrollsX = (e: Element | null): boolean =>
         !!e && e !== document.body && (["auto", "scroll"].includes(getComputedStyle(e).overflowX) || scrollsX(e.parentElement));
       const text = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.trim());
-      if (r.right > width + 1 && (text || el.matches("button, a, input, select, textarea, img, svg")) && !scrollsX(el.parentElement)) {
+      const outside = r.right > width + 1 || r.left < -1;
+      if (outside && (text || el.matches("button, a, input, select, textarea, img, svg")) && !scrollsX(el.parentElement)) {
         beyond.push(describe(el));
       }
       const cutX = ["hidden", "clip"].includes(s.overflowX) && el.scrollWidth > el.clientWidth + 1;
@@ -311,7 +317,11 @@ async function seenChange(page: Page, box: Rect): Promise<number> {
   const withFocus = await shot(page, clip);
   await page.evaluate(() => (window as unknown as { a11yRest: () => Promise<void> }).a11yRest());
   const without = await shot(page, clip);
-  await page.evaluate(() => (document.querySelector("[data-a11y-current]") as HTMLElement | null)?.focus({ preventScroll: true }));
+  await page.evaluate(() => {
+    const current = document.querySelector("[data-a11y-current]") as HTMLElement | null;
+    current?.style.removeProperty("outline");
+    current?.focus({ preventScroll: true });
+  });
   return changedArea(page, withFocus, without, clip.width);
 }
 
@@ -341,9 +351,8 @@ export function changedArea(page: Page, a: string, b: string, clipWidth: number)
   return page.evaluate(
     async ([a, b, clipWidth]) => {
       const pixels = async (base64: string) => {
-        const image = new Image();
-        image.src = `data:image/png;base64,${base64}`;
-        await image.decode();
+        // Decoded from its bytes: a data: URL would be a picture that a module's policy may refuse.
+        const image = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))], { type: "image/png" }));
         const canvas = document.createElement("canvas");
         canvas.width = image.width;
         canvas.height = image.height;
@@ -380,12 +389,6 @@ function probeFocus(page: Page) {
       return [n[0] ?? 0, n[1] ?? 0, n[2] ?? 0, n[3] ?? 1];
     };
     const over = ([r, g, b, a]: Rgba, [R, G, B]: Rgba): Rgba => [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a), 1];
-    const luminance = ([r, g, b]: Rgba) =>
-      [r, g, b].map((v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-    const contrast = (a: Rgba, b: Rgba) => {
-      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-      return (hi + 0.05) / (lo + 0.05);
-    };
     // The colour a box shows: its own background over those behind it.
     const background = (e: Element | null): Rgba => {
       if (!e) return [255, 255, 255, 1];
@@ -396,6 +399,9 @@ function probeFocus(page: Page) {
     // How to take focus off the element without closing what it is in: a menu or picker closes when its
     // item loses focus, so its item gives focus to the list itself, or to an item two or more rows away.
     const restOf = async (target: HTMLElement) => {
+      // A list that holds the focus itself (a combobox's list in a bottom sheet, its option shown by
+      // aria-activedescendant) cannot hand it on without closing: what rests is its own focus ring.
+      if (target.matches('[role="menu"], [role="listbox"]')) return async () => target.style.setProperty("outline", "none", "important");
       const list = target.closest<HTMLElement>('[role="menu"], [role="listbox"]');
       if (!list) return async () => target.blur();
       const items = Array.from(list.querySelectorAll<HTMLElement>(`[role="${target.getAttribute("role")}"]`));
@@ -433,6 +439,7 @@ function probeFocus(page: Page) {
     (window as unknown as { a11yRest: () => Promise<void> }).a11yRest = await restOf(el);
     await (window as unknown as { a11yRest: () => Promise<void> }).a11yRest();
     const resting = await look(el);
+    el.style.removeProperty("outline");
     el.focus({ preventScroll: true });
     // The indicator's owner: the outermost of the element and its near ancestors whose look changes with
     // focus (a card's ring for its radio, a field group's edge for its input). The screenshots measure it.
@@ -468,20 +475,29 @@ function probeFocus(page: Page) {
     }
     let scrolled = scrollY;
     for (let p = el.parentElement; p; p = p.parentElement) scrolled += p.scrollTop;
+    const onScreenEdges = (box: DOMRect) => {
+      const wide = Math.max(0, Math.min(box.right, innerWidth) - Math.max(box.left, 0));
+      const high = Math.max(0, Math.min(box.bottom, innerHeight) - Math.max(box.top, 0));
+      const edges = (box.top >= 0 ? wide : 0) + (box.bottom <= innerHeight ? wide : 0) + (box.left >= 0 ? high : 0) + (box.right <= innerWidth ? high : 0);
+      return edges > 0 ? edges : 2 * (wide + high);
+    };
     const name = el.getAttribute("aria-label") ?? (el as HTMLInputElement).labels?.[0]?.textContent ?? el.getAttribute("title") ?? el.textContent ?? "";
     return {
       key: el.dataset.a11yStop!,
       label: `${el.getAttribute("role") ?? el.tagName.toLowerCase()} "${name.trim().replace(/\s+/g, " ").slice(0, 60)}"`,
       indicator: false,
       owner: box ? { x: box.left, y: box.top, width: box.width, height: box.height } : null,
-      // A one-pixel line around the element, in CSS px².
-      perimeter: 2 * (Math.min(r.width, innerWidth) + Math.min(r.height, innerHeight)),
+      // A one-pixel line along the element's edges that are on screen, in CSS px²: an edge past the window's is no ring's
+      // to draw (a region taller than the window, scrolled to show its top). With no edge on screen, a line around all
+      // of what shows: the indicator must then be inside it.
+      perimeter: onScreenEdges(r),
       focusVisible,
       obscured: (points > 0 && covered === points ? "full" : byPinned > 0 ? "partial" : "none") as FocusStop["obscured"],
       coveredBy,
       offscreen: points === 0,
       pinned: ownPin !== null,
-      inDialog: el.closest('[role="dialog"], [role="alertdialog"]') !== null,
+      // A native <dialog> (the design system's) carries no role attribute.
+      inDialog: el.closest('dialog, [role="dialog"], [role="alertdialog"]') !== null,
       container: el.parentElement?.closest<HTMLElement>("[data-a11y-stop]")?.dataset.a11yStop ?? null,
       top: Math.round(r.top + scrolled),
       bottom: Math.round(r.bottom + scrolled),
