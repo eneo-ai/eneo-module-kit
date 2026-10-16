@@ -70,25 +70,48 @@ test("an action that ends the work asks first in the page's dialog: Stanna kvar 
   assert.equal(asked(), false);
 });
 
-test("an answered Lämna sidan lets its own way off through: no second question from the browser while it goes, and the hold is back if it stays", async () => {
-  const { act, leaving } = await page(true);
-  let release = () => {};
-  const seen: [boolean, boolean][] = [];
-  await act(async () =>
-    leaving().leaveFirst(
-      () =>
-        new Promise<void>((resolve) => {
-          // While the action goes on (signing out, then a load of the sign-in page): neither asks again.
-          seen.push([unloadAsks(), leaving().holds()]);
-          release = resolve;
-        }),
-    ),
-  );
-  await act(async () => button(question()!, "Lämna sidan")!.click());
-  assert.deepEqual(seen, [[false, false]]);
-  await act(async () => release());
+test("an answered Lämna sidan lets its own way off through: no second question while it goes or after, and the hold is back once it says it stayed", async () => {
+  /** Signing out as a page does it: an action that finishes later, and says `false` when it did not leave. */
+  async function signOut(left: boolean | undefined) {
+    const view = await page(true);
+    const seen: [boolean, boolean][] = [];
+    let settle: () => void = () => {};
+    const action = () =>
+      new Promise<boolean | undefined>((resolve) => {
+        // While the action goes on (signing out, then a load of the sign-in page): neither asks again.
+        seen.push([unloadAsks(), view.leaving().holds()]);
+        settle = () => resolve(left);
+      });
+    await view.act(async () => view.leaving().leaveFirst(action));
+    await view.act(async () => button(question()!, "Lämna sidan")!.click());
+    await view.act(async () => settle());
+    return { ...view, seen };
+  }
+
+  const succeeded = await signOut(undefined);
+  assert.deepEqual(succeeded.seen, [[false, false]]);
+  assert.equal(unloadAsks(), false, "done and on its way off (WebKit asks beforeunload only now): still let through");
+  await cleanup();
+
+  const failed = await signOut(false);
   assert.equal(unloadAsks(), true, "an action that did not leave (a sign-out that failed) holds the page again");
-  assert.equal(leaving().holds(), true);
+  assert.equal(failed.leaving().holds(), true);
+});
+
+test("a way off that runs at once (the router's proceed) is past the hold when it returns, and the hold is back; so it is once the work is gone", async () => {
+  const { act, leaving, set } = await page(true);
+  let during = true;
+  await act(async () => leaving().leaveFirst(() => void (during = leaving().holds())));
+  await act(async () => button(question()!, "Lämna sidan")!.click());
+  assert.equal(during, false, "let through while it ran");
+  assert.equal(leaving().holds(), true, "and held again after");
+
+  await act(async () => leaving().leaveFirst(() => new Promise(() => undefined)));
+  await act(async () => button(question()!, "Lämna sidan")!.click());
+  assert.equal(leaving().holds(), false, "an action still going on is let through");
+  await set(false);
+  await set(true);
+  assert.equal(leaving().holds(), true, "new work is held from the start");
 });
 
 /** The template's web/src/leave.ts: the router's blocker holds a navigation to another path while the page holds work. */

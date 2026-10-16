@@ -204,7 +204,8 @@ The package imports no router: the module's router gives `RouteEffects` the path
 - While `active`, the browser's own question (`beforeunload`) covers what no navigation of the app reaches: a reload, a closed tab, another site.
 - `leaveFirst(goOn, stay?)` asks in the page's own dialog, "Lämna sidan?" with `warning`, "Stanna kvar" (which has the focus) and "Lämna sidan": before an action that ends the work without a navigation (the template's account menu signs out through it), and for a navigation the router held (`leaveFirst(blocker.proceed, blocker.reset)`). Not `active`, it goes on at once.
 - `holds()` says, when the router asks, whether a navigation must be held: `useBlocker(({ currentLocation, nextLocation }) => leaving.holds() && currentLocation.pathname !== nextLocation.pathname)`, so a page that writes `?run=` into its address is not held.
-- An answered "Lämna sidan" lets its own way off through: neither the browser nor the router asks again while it goes on, and the hold is back if it did not leave (a sign-out that failed).
+- An answered "Lämna sidan" lets its own way off through: neither the router nor the browser asks again, also when the page unloads after the action (WebKit asks `beforeunload` only after a `location.assign` has returned). A `goOn` that runs at once (`blocker.proceed`) is past the hold when it returns, and the hold is back. An action that finishes later and did not leave (a sign-out that failed) returns `false`, and the hold is back; so it is once the page holds no work (`active` false), for the next.
+- A menu the question is asked from (the account menu's "Logga ut") is closed first, in every engine: WebKit hides it under the modal without telling the design system, which then takes the next press on its trigger for a close.
 - Render `question` once on the page. It is a native modal dialog, not closed while the login has ended: asked while signed out, it stands above the sign-in dialog.
 
 ## Drafts
