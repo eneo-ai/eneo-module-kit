@@ -51,8 +51,8 @@ and a component that takes `href` needs nothing more. A router whose link wants 
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the
-brand's mark, forced-colour edges, no ring on a programmatically focused heading, and the session cover that hides the
-page while the login has ended).
+brand's mark, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
+page while the login has ended, and a menu's height past Astryx's 300 px cap, up to the window below the top bar).
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.

@@ -13,6 +13,14 @@
 .astryx-top-nav :has(> .astryx-top-nav-heading) { flex-shrink: 1; min-inline-size: 0; }
 .astryx-top-nav-heading span { white-space: normal; overflow-wrap: anywhere; }
 
+/* Astryx 0.6.3 caps a menu, and the layer it opens in, at 300 px, with no theme target for either. The theme's rows are
+   44 px under a finger, which leaves room for six: the template's account menu has seven (the name, three themes,
+   Version and Logga ut), and its last one was out of sight behind a scroll even on a laptop. A menu may now be as tall as
+   the window below the top bar (5rem: the bar, the gap and a gutter), at most 30rem, and scrolls only beyond that; the
+   anchor's fallbacks still flip it where it does not fit. A menu shorter than 300 px is its own height, as before. */
+[popover]:has(> .astryx-popover > .astryx-dropdown-menu) { max-height: none; }
+.astryx-dropdown-menu { max-height: min(30rem, calc(100dvb - 5rem)); }
+
 /* A heading takes the focus when its state appears, so a screen reader starts there; it is not a control, and a ring
    on it would only look like one. A page marks such a heading data-phase-heading (and tabindex -1). */
 [data-phase-heading]:focus { outline: none; }

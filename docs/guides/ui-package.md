@@ -83,7 +83,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `@eneo-ai/module-kit` | The code, below. |
 | `@eneo-ai/module-kit/layers.css` | `@layer reset, astryx-base, astryx-theme;` Import it first, so the layers have their order. |
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
-| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended. Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose: it wins over the design system's layered styles. |
 | `@eneo-ai/module-kit/session` | The session client, below. |
 | `@eneo-ai/module-kit/templates/eneo-module-page.tsx`, `@eneo-ai/module-kit/templates/eneo-signin.tsx` | Reference TSX source used by the Astryx CLI. Adapt it into the owning module route. |
 
