@@ -98,7 +98,7 @@ export function createFetchWithSession(state: SessionState) {
         throw new SessionExpiredError();
       }
       if (await isUserChanged(res)) {
-        state.ended(question);
+        state.userChanged(question);
         throw new SessionExpiredError();
       }
       return res;

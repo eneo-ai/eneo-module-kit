@@ -198,7 +198,7 @@ The UI side of a login that can end while a page is open. Wrap every page that n
 - When the login has ended it covers the page with a modal dialog that asks for a new login in place, so nothing on the page is lost.
 - A read waits for the new login and is sent once more. A write waits only if it carries an `Idempotency-Key`; otherwise it fails with `SessionExpiredError`.
 - A request no answer has begun for within 90 s fails with `RequestTimeoutError`, whose Swedish message the page shows beside a way to try again.
-- A write names the page's user (`X-Expected-User`). When the session under the page is someone else's, the backend answers 409 `user_changed`: the page is covered as for an end, and the write fails with `SessionExpiredError`, never sent as them.
+- A write names the page's user (`X-Expected-User`). When the session under the page is someone else's, the backend answers 409 `user_changed`: the page is covered, the dialog says whom to sign in as, and the write fails with `SessionExpiredError`, never sent as them.
 - A dialog of your own page must be closed while `useSignedOut()` is true (`isOpen={open && !signedOut}`), with its state held above the dialog, so it is back as it was after the new login. Render page dialogs in place, inside the children of `RequireSession`.
 - `onIdentity(user)` is awaited before the page is shown: clear what belongs to someone else there.
 

@@ -283,7 +283,7 @@ sequenceDiagram
   P->>P: lift the cover, give the focus back
 ```
 
-Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
+Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. The page reads the status again at once, so the dialog says whom to sign in as. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
 
 ## Where the organisation's branding enters
 

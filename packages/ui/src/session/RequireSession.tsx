@@ -162,7 +162,7 @@ export function RequireSession({
         }
         await onIdentityRef.current?.(identity);
         if (cancelled) return;
-        endPage = state.begin(identity);
+        endPage = state.begin(identity, recheck);
         setUser(identity);
         setPhase("in");
         keepAlive(s);
