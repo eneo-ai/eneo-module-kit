@@ -19,7 +19,7 @@ before the first release, use the documented tarball and BFF package path rather
 retrying a registry install or rewriting the lock by hand.
 
 Set the product name in `web/src/config.ts`, the browser title and the `<noscript>` text in `web/index.html`, the icons in `web/public/`,
-and the API title in `backend/main.py`. Copy `.env.example` to `.env` only if no `.env`
+the drafts' prefix in `web/src/drafts.ts`, and the API title in `backend/main.py`. Copy `.env.example` to `.env` only if no `.env`
 exists. Develop against `stub-eneo/` first; a real instance additionally needs its
 registered module key, callback URL and service key. Never print or commit real secrets.
 

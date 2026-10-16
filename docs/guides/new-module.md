@@ -61,6 +61,7 @@ cp -R template ../eneo-mod-<name> && cd ../eneo-mod-<name>
 |---|---|
 | The module's name in the top bar and the page's `<h1>` | `PRODUCT_NAME` in `web/src/config.ts` |
 | The browser tab, and what a browser without JavaScript says | `<title>` and `<noscript>` in `web/index.html` |
+| Where typed work is kept in the tab, apart from another module's | the prefix in `web/src/drafts.ts` (`createDrafts("eneo-modul")`) |
 | The icon in the tab and on a phone's home screen | `web/public/favicon.svg` and `web/public/apple-touch-icon.png` (180 x 180), placeholders to replace |
 | The module key (lowercase kebab-case) | `MODULE_KEY` in `.env` (step 3). The stub's key is `eneo-module`: set `STUB_MODULE_KEY` to change it. |
 | The API title | `title=` in `backend/main.py` |
