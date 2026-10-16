@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
@@ -40,6 +41,10 @@ def create_app(
     """
     if settings is None:
         settings = load_settings()
+    # httpx2 logs each request's full URL at INFO, and a signed file URL carries its bearer token in the query: the
+    # HTTP client's libraries stay at WARNING, whatever level the module logs at.
+    for library in ("httpx2", "httpcore2"):
+        logging.getLogger(library).setLevel(logging.WARNING)
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.

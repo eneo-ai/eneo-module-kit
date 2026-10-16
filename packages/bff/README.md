@@ -138,7 +138,7 @@ A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_s
   an upload's own forwarding budget). Upload reception has total and inactivity deadlines.
 - One process, one replica: sessions live in memory. `serve()` fixes one worker and turns the access log off,
   because the callback URL carries a login ticket.
-- Nothing in the package configures logging: a module sets up its own.
+- The package configures one thing about logging: `create_app` sets the `httpx2` and `httpcore2` loggers to WARNING, because their INFO lines carry full URLs and a signed file URL is a credential. The login and refresh code logs the kind of an error, never its text, which can quote a token. A module sets up the rest.
 
 More in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/design.md) section 6 and the [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md).
 

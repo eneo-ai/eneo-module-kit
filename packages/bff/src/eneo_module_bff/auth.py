@@ -371,8 +371,10 @@ class ModuleAuth:
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
-        except httpx2.RequestError:
-            logger.exception("Module ticket exchange could not reach Eneo")
+        except httpx2.RequestError as error:
+            # The kind of error, never its text, here and below: httpx2's quotes a header it could not send, and a
+            # validation error the answer it refused. Either can hold a token.
+            logger.error("Module ticket exchange could not reach Eneo (%s)", type(error).__name__)
             return self._auth_error("exchange_unavailable")
 
         if upstream.status_code != 200:
@@ -385,7 +387,7 @@ class ModuleAuth:
         try:
             token = ModuleTokenResponse.model_validate(upstream.json())
         except (ValueError, ValidationError):
-            logger.exception("Module ticket exchange returned an invalid response")
+            logger.error("Module ticket exchange returned an invalid response")
             return self._auth_error("exchange_invalid")
 
         now = int(time.time())
@@ -414,8 +416,8 @@ class ModuleAuth:
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
-        except httpx2.RequestError:
-            logger.exception("Module session validation could not reach Eneo")
+        except httpx2.RequestError as error:
+            logger.error("Module session validation could not reach Eneo (%s)", type(error).__name__)
             return self._auth_error("validation_unavailable")
 
         if validation.status_code != 200:
@@ -427,7 +429,7 @@ class ModuleAuth:
         try:
             validated = ModuleResourceSessionResponse.model_validate(validation.json())
         except (ValueError, ValidationError):
-            logger.exception("Module session validation returned an invalid response")
+            logger.error("Module session validation returned an invalid response")
             return self._auth_error("validation_invalid")
         if (
             validated.module_key != token.module_key
@@ -560,11 +562,12 @@ class ModuleAuth:
                 self.sessions.delete(session_id)
             else:
                 self.sessions.replace(session_id, refreshed)
-        except Exception:
+        except Exception as error:
             # Not an answer from Eneo, so not a reason to end the session: keep the token, which is still valid,
             # and ask again shortly, as when Eneo cannot answer. Left alone, the error would reach every request
-            # of the session as a 500. (Not BaseException: a cancelled refresh stays cancelled.)
-            logger.exception("Module token refresh failed unexpectedly")
+            # of the session as a 500. (Not BaseException: a cancelled refresh stays cancelled.) Its kind, not its
+            # text, which can quote the token.
+            logger.error("Module token refresh failed unexpectedly (%s)", type(error).__name__)
             self.sessions.replace(session_id, self._retry_later(session))
         finally:
             self._refreshes.pop(session_id, None)
@@ -588,8 +591,8 @@ class ModuleAuth:
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
-        except httpx2.RequestError:
-            logger.warning("Module token refresh could not reach Eneo", exc_info=True)
+        except httpx2.RequestError as error:
+            logger.warning("Module token refresh could not reach Eneo (%s)", type(error).__name__)
             return self._retry_later(session)
         if eneo_is_unavailable(upstream.status_code):
             logger.warning(
@@ -605,7 +608,7 @@ class ModuleAuth:
         try:
             token = ModuleTokenResponse.model_validate(upstream.json())
         except (ValueError, ValidationError):
-            logger.exception("Module token refresh returned an invalid response")
+            logger.error("Module token refresh returned an invalid response")
             return None
         if (
             token.module_key != session.module_key

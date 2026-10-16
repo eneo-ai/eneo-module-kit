@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import unittest
 from unittest.mock import patch
@@ -150,6 +151,23 @@ class AppFactoryTests(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 404)
                 self.assertNotIn("location", response.headers)
+
+    def test_the_http_clients_libraries_log_no_url_even_where_the_module_logs_everything(self) -> None:
+        # httpx2 logs each request's full URL at INFO, and a signed file URL carries its bearer token in the query.
+        root = logging.getLogger()
+        self.addCleanup(root.setLevel, root.level)
+        root.setLevel(logging.DEBUG)
+        for name in ("httpx2", "httpcore2"):
+            library = logging.getLogger(name)
+            self.addCleanup(library.setLevel, library.level)
+            library.setLevel(logging.NOTSET)
+
+        create_app(make_settings(), http_client=self.injected_client())
+
+        for name in ("httpx2", "httpcore2.http11", "httpcore2.connection"):
+            with self.subTest(logger=name):
+                self.assertFalse(logging.getLogger(name).isEnabledFor(logging.INFO))
+                self.assertTrue(logging.getLogger(name).isEnabledFor(logging.WARNING))
 
     def test_two_apps_share_no_state(self) -> None:
         first = create_app(make_settings(), http_client=self.injected_client())

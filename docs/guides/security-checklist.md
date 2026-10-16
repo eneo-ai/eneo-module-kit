@@ -31,6 +31,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |
 | No API description and no redirect on the module's origin | No `/docs`, `/redoc` or `/openapi.json`; the slash twin of a route is a 404, not a 307 whose `Location` says http:// behind a proxy that ends TLS | `app.py` |
 | One replica, no ticket in the logs | One worker, uvicorn's access log off, no `Server` banner | `serve.py` |
+| No token in the kit's logs | Login and refresh log the kind of an error, never its text: a validation error quotes the answer it refused, and httpx2's error quotes a header it could not send. `httpx2` and `httpcore2` log at WARNING: their INFO lines hold full URLs, a signed URL among them | `auth.py`, `app.py` |
 
 Headers on every answer (`web.py`), an unhandled error's 500 too; `create_app(security_headers={...})` replaces one by name, for example `Permissions-Policy: camera=(), geolocation=(), microphone=(self)`:
 
@@ -56,7 +57,7 @@ Tick each before a module goes live.
 - [ ] `inline_types` holds nothing that can run script: not `text/html`, not `image/svg+xml`.
 - [ ] In production: `COOKIE_SECURE` is `true` (the default), `ENEO_PUBLIC_URL` and `MODULE_PUBLIC_URL` are https, `SESSION_SECRET` is random and at least 32 characters, and `ENEO_API_KEY` and `SESSION_SECRET` come from a secret store, not from the repository or the image.
 - [ ] One replica of the module runs: sessions are in memory. `serve()` fixes one worker.
-- [ ] Logging, which the package does not configure, never records `/api/auth/callback` with its query (it carries the ticket), `Cookie` or `Authorization` headers, or signed URLs.
+- [ ] The module's own logging never records `/api/auth/callback` with its query (it carries the ticket), `Cookie` or `Authorization` headers, or signed URLs, and logs the kind of an error from a call to Eneo, not its text (`logger.exception` prints a text that can quote a token). The package sets only `httpx2` and `httpcore2` to WARNING.
 - [ ] A module that calls Eneo over HTTPS with a private CA installs that CA in its image: `httpx2` uses the operating system's trust store, not `certifi`.
 - [ ] The module's dependencies are pinned and locked, and `pip-audit` finds nothing in the installed set (the package declares ranges with security floors).
 
