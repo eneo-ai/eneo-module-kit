@@ -151,7 +151,7 @@ curl -fsS https://modul.example.org/health
 | `build_date` | When the image was built, in UTC: the build's time, not the release's or the deployment's | as `revision` |
 | `source` | The repository the image was built from | as `revision` |
 
-Give `revision` in a report of a fault: it names the code exactly, also when the release is unknown. The image's labels say the same without starting it:
+A signed-in person sees the same under Version in the account menu, and Kopiera supportinformation copies it, with the whole commit and the module's address, to paste into a report (the UI package's `VersionInfo`). Give `revision` in a report of a fault: it names the code exactly, also when the release is unknown. The image's labels say the same without starting it:
 
 ```bash
 docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' ghcr.io/<owner>/<repository>:v1.2.3

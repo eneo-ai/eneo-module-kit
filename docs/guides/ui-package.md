@@ -140,7 +140,7 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 
 - `VersionInfo` shows the release, the commit's first seven characters and when the image was built (in the reader's time), each "Okänd" when the BFF does not know it; a button that copies the support details (the product's name, each value whole, the page's address); and, when the repository is known, the release's and the commit's pages on GitHub, in a new tab.
 - The module has no version of its own: the UI and the BFF ship as one image, and `/api/healthz` says what the image was built from and the release the deployment names ([configuration](configuration.md#which-build-runs)). A local build says nothing of itself.
-- It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: in a dialog, or a section that unfolds.
+- It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: the template's account menu has "Version", which opens it in a dialog (`template/web/src/AccountMenu.tsx`).
 
 ## The shell
 

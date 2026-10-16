@@ -4,4 +4,5 @@
     - menuitemradio "Ljust"
     - menuitemradio "Mörkt"
     - menuitemradio "System" [checked]
+  - menuitem "Version"
   - menuitem "Logga ut"

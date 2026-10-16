@@ -31,6 +31,8 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   rebuilding it (`release.yml`). `docker-compose.yml` runs it, chosen by `MODULE_VERSION`, read-only;
   `docker-compose.traefik.yml` adds Traefik with HTTPS on a host without a proxy. `/health` says which build runs.
   Dokploy and plain Docker Compose: [release and deploy](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/deploy.md).
+- **Which version runs:** Version in the account menu shows the release, the commit and the build time of the image, with a button
+  that copies them for a report of a fault (`VersionInfo` from the kit, read from `/api/healthz`).
 - **Rules for people and agents:** `AGENTS.md`. The local [eneo-module skill](.agents/skills/eneo-module/SKILL.md)
   guides setup and feature work. `CLAUDE.md` imports both the rules and the skill.
 - **Full guides:** [create a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md),

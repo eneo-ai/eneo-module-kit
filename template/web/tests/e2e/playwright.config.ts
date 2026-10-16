@@ -40,7 +40,7 @@ const gate = ["a11y", "header-fit", "keyboard", "still", "theme"];
 // own tests (harness.spec.ts) run once in each engine, on its laptop.
 const portable = ["a11y", "keyboard", "controls", "aria"];
 
-// The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test.
+// The stub Eneo, and the module's backend serving the built UI, with the organisation of the brand test and a release's build.
 const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
   {
     command: `${python} ${resolve(template, "stub-eneo/server.py")} ${STUB}`,
@@ -65,6 +65,12 @@ const servers: NonNullable<PlaywrightTestConfig["webServer"]> = [
       ORGANIZATION_NAME: "Exempelkommunen",
       ORGANIZATION_LOGO: resolve(import.meta.dirname, "fixtures/logo-light.svg"),
       ORGANIZATION_LOGO_DARK: resolve(import.meta.dirname, "fixtures/logo-dark.svg"),
+      // A release's build, so that the version dialog shows what a deployment shows: the release, the commit, when it was
+      // built (10:00 on the tests' Stockholm clock) and the pages of both.
+      SOURCE_REVISION: "0123456789abcdef0123456789abcdef01234567",
+      BUILD_DATE: "2026-10-01T08:00:00Z",
+      SOURCE_URL: "https://github.com/eneo-ai/eneo-module",
+      MODULE_VERSION: "v1.0.0",
     },
   },
 ];

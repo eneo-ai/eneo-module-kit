@@ -39,6 +39,17 @@ export const STATES: State[] = [
     },
   },
   {
+    // Which version runs: the dialog the account menu opens, with what the backend says of its build.
+    name: "version",
+    go: async (page) => {
+      await stubFlows(page, "normal");
+      await signIn(page);
+      await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+      await page.getByRole("menuitem", { name: "Version" }).click();
+      await expect(page.getByRole("dialog", { name: "Version" }).getByRole("button", { name: "Kopiera supportinformation" })).toBeVisible();
+    },
+  },
+  {
     name: "flows-empty",
     go: async (page) => {
       await stubFlows(page, "empty");
