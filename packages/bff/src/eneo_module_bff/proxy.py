@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 
-from .deps import require_same_origin, require_session, upstream_auth_headers
+from .deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 from .upstream import UnboundedAnswer
 
@@ -163,7 +163,8 @@ def forwarded_headers(headers: Headers, allowed: Collection[str], *, skip: str =
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
-    Of the browser's request headers only ``FORWARDED_REQUEST_HEADERS`` and ``forward_request_headers`` reach Eneo.
+    Of the browser's request headers only ``FORWARDED_REQUEST_HEADERS`` and ``forward_request_headers`` reach Eneo. A
+    write must come from the module's origin and name the session's user (``require_expected_user``).
     """
     rules = tuple(rules)
     added = {name.lower() for name in forward_request_headers}
@@ -178,6 +179,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         dependencies=[
             Depends(require_session),
             Depends(require_same_origin),
+            Depends(require_expected_user),
         ],
     )
     async def eneo_proxy(path: str, request: Request) -> Response:

@@ -320,7 +320,8 @@ class StreamingResponseTests(Case):
 
 class ProxyBodyTests(Case):
     async def proxy(self, body: Lazy, **kwargs):
-        return await self.post("/api/eneo/things/", body, headers={"Content-Type": "application/octet-stream", "Origin": ORIGIN, **kwargs.pop("headers", {})}, **kwargs)
+        sent = {"Content-Type": "application/octet-stream", "Origin": ORIGIN, "X-Expected-User": "u", **kwargs.pop("headers", {})}
+        return await self.post("/api/eneo/things/", body, headers=sent, **kwargs)
 
     async def test_a_post_over_the_cap_is_413_and_never_reaches_eneo(self) -> None:
         declared, chunked = Lazy(500), Lazy(500)

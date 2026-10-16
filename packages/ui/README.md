@@ -64,8 +64,8 @@ The installed package contributes `eneo-module-page` and `eneo-signin` reference
 ## The session client: `@eneo-ai/module-kit/session`
 
 The login of a page that can outlive its login. SSO only: it talks to the BFF's `GET /api/auth/status`
-(`{authenticated, user, session_ends_in, refresh_in}`), `GET /api/auth/login?next=&renew=` and the
-`X-Auth-Required: session` mark on a 401.
+(`{authenticated, user, session_ends_in, refresh_in}`), `GET /api/auth/login?next=&renew=`, the
+`X-Auth-Required: session` mark on a 401, and the 409 `user_changed` of a write that names its user (`X-Expected-User`).
 
 ```tsx
 <RequireSession
@@ -86,9 +86,9 @@ The module owns which state to keep or remove when the identity changes.
 |---|---|
 | `RequireSession` | The gate. Signed out: the sign-in screen (`signIn` replaces it; `navigate` with `signInPath` sends the person to a route of the app's own). Signed in: `children`, the keepalive (the backend's `refresh_in`), a status read when the page is seen and when a login window says it is done, the warning five minutes before the end, and, when the login has ended, the cover and the sign-in dialog. |
 | `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable (module-owned actions) into. |
-| `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. Answers are returned as they came. |
+| `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. A write names the page's user in `X-Expected-User`; a 409 `user_changed` (someone else's session under the page) ends the login as a 401 does and fails with `SessionExpiredError`, never sent again. Answers are returned as they came. |
 | `createSessionState()`, `sessionState`, `createFetchWithSession(state)` | The state (one instance per page, shared by the gate and `fetchWithSession`), and a way to build both over another one (tests). |
-| `SessionExpiredError`, `isSessionEndedAnswer(status, header)` | For a transport that is not `fetch` (an upload by XMLHttpRequest): refuse when `sessionState.signedOut`, take `const question = sessionState.ask()` before sending and call `sessionState.ended(question)` on a 401 with `X-Auth-Required: session`: a refusal that comes after a renewal belongs to the old login, and covers nothing. |
+| `SessionExpiredError`, `isSessionEndedAnswer(status, header)` | For a transport that is not `fetch` (an upload by XMLHttpRequest): refuse when `sessionState.signedOut`, take `const question = sessionState.ask()` before sending and call `sessionState.ended(question)` on a 401 with `X-Auth-Required: session`: a refusal that comes after a renewal belongs to the old login, and covers nothing. On a write send `X-Expected-User: sessionState.expectedUser`, and end the login the same way on a 409 `{"detail": "user_changed"}`. |
 | `SignInScreen`, `SignedInAgain`, `refusalOf`, `SESSION_CHANNEL` | The sign-in screen; the page the login window lands on (it tells the module's tabs through `SESSION_CHANNEL` and closes itself, or says why a renewal was refused: `?fel=annan-anvandare`, `?fel=utgangen`); route it at `signedInAgainPath` (default `/inloggad`). |
 | `sessionUser`, `userDisplayName`, `userInitial` | The identity of a status; the name and the initial an account menu shows. |
 

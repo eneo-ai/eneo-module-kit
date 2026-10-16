@@ -42,6 +42,9 @@ CALLBACK_PATH = "/api/auth/callback"
 # After Eneo fails to answer a token refresh, wait this long before asking
 # again; the current, still valid token stays in use meanwhile.
 REFRESH_RETRY_SECONDS = 10
+# The methods that change nothing. A WebSocket handshake is a GET too, but the socket it opens acts for the user, so it
+# is checked like a write.
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class ModuleUser(BaseModel):
@@ -634,16 +637,27 @@ class ModuleAuth:
         )
 
     def require_same_origin(self, connection: HTTPConnection) -> None:
-        # A WebSocket handshake is a GET too, but the socket it opens acts for
-        # the user, so it is checked like a mutation.
-        safe_methods = {"GET", "HEAD", "OPTIONS"}
-        if isinstance(connection, Request) and connection.method in safe_methods:
+        if isinstance(connection, Request) and connection.method in SAFE_METHODS:
             return
         origin = canonical_origin(connection.headers.get("origin") or "", origin_only=True)
         if origin != self.settings.module_origin:
             raise _refusal(
                 connection, HTTPException(status_code=403, detail="Invalid request origin")
             )
+
+    def require_expected_user(self, connection: HTTPConnection, session: ModuleSession) -> None:
+        """409 ``user_changed`` when the page that sent the request is not the session's user's.
+
+        A browser has one cookie for every tab: a login in one tab replaces the session under a page open in another,
+        which would go on writing as the new person. The page names its user in ``X-Expected-User`` (an id, not a
+        secret). A write must name the session's user; a read may name nobody (an ``<img src>`` or a navigation sends
+        no header of the page's), but one it names must be the session's.
+        """
+        expected = connection.headers.get("x-expected-user")
+        write = not (isinstance(connection, Request) and connection.method in SAFE_METHODS)
+        if expected != session.user.id and (expected is not None or write):
+            logger.info("A request was refused: its page names another user than the session's, or none")
+            raise _refusal(connection, HTTPException(status_code=409, detail="user_changed"))
 
     @staticmethod
     def session_from_request(connection: HTTPConnection) -> ModuleSession:

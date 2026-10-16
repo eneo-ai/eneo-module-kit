@@ -22,10 +22,10 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 /** A signed-in page (the gate has begun it) whose requests the stub answers in turn. */
 function signedInPage(t: import("node:test").TestContext, answers: Array<() => Response | Promise<Response>>) {
   const state = createSessionState();
-  const calls: Array<{ url: string; method: string }> = [];
+  const calls: Array<{ url: string; method: string; headers: Headers }> = [];
   const browserFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), method: init?.method ?? "GET" });
+    calls.push({ url: String(url), method: init?.method ?? "GET", headers: new Headers(init?.headers) });
     return (answers.shift() ?? (() => ok({})))();
   }) as typeof fetch;
   const end = state.begin(anna);
@@ -146,6 +146,52 @@ test("while signed out nothing leaves the page but the login's own routes: a rea
   const status = await fetchWithSession("/api/auth/status");
   assert.equal(status.status, 200, "the session's own routes always go: the new login is asked of them");
   assert.equal(calls.at(-1)?.url, "/api/auth/status");
+});
+
+test("a write names the page's user, so the module refuses it under someone else's session; a read names nobody", async (t) => {
+  const { calls, fetchWithSession } = signedInPage(t, []);
+  await fetchWithSession("/api/eneo/runs/", { method: "POST", headers: { "Idempotency-Key": "run:r1" }, body: "{}" });
+  await fetchWithSession("/api/eneo/runs/run-1/", { method: "PATCH", body: "{}" });
+  await fetchWithSession("/api/eneo/runs/run-1/");
+  assert.deepEqual(
+    calls.map((call) => call.headers.get("X-Expected-User")),
+    ["user-1", "user-1", null],
+  );
+  assert.equal(calls[0].headers.get("Idempotency-Key"), "run:r1", "the page's own headers go as they were");
+});
+
+test("a page no gate holds names nobody", async (t) => {
+  const browserFetch = globalThis.fetch;
+  const sent: Headers[] = [];
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    sent.push(new Headers(init?.headers));
+    return ok({});
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = browserFetch;
+  });
+  await createFetchWithSession(createSessionState())("/api/eneo/runs/", { method: "POST" });
+  assert.equal(sent[0].has("X-Expected-User"), false);
+});
+
+test("someone else's session under the page (409 user_changed) covers it as an end, and the write is not sent again", async (t) => {
+  const userChanged = () =>
+    new Response(JSON.stringify({ detail: "user_changed" }), { status: 409, headers: { "content-type": "application/json" } });
+  const { state, calls, fetchWithSession } = signedInPage(t, [userChanged]);
+  await assert.rejects(fetchWithSession("/api/eneo/runs/", { method: "POST", headers: { "Idempotency-Key": "run:r1" } }), is401);
+  assert.equal(state.signedOut, true, "the sign-in dialog opens over the page");
+  await settle();
+  assert.equal(calls.length, 1, "never sent as the other person");
+});
+
+test("Eneo's own 409 is an answer to show", async (t) => {
+  const { state, fetchWithSession } = signedInPage(t, [
+    () => new Response(JSON.stringify({ code: "flow_run_idempotency_conflict", detail: "Already sent" }), { status: 409 }),
+  ]);
+  const answer = await fetchWithSession("/api/eneo/runs/", { method: "POST" });
+  assert.equal(answer.status, 409);
+  assert.deepEqual(await answer.json(), { code: "flow_run_idempotency_conflict", detail: "Already sent" }, "its body still unread");
+  assert.equal(state.signedOut, false);
 });
 
 test("only the backend's own mark says the login ended: Eneo's own 401 is an answer to show", async (t) => {

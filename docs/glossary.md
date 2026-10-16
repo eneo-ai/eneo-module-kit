@@ -21,6 +21,7 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Session end | The fixed end of a login: the earlier of `SESSION_MAX_AGE_MINUTES` and Eneo's own session ceiling. |
 | Refresh | Renewing the module-user token through Eneo, at half its lifetime, one refresh in flight per session. |
 | Same-origin check | A write (and a WebSocket handshake) must carry an `Origin` equal to the module's own (`MODULE_PUBLIC_URL`), else 403. |
+| Expected user | The id of the user a page was opened for, which the page names on a write (`X-Expected-User`). A browser has one cookie for every tab, so a login in one tab can put someone else's session under a page in another; the BFF answers 409 `user_changed` then (`require_expected_user`). |
 | Proxy | The route `/api/eneo/{path}` that forwards the browser's requests to Eneo with both credentials. Denies everything until the module names a route. |
 | Rule (allowlist) | One allowed route of the proxy: methods and a pattern matched against the path after `/api/eneo/`. Made with `rule(...)`. |
 | Deny by default | Nothing is exposed until named: not a path, not a request header. |

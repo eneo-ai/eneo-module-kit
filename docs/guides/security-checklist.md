@@ -16,6 +16,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | One session per browser, ending when Eneo says | A new login ends the old session; the session ends at the earlier of `SESSION_MAX_AGE_MINUTES` and Eneo's ceiling; a renewal may only renew the same user in the same tenant | `auth.py` |
 | A refresh is single-flight, and a logout stays a logout | One refresh per session; a session deleted during it is not brought back | `auth.py` |
 | Writes come from the module's own origin | `require_same_origin` compares `Origin` with `MODULE_PUBLIC_URL` (write methods and WebSocket handshakes) | `auth.py`, `deps.py` |
+| A page writes only as its own user | `require_expected_user`: a write names the session's user in `X-Expected-User`, else 409 `user_changed`. The proxy applies it; `fetchWithSession` sends the header and covers the page on the 409 | `auth.py`, `deps.py`, `proxy.py`, `packages/ui/src/session/request.ts` |
 | Nothing is proxied until named | Rules match method and whole path; a path that could reach another Eneo route is a 403 first | `proxy.py` |
 | The browser chooses no credential and no framing header | A short request-header allowlist; the credentials come from the session | `proxy.py` |
 | Eneo's `Set-Cookie` and `Location` stay with the module; a redirect is an error | 502 `upstream_redirect` for the proxy, uploads and files | `proxy.py`, `transport.py` |
@@ -48,6 +49,7 @@ Headers on every answer (`web.py`), an unhandled error's 500 too; `create_app(se
 Tick each before a module goes live.
 
 - [ ] Every route of the module has `Depends(require_session)`. Every write (`POST`, `PUT`, `PATCH`, `DELETE`) and every WebSocket also has `Depends(require_same_origin)`.
+- [ ] Every write of the module's own routes has `Depends(require_expected_user)` too, as the proxy has, so a page under someone else's session cannot write as them. `unguarded_routes` does not check it.
 - [ ] A test fails when a guard is forgotten: `unguarded_routes` (copy from `packages/bff/tests/test_deps.py`) returns `[]` for the module's routers.
 - [ ] A route that is public on purpose is rare and written down. It still gets the body cap and nothing else: it must never return session, token or Eneo data.
 - [ ] A deployment accent is loaded through the kit's validated configuration and same-origin stylesheet. Do not interpolate unchecked colour input into CSS. See [K10](../decisions/k10-branding-without-templating.md).

@@ -1,5 +1,5 @@
 from typing import Annotated
-from fastapi import Cookie
+from fastapi import Cookie, Depends
 from fastapi.requests import HTTPConnection
 from .auth import SESSION_COOKIE, ModuleAuth, ModuleSession
 
@@ -19,6 +19,14 @@ async def require_session(
 def require_same_origin(connection: HTTPConnection) -> None:
     """Writes and WebSocket handshakes only from the module's own origin."""
     _auth(connection).require_same_origin(connection)
+
+
+async def require_expected_user(
+    connection: HTTPConnection, session: Annotated[ModuleSession, Depends(require_session)]
+) -> None:
+    """409 ``user_changed`` unless the page names the session's user in ``X-Expected-User``: a write (and a WebSocket
+    handshake) must, and a read that names someone must name them. Runs ``require_session`` first."""
+    _auth(connection).require_expected_user(connection, session)
 
 
 def upstream_auth_headers(connection: HTTPConnection) -> dict[str, str]:

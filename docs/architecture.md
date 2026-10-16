@@ -158,7 +158,7 @@ A refresh is due at half the token's lifetime, and only while a new token could 
 
 ## A proxied request
 
-Look at: the order of the checks. Nothing reaches Eneo until the session, the origin and the allowlist have each said yes.
+Look at: the order of the checks. Nothing reaches Eneo until the session, the origin, the page's user and the allowlist have each said yes.
 
 ```mermaid
 flowchart TB
@@ -168,7 +168,9 @@ flowchart TB
   s -->|"no"| e401["401, X-Auth-Required: session"]
   s -->|"yes"| o{"Origin is the module's? Only checked for writes"}
   o -->|"no"| e403a["403 Invalid request origin"]
-  o -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
+  o -->|"yes"| u{"X-Expected-User names the session's user? A write must name one; a read may name none"}
+  u -->|"no"| e409["409 user_changed"]
+  u -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
   a -->|"no"| e403b["403 Eneo resource is not exposed"]
   a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token. A value that is not ASCII is a 400"]
   h --> b["Read the body, at most MAX_BODY_BYTES: 413 when the stream passes it"]
@@ -281,7 +283,7 @@ sequenceDiagram
   P->>P: lift the cover, give the focus back
 ```
 
-Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
+Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
 
 ## Where the organisation's branding enters
 

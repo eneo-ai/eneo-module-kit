@@ -144,11 +144,12 @@ Stable for the UI package and for any other frontend:
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The static app; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
 
-A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
+A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403. A write through the proxy that does not name the session's user in `X-Expected-User` gets 409 `user_changed`. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
 
 The UI package's session client depends on four things in this surface:
 
 - The `X-Auth-Required: session` mark on a 401: it is how a request learns that the login ended, as opposed to Eneo's own 401.
+- `X-Expected-User` on a write, and the 409 `{"detail": "user_changed"}` answer: how a page learns that the session under it is someone else's.
 - `session_ends_in` and `refresh_in` in `/api/auth/status`: the warning and the keepalive.
 - `next` and `renew=1` on `/api/auth/login`: before the end a renewal is bound to the user signed in; after the end the backend refuses a renewal (`fel=utgangen`), so the page starts a login without `renew`.
 - The redirect `?fel=annan-anvandare` or `?fel=utgangen` when a renewal is refused: the value is part of the contract and is Swedish.

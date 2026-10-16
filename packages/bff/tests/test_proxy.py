@@ -93,6 +93,8 @@ class EneoProxyAuthTests(unittest.TestCase):
             SESSION_COOKIE,
             session_id,
         )
+        # The page names its user, as the UI package's fetchWithSession does on a write.
+        self.client.headers["X-Expected-User"] = "user-id"
 
     def setUp(self) -> None:
         self.build()
@@ -145,6 +147,20 @@ class EneoProxyAuthTests(unittest.TestCase):
         forwarded = {name.lower() for name in self.proxy_client.calls[0]["headers"]}
         self.assertNotIn("origin", forwarded)
         self.assertNotIn("referer", forwarded)
+
+    def test_a_write_must_name_the_sessions_user_before_eneo_hears_of_it(self) -> None:
+        origin = {"Origin": "https://module.example.test"}
+
+        response = self.client.post("/api/eneo/flows/flow-1/runs/", headers={**origin, "X-Expected-User": "someone-else"})
+        self.assertEqual((response.status_code, response.json()), (409, {"detail": "user_changed"}))
+        del self.client.headers["X-Expected-User"]
+        self.assertEqual(self.client.post("/api/eneo/flows/flow-1/runs/", headers=origin).status_code, 409)
+        self.assertEqual(self.proxy_client.calls, [])
+
+        # A read may name nobody, and a name is the module's: it never reaches Eneo.
+        self.assertEqual(self.client.get("/api/eneo/flows/").status_code, 200)
+        self.assertEqual(self.client.post("/api/eneo/flows/flow-1/runs/", headers={**origin, "X-Expected-User": "user-id"}).status_code, 200)
+        self.assertNotIn("x-expected-user", {name.lower() for name in self.proxy_client.calls[-1]["headers"]})
 
     def test_proxy_forwards_flow_discovery_across_the_users_spaces(self) -> None:
         response = self.client.get("/api/eneo/flows/?published_only=true&limit=200&offset=0")

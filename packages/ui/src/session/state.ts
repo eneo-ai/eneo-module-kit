@@ -25,6 +25,8 @@ export interface Question {
 
 export interface SessionState {
   readonly signedOut: boolean;
+  /** The id of the user the page was opened for, which `fetchWithSession` names on a write; null where no page holds the login. */
+  readonly expectedUser: string | null;
   /** Who is signed in instead of the page's user, while the page stays covered for them. */
   readonly otherUser: SessionUser | null;
   /** How many times a new login of the page's user has been confirmed; a page that shows the login's end starts over on each. */
@@ -120,6 +122,9 @@ export function createSessionState(): SessionState {
   return {
     get signedOut() {
       return signedOut;
+    },
+    get expectedUser() {
+      return pages > 0 && owner ? owner.id : null;
     },
     get otherUser() {
       return otherUser;

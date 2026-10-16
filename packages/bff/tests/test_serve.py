@@ -19,6 +19,7 @@ PUBLIC_NAMES = {
     "RESOURCE_ID",
     "require_session",
     "require_same_origin",
+    "require_expected_user",
     "upstream_auth_headers",
     "heavy_io_slot",
     "forward_upload",

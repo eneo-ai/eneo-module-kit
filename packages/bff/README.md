@@ -50,6 +50,7 @@ Run from the module's directory, with the environment of [configuration](https:/
 | `Settings`, `Organization`, `load_settings(*, default_organization=None, home_path="/")` | Configuration and its start-up validation. |
 | `require_session` | Route dependency: the caller's live session, else 401 with `X-Auth-Required: session` (a WebSocket handshake is refused). |
 | `require_same_origin` | Route dependency: writes and WebSocket handshakes only from the module's own origin, else 403. |
+| `require_expected_user` | Route dependency: the page names the session's user in `X-Expected-User`, else 409 `user_changed`. A write and a WebSocket handshake must name one, a read may name none. Runs `require_session` first. The proxy applies it. |
 | `upstream_auth_headers(request)` | The service key and `Authorization: Bearer <module-user token>`, for a call to Eneo from a module's route. |
 | `heavy_io_slot(request_or_websocket)` | Context manager yielding whether a module operation was admitted, without waiting. Keep it through upstream cleanup. |
 | `rule(methods, pattern)`, `ProxyRule`, `RESOURCE_ID` | One allowed proxy route, its type, and `[^/]+`. |
@@ -60,14 +61,14 @@ Run from the module's directory, with the environment of [configuration](https:/
 
 ## The proxy
 
-The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. Of Eneo's answer headers, `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security` and `Clear-Site-Data` are dropped, as are `Set-Cookie` and `Location`: a proxied answer carries the module's security headers and `Cache-Control: no-store`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
+The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. A write needs the module's origin and must name the session's user in `X-Expected-User` (`fetchWithSession` of the UI package does); the header never reaches Eneo. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. Of Eneo's answer headers, `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security` and `Clear-Site-Data` are dropped, as are `Set-Cookie` and `Location`: a proxied answer carries the module's security headers and `Cache-Control: no-store`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` and `require_expected_user` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
 
 ## Uploads
 
 An upload route has no `File(...)` parameter, because FastAPI reads a route's body before it runs the route's dependencies, and a big body would be taken before the session is checked. `forward_upload` reads it itself, after them:
 
 ```python
-@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin)])
+@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
 async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
@@ -108,6 +109,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 | 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
+| 409 | A route with `require_expected_user` (the proxy's): a write that does not name the session's user in `X-Expected-User`, or a request that names another | `{"detail": "user_changed"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |
 | 400 | A forwarded request header (the proxy's, or `Range`, `If-Range`, `Accept` of a file stream) whose value is not ASCII | `{"detail": ...}` |
 | 411 | An upload without `Content-Length` | `{"detail": ...}` |

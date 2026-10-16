@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleAuth, ModuleSession, ModuleUser
-from eneo_module_bff.deps import require_same_origin, require_session, upstream_auth_headers
+from eneo_module_bff.deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
 
 MODULE_ORIGIN = "https://module.example.test"
@@ -36,6 +36,20 @@ def build_app(module_public_url: str = MODULE_ORIGIN) -> tuple[FastAPI, ModuleAu
     @app.post("/write", dependencies=[Depends(require_session), Depends(require_same_origin)])
     async def write() -> dict[str, bool]:
         return {"ok": True}
+
+    # It runs require_session itself: a route that names only it is still behind a session.
+    @app.get("/named-read", dependencies=[Depends(require_expected_user)])
+    async def named_read() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.post("/named-write", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
+    async def named_write() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.websocket("/named-socket")
+    async def named_socket(websocket: WebSocket, _: None = Depends(require_expected_user)) -> None:
+        await websocket.accept()
+        await websocket.close()
 
     @app.get("/upstream", dependencies=[Depends(require_session)])
     async def upstream(request: Request) -> dict[str, str]:
@@ -231,6 +245,45 @@ class DependencyTests(unittest.TestCase):
             self.client.get("/upstream").json(),
             {"X-API-Key": "test-key", "Authorization": "Bearer module-user-token"},
         )
+
+    def test_a_write_must_name_the_sessions_user(self) -> None:
+        # One cookie for every tab: a login in one tab puts another person's session under a page open in another.
+        self.sign_in()
+        origin = {"Origin": MODULE_ORIGIN}
+
+        self.assertEqual(self.client.post("/named-write", headers={**origin, "X-Expected-User": "user-id"}).status_code, 200)
+        for named in ({"X-Expected-User": "someone-else"}, {"X-Expected-User": ""}, {}):
+            with self.subTest(named=named):
+                response = self.client.post("/named-write", headers={**origin, **named})
+
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.json(), {"detail": "user_changed"})
+
+    def test_a_read_may_name_nobody_but_one_it_names_must_be_the_sessions_user(self) -> None:
+        # An <img src> or a navigation sends no header of the page's.
+        self.sign_in()
+
+        self.assertEqual(self.client.get("/named-read").status_code, 200)
+        self.assertEqual(self.client.get("/named-read", headers={"X-Expected-User": "user-id"}).status_code, 200)
+        response = self.client.get("/named-read", headers={"X-Expected-User": "someone-else"})
+        self.assertEqual((response.status_code, response.json()), (409, {"detail": "user_changed"}))
+
+    def test_the_expected_user_rests_on_the_session(self) -> None:
+        response = self.client.get("/named-read", headers={"X-Expected-User": "user-id"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["x-auth-required"], "session")
+
+    def test_a_websocket_handshake_must_name_the_sessions_user_like_a_write(self) -> None:
+        self.sign_in()
+
+        with self.client.websocket_connect("/named-socket", headers={"X-Expected-User": "user-id"}):
+            pass
+        for named in ({"X-Expected-User": "someone-else"}, {}):
+            with self.subTest(named=named), self.assertRaises(WebSocketDisconnect) as refused:
+                with self.client.websocket_connect("/named-socket", headers=named):
+                    pass
+            self.assertEqual(refused.exception.code, 1008)
 
     def test_a_websocket_without_a_session_is_refused_before_it_is_accepted(self) -> None:
         with self.assertRaises(WebSocketDisconnect) as refused:
