@@ -38,10 +38,12 @@ createRoot(document.getElementById("root")!).render(
 heading) call it with `href`, `children` and the usual anchor attributes, and with `to`, the same address, which Astryx adds
 for routers that take their address as `to` (`useLinkComponent`, Astryx 0.6.3). So React Router's `Link` is passed as it is,
 and a component that takes `href` needs nothing more. A router whose link wants something else needs a small adapter of its own.
+Only a link to a page of the app opened in the same tab goes to it: one under `/api` (a file, the login), to another origin,
+with a `target` other than `_self` or with `download` stays a plain anchor, so the router never takes a file for a page.
 
 | Export | What it is |
 |---|---|
-| `ModuleProviders` | Colour mode, the built Eneo theme, Astryx's words in Swedish, the place its toasts (`useToast`) appear, and (with `linkComponent`) the app's link component, taking `href`, for Astryx's links. |
+| `ModuleProviders` | Colour mode, the built Eneo theme, Astryx's words in Swedish, the place its toasts (`useToast`) appear, and (with `linkComponent`) the app's link component, taking `href`, for Astryx's links to a page of the app; every other link stays a plain anchor. |
 | `ColorModeProvider`, `useColorMode()`, `readStoredColorMode()` | The mode is `localStorage["theme"]` (`light`, `dark`, `system`; the key and values next-themes used), read before the first render and written back by `setMode`. `useColorMode()` returns `{ mode, resolved, setMode }`. No inline script and no cookie; a module's first-paint script (the template's `public/color-mode.js`) applies the same key before the page's code runs. A switch marks `<html>` with `data-theme-switching` for the frames that apply it. |
 | `ModuleShell` | The page frame: top bar, skip link, one `role="main"` region. A page renders no `<main>` of its own. |
 | `BrandingProvider`, `Brand` | The organisation beside the product's name, from `GET /api/branding`, asked once. Until it answers (or when it fails) the lockup is the product name alone. `defaultLogo` is the module's own copy of the bundled logo. |

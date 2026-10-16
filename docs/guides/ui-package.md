@@ -117,15 +117,17 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 
 ## Links
 
-The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes them the app's router links, through Astryx's `LinkProvider`. The component receives the props of an anchor, `href` first (`href`, `children` and the usual anchor attributes), and also `to`, the same address, which Astryx adds for routers that take their address as `to`. So React Router's `Link` is passed as it is, and a component that takes `href` needs nothing more:
+The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes those that go to a page of the app the app's router links, through Astryx's `LinkProvider`. The component receives the props of an anchor, `href` first (`href`, `children` and the usual anchor attributes), and also `to`, the same address, which Astryx adds for routers that take their address as `to`. So React Router's `Link` is passed as it is, and a component that takes `href` needs nothing more:
 
 ```tsx
 <ModuleProviders linkComponent={Link}>   {/* Link from "react-router" */}
 ```
 
-A router whose link wants something else needs a small adapter of its own. (A test in `packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.) The template's `main.tsx` still wraps `Link` in a small `RouterLink` that turns `href` into `to`: it predates this and is not needed.
+A router whose link wants something else needs a small adapter of its own. (`packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.)
 
-Without `linkComponent` the links are plain anchors and a click reloads the page. A link that leaves the app for another origin or for the BFF (`/api/auth/login`) is a plain `<a>`, as the template's sign-in page does.
+Only a page of the app opened in the same tab is the router's. Every other link stays a plain anchor that the router never sees, whatever component was given: a fragment, `mailto:`, another origin (also `//host`), a path under `/api` (a file of the backend, the login), a `target` other than `_self`, and a `download`. A router link to `/api/...` would be a navigation to a path the router has no page for. `packages/ui/tests/links.test.ts` presses each kind.
+
+Without `linkComponent` every link is a plain anchor and a click on one to a page reloads the page.
 
 ## Branding
 
@@ -197,4 +199,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

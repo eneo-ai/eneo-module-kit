@@ -396,7 +396,7 @@ The UI package, the template and the image:
 | Topic | Path | Tests |
 |---|---|---|
 | Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
-| Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
+| Providers, shell, which links are the router's | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `links.test.ts`, `shell.test.ts` |
 | Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
 | Which version runs, copying | `packages/ui/src/VersionInfo.tsx`, `CopyButton.tsx` | `version-info.test.ts`, `copy-button.test.ts` |
 | The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |

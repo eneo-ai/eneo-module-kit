@@ -1,4 +1,3 @@
-import type { AnchorHTMLAttributes } from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link } from "react-router";
@@ -11,15 +10,11 @@ import "@eneo-ai/module-kit/base.css";
 import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
 import { App } from "./App";
 
-// The design system's links (the brand in the top bar) go to the router, not the server.
-function RouterLink({ href, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
-  return <Link to={href} {...rest} />;
-}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <ModuleProviders linkComponent={RouterLink}>
+      {/* The design system's links to a page of the app (the brand in the top bar) go to the router, not the server; the kit keeps the rest plain anchors. */}
+      <ModuleProviders linkComponent={Link}>
         {/* defaultLogo: the module's own copy of the bundled logo (public/brand/...), for an organisation whose logo is "default". */}
         <BrandingProvider>
           <App />
