@@ -83,7 +83,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `@eneo-ai/module-kit` | The code, below. |
 | `@eneo-ai/module-kit/layers.css` | `@layer reset, astryx-base, astryx-theme;` Import it first, so the layers have their order. |
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
-| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, no transition while the colour mode switches (`data-theme-switching`), forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose: it wins over the design system's layered styles. |
 | `@eneo-ai/module-kit/session` | The session client, below. |
 | `@eneo-ai/module-kit/templates/eneo-module-page.tsx`, `@eneo-ai/module-kit/templates/eneo-signin.tsx` | Reference TSX source used by the Astryx CLI. Adapt it into the owning module route. |
 
@@ -108,8 +108,9 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 ## Colour mode
 
 - The key is `localStorage["theme"]` with the values `light`, `dark`, `system`: the key and values next-themes used, so a person's choice made in an app on it carries over ([K9](../decisions/k09-colour-mode-in-the-ui-package.md)).
-- It is read when the provider first renders, so the first paint is already in the right mode, and passed to Astryx's `<Theme mode>`, which sets `data-theme` on the document for `light` and `dark` (for `system` it sets none, and the browser's preference decides).
-- There is no inline script and no cookie: the page's Content-Security-Policy has no `unsafe-inline` ([K4](../decisions/k04-static-ui-served-by-the-bff.md)). A module must not add one to fix a flash of the wrong mode.
+- Before the page's code has run, the template's first-paint script sets it: `web/public/color-mode.js`, which `web/index.html` loads in its head, sets `data-theme` on the document for a stored `light` or `dark` and nothing for `system`. It is a file of the page's own origin, so the Content-Security-Policy, which has no `unsafe-inline` ([K4](../decisions/k04-static-ui-served-by-the-bff.md)), allows it; a module must not add an inline script instead. It reads the same key as the provider (`COLOR_MODE_KEY`).
+- The provider reads the choice when it first renders and passes it to Astryx's `<Theme mode>`, which sets `data-theme` on the document for `light` and `dark` (for `system` it sets none, and the browser's preference decides). No cookie.
+- For the frames that apply a new mode, `<html>` carries `data-theme-switching`, and a rule in `base.css` turns every transition off: the surfaces and the text change at once, and no control fades in after them.
 - `system` follows `prefers-color-scheme` and its changes. A choice made in another tab reaches this one (the `storage` event).
 - Storage that is missing or throws is not an error: no choice is `system`, and a choice still applies for the visit.
 - A module's own menu uses `useColorMode()`: the template's `AccountMenu` has the three choices.

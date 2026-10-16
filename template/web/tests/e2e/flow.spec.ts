@@ -179,6 +179,35 @@ test.describe("colour mode", () => {
     const scheme = await page.evaluate(() => getComputedStyle(document.querySelector("[data-astryx-theme]")!).colorScheme);
     expect(scheme).toContain("dark");
   });
+
+  test("before the page's code has run, the stored choice is already the document's (public/color-mode.js)", async ({ page }) => {
+    // The app's code never arrives: what the document shows is the first-paint script's and the stylesheets'.
+    declare(page, [{ requestFailed: /GET .*\/assets\/[^/]+\.js: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/assets\/[^/]+\.js\]/ }]);
+    await page.route("**/assets/*.js", (route) => route.abort());
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(() => localStorage.setItem("theme", "dark"));
+    await page.goto("/");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), "the theme's own rule for the mode applies").toBe("dark");
+    expect(await page.locator("#root").innerHTML(), "and React has drawn nothing").toBe("");
+
+    // System leaves the choice to the browser, as the design system does (init scripts run in the order they were added).
+    await page.addInitScript(() => localStorage.setItem("theme", "system"));
+    await page.reload();
+    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+  });
+});
+
+test.describe("without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("the page says in Swedish that it needs JavaScript", async ({ page }) => {
+    await page.goto("/");
+    // Playwright's text matchers pass over <noscript>; the element itself is what is shown when scripts are off.
+    const notice = page.locator("noscript");
+    await expect(notice).toBeVisible();
+    expect(await notice.textContent()).toBe("Eneo-modul kräver JavaScript. Aktivera det i webbläsaren och ladda om sidan.");
+  });
 });
 
 test.describe("when Eneo cannot list the flows", () => {

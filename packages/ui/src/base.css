@@ -21,6 +21,12 @@
 [popover]:has(> .astryx-popover > .astryx-dropdown-menu) { max-height: none; }
 .astryx-dropdown-menu { max-height: min(30rem, calc(100dvb - 5rem)); }
 
+/* While the colour mode changes (ColorModeProvider marks <html> for the frames that apply it) nothing fades: the surfaces
+   and the text change at once, and a control that faded behind them would look late. */
+[data-theme-switching] *,
+[data-theme-switching] *::before,
+[data-theme-switching] *::after { transition: none !important; }
+
 /* A heading takes the focus when its state appears, so a screen reader starts there; it is not a control, and a ring
    on it would only look like one. A page marks such a heading data-phase-heading (and tabindex -1). */
 [data-phase-heading]:focus { outline: none; }

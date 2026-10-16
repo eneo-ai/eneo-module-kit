@@ -16,7 +16,7 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   ```
   After the release, in a module's own folder: `cp .env.example .env && docker compose up --build`. `docker compose up` merges
   `docker-compose.override.yml` (the local build, port 3001, the stub Eneo); production runs `docker-compose.yml` alone.
-- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts` and `<title>` in `web/index.html`, and
+- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts`, `<title>` and `<noscript>` in `web/index.html`, the icons in `web/public/`, and
   the image's name in `docker-compose.yml` to `ghcr.io/<owner>/<repository>` of the module's repository (CI checks it).
 - **Settings:** `.env.example` lists every variable. Register the module in Eneo's admin (module key, callback URL
   `MODULE_PUBLIC_URL/api/auth/callback`, service key).

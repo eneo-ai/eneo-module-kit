@@ -1,8 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type ColorMode = "light" | "dark" | "system";
 
-/** The key and values next-themes used, so a person's choice made in an app on it carries over (design K9). */
+/** The key and values next-themes used, so a person's choice made in an app on it carries over (design K9). A module's first-paint script (the template's `public/color-mode.js`) reads the same key. */
 export const COLOR_MODE_KEY = "theme";
 
 const MODES: readonly string[] = ["light", "dark", "system"];
@@ -30,6 +30,19 @@ export function readStoredColorMode(storage: Pick<Storage, "getItem"> | null = b
   }
 }
 
+/**
+ * A switch of the mode paints the surfaces and the text at once, so the design system's colour transitions (175 ms)
+ * would show as controls that lag behind the page. For the frames that apply the new mode `<html>` says so, and one
+ * static rule in base.css (`[data-theme-switching]`) turns every transition off. A rule and an attribute, not an inline
+ * style: it stands under `style-src 'self'`. Called from the event, before React has rendered, so it is there for the
+ * first frame that has the new colours.
+ */
+function markSwitching() {
+  const root = document.documentElement;
+  root.setAttribute("data-theme-switching", "");
+  requestAnimationFrame(() => requestAnimationFrame(() => root.removeAttribute("data-theme-switching")));
+}
+
 function prefersDark(): boolean {
   return typeof matchMedia === "function" && matchMedia(DARK).matches;
 }
@@ -48,17 +61,26 @@ const ColorModeContext = createContext<ColorModeValue | null>(null);
  * The colour mode of a static app: no server render has to agree with it, so the stored choice is the state's first
  * value and the first render is already in the right mode. The design system's `<Theme mode>` applies it (and tells
  * the document, for the browser's own controls); this holds the choice, follows the operating system for system,
- * and writes the choice back. No inline script, no cookie.
+ * and writes the choice back. No inline script, no cookie: the frames before React, while the page's scripts are on
+ * their way, are the module's first-paint script's (the template's `public/color-mode.js` reads the same key).
  */
 export function ColorModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ColorMode>(() => readStoredColorMode());
+  // The mode last set, for the handlers below to tell a change from the same again.
+  const modeRef = useRef(mode);
   const [dark, setDark] = useState(prefersDark);
 
   useEffect(() => {
     if (typeof matchMedia !== "function") return;
     const query = matchMedia(DARK);
-    const follow = () => setDark(query.matches);
-    follow();
+    let shown = query.matches;
+    setDark(shown);
+    const follow = () => {
+      if (query.matches === shown) return;
+      shown = query.matches;
+      markSwitching();
+      setDark(shown);
+    };
     query.addEventListener("change", follow);
     return () => query.removeEventListener("change", follow);
   }, []);
@@ -66,13 +88,20 @@ export function ColorModeProvider({ children }: { children: ReactNode }) {
   // Another tab's choice reaches this one.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key === COLOR_MODE_KEY || event.key === null) setModeState(readStoredColorMode());
+      if (event.key !== COLOR_MODE_KEY && event.key !== null) return;
+      const next = readStoredColorMode();
+      if (next === modeRef.current) return;
+      markSwitching();
+      modeRef.current = next;
+      setModeState(next);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const setMode = useCallback((next: ColorMode) => {
+    if (next !== modeRef.current) markSwitching();
+    modeRef.current = next;
     setModeState(next);
     try {
       browserStorage()?.setItem(COLOR_MODE_KEY, next);

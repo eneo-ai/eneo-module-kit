@@ -42,7 +42,7 @@ and a component that takes `href` needs nothing more. A router whose link wants 
 | Export | What it is |
 |---|---|
 | `ModuleProviders` | Colour mode, the built Eneo theme, Astryx's words in Swedish, the place its toasts (`useToast`) appear, and (with `linkComponent`) the app's link component, taking `href`, for Astryx's links. |
-| `ColorModeProvider`, `useColorMode()`, `readStoredColorMode()` | The mode is `localStorage["theme"]` (`light`, `dark`, `system`; the key and values next-themes used), read before the first render and written back by `setMode`. `useColorMode()` returns `{ mode, resolved, setMode }`. No inline script and no cookie. |
+| `ColorModeProvider`, `useColorMode()`, `readStoredColorMode()` | The mode is `localStorage["theme"]` (`light`, `dark`, `system`; the key and values next-themes used), read before the first render and written back by `setMode`. `useColorMode()` returns `{ mode, resolved, setMode }`. No inline script and no cookie; a module's first-paint script (the template's `public/color-mode.js`) applies the same key before the page's code runs. A switch marks `<html>` with `data-theme-switching` for the frames that apply it. |
 | `ModuleShell` | The page frame: top bar, skip link, one `role="main"` region. A page renders no `<main>` of its own. |
 | `BrandingProvider`, `Brand` | The organisation beside the product's name, from `GET /api/branding`, asked once. Until it answers (or when it fails) the lockup is the product name alone. `defaultLogo` is the module's own copy of the bundled logo. |
 | `VersionInfo` | Which build runs, from `GET /api/healthz`, read when shown: the release, the commit and the build time ("Okänd" when not known), a button that copies them as support details, and the release's and commit's pages when the repository is known. |
@@ -51,7 +51,7 @@ and a component that takes `href` needs nothing more. A router whose link wants 
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the
-brand's mark, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
+brand's mark, no transition while the colour mode switches, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
 page while the login has ended, and a menu's height past Astryx's 300 px cap, up to the window below the top bar).
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
