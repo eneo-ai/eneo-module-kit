@@ -53,5 +53,7 @@ run `npm run astryx -- docs eneo-module` from `web/`.
 ## Checks
 
 - Backend: `python -m unittest discover -s backend/tests -t backend` (from the module's folder).
-- Web: `npm run lint`, `npm run build`, and `npm run test:e2e` (builds first; starts the stub Eneo and the backend itself).
+- Web: `npm run lint`, `npm test` (the unit tests and the rules the code keeps: no network call outside `src/session.ts`),
+  `npm run build`, and `npm run test:e2e` (builds first; starts the stub Eneo and the backend itself;
+  `npm run test:prod` runs its production checks alone: headers, caching, routes, page weight, a release).
   `PYTHON`, if you set it for `test:e2e`, must be an absolute path to a python that has `eneo-module-bff`: a relative one fails.

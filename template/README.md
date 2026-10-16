@@ -22,8 +22,9 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   `MODULE_PUBLIC_URL/api/auth/callback`, service key).
 - **Add a route:** in `backend/routes.py` on `router`, behind `require_session`; to call Eneo, one `rule(...)` in `backend/main.py`.
 - **Add a page:** a route in `web/src/App.tsx` inside `RequireSession`; its states in `web/tests/e2e/screens.ts`.
-- **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm run test:e2e` (browsers and the accessibility
-  gate; builds first). If you set `PYTHON` for it, give an absolute path to a python that has `eneo-module-bff`.
+- **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm test` (unit tests and the code's rules),
+  `npm run test:e2e` (browsers, the accessibility gate and the production checks; builds first), or `npm run test:prod` for the
+  production checks alone. If you set `PYTHON` for them, give an absolute path to a python that has `eneo-module-bff`.
 - **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
   release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
 - **Release and deploy:** CI (`.github/workflows/ci.yml`) builds the image once and, on main, publishes it as `sha-<commit>` after
@@ -39,12 +40,14 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   [add backend routes](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md), and
   [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md) in the kit repository.
 - **The stub Eneo** (`stub-eneo/server.py`, development and tests only) signs everyone in as Erik Lund and answers what the backend
-  asks of Eneo. Control routes, all `POST`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses every token
+  asks of Eneo. Control routes, all `POST`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses the tokens
   from now on: the module's session ends at its next token refresh); `/__stub/session?ends_in=S&token_seconds=T` (the logins made
   after it end S seconds after the login, with tokens of T seconds the backend refreshes at half: `token_seconds=4` makes
   `end-session` take seconds, `ends_in=200` opens the five-minute warning at once; `reset` restores 28800 and 900);
   `/__stub/login-as?user=erik|sara` (who the next logins are, to see a renewal that signs in someone else);
-  `/__stub/flows?mode=normal|empty|error`. `web/tests/e2e/session-cover.spec.ts` uses them.
+  `/__stub/flows?mode=normal|empty|error`. Each holds for the logins of the caller's `stub_scope` cookie, which every browser
+  test has its own of (`web/tests/e2e/fixtures.ts`), so that tests running at once do not meet; a `curl` without it changes
+  what everyone else without one gets. `web/tests/e2e/session-cover.spec.ts` uses them.
 - **Sessions:** `RequireSession` (from `@eneo-ai/module-kit/session`) shows the sign-in screen, keeps the login, warns five
   minutes before its end and, when it has ended, covers the page with a dialog that asks for a new login in a window of its
   own (`/inloggad`, route in `App.tsx`). Call the backend with `fetchWithSession`; close a dialog of the page while

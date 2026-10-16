@@ -4,7 +4,8 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 
 // The built app, served by the module's backend, with the stub Eneo behind it: what runs in the image, minus the
 // container. Build first (`npm run build`). Ports are the pair of this checkout: set E2E_APP_PORT and E2E_STUB_PORT
-// when others are in use. One worker: the tests share one stub, and some of them change what it answers.
+// when others are in use. Two workers share the one stub: what a test's controls change holds for its own logins only
+// (its scope, fixtures.ts).
 const APP = Number(process.env.E2E_APP_PORT ?? 3011);
 const STUB = Number(process.env.E2E_STUB_PORT ?? 8011);
 
@@ -81,7 +82,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   // The JSON report is what `npm run ci:failure` reads from a failed CI job; it lies in the output folder, beside the traces.
   reporter: [["list"], ["json", { outputFile: "../../test-results/results.json" }]],
   use: {
@@ -120,6 +121,11 @@ export default defineConfig({
     { name: "tablet-landscape-webkit", testMatch: specs("a11y", "keyboard", "controls"), use: { ...touch(1024, 768), isMobile: false, ...webkit, colorScheme: "light" } },
     { name: "laptop-1440-webkit", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...webkit, colorScheme: "light" } },
     { name: "laptop-1440-firefox", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...firefox, colorScheme: "light" } },
+    // The production checks (tests/prod, `npm run test:prod`): what the backend sends with the built UI, its routes, the
+    // page's weight and a release that took away the files an open page names, in each engine.
+    { name: "prod-chromium", testDir: "../prod", use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
+    { name: "prod-webkit", testDir: "../prod", grepInvert: /@chromium/, use: { ...devices["Desktop Safari"], ...webkit, colorScheme: "light" } },
+    { name: "prod-firefox", testDir: "../prod", grepInvert: /@chromium/, use: { ...devices["Desktop Firefox"], ...firefox, colorScheme: "light" } },
   ],
   webServer: external ? undefined : servers,
 });

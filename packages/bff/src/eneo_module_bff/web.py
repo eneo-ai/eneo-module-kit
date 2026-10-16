@@ -1,9 +1,9 @@
 import re
+from mimetypes import guess_type
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
-from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 CONTENT_SECURITY_POLICY = "; ".join(
@@ -80,12 +80,40 @@ def add_security_headers(app: FastAPI, overrides: dict[str, str] | None = None) 
 # "." and ".."), names nothing: a 404, never the page, a file or a way past the /api rule.
 _NOT_A_NAME = re.compile(r"[\x00-\x1f\x7f\\]|(?:^|/)\.")
 
+# Under assets/ the build names every file by its content, so a new build has new names: such a file is kept for a year
+# and never asked for again. Everything else keeps its name (the page, the files beside it) and is asked for every time.
+ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+REVALIDATE = "no-cache"
+# A .br and a .gz the build writes beside a file (template/web/vite.config.ts), in the order a client that accepts both
+# is sent them. Never served by their own names.
+ENCODINGS = (("br", ".br"), ("gzip", ".gz"))
+_COMPRESSED = tuple(suffix for _, suffix in ENCODINGS)
 
-class _Assets(StaticFiles):
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        if _NOT_A_NAME.search(scope["path"]):
-            raise HTTPException(status_code=404)
-        return await super().get_response(path, scope)
+
+def etag_matches(if_none_match: str | None, current: str) -> bool:
+    """Whether the client already holds the body ``current`` names (a weak comparison, as for a GET)."""
+    if if_none_match is None:
+        return False
+    listed = {value.strip().removeprefix("W/") for value in if_none_match.split(",")}
+    return "*" in listed or current in listed
+
+
+def accepted_encodings(accept_encoding: str | None) -> set[str]:
+    """The content codings a client names with a quality above zero (``gzip``; ``br;q=0`` is not one)."""
+    accepted = set()
+    for part in (accept_encoding or "").split(","):
+        name, *parameters = (piece.strip() for piece in part.split(";"))
+        quality = 1.0
+        for parameter in parameters:
+            key, _, value = parameter.partition("=")
+            if key.strip().lower() == "q":
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+        if name and quality > 0:
+            accepted.add(name.lower())
+    return accepted
 
 
 def _file_under(root: Path, relative: str) -> Path | None:
@@ -100,24 +128,46 @@ def _file_under(root: Path, relative: str) -> Path | None:
     return None
 
 
-def serve_web(app: FastAPI, static_dir: Path) -> None:
-    """The built UI: its assets, and its one HTML file for every page of the app.
+def _file_response(request: Request, root: Path, relative: str, cache_control: str) -> Response:
+    """The file ``relative`` names inside ``root`` (``_file_under``), or a 404: a precompressed sibling of it to a client
+    that accepts one, the ETag of the body that goes out (FileResponse's), and a 304 when the client holds that body."""
+    # The resolved name, not the asked one: pathlib drops a trailing slash, so ``app.js.br/`` names ``app.js.br``.
+    if (file := _file_under(root, relative)) is None or file.name.endswith(_COMPRESSED):
+        raise HTTPException(status_code=404)
+    headers = {"Cache-Control": cache_control}
+    body = file
+    siblings = [(coding, _file_under(root, relative + suffix)) for coding, suffix in ENCODINGS]
+    if present := [(coding, sibling) for coding, sibling in siblings if sibling is not None]:
+        headers["Vary"] = "Accept-Encoding"
+        accepted = accepted_encodings(request.headers.get("accept-encoding"))
+        for coding, sibling in present:
+            if coding in accepted:
+                body, headers["Content-Encoding"] = sibling, coding
+                break
+    response = FileResponse(body, headers=headers, media_type=guess_type(file.name)[0], stat_result=body.stat())
+    if etag_matches(request.headers.get("if-none-match"), response.headers["etag"]):
+        kept = ("cache-control", "etag", "vary")
+        return Response(status_code=304, headers={name: response.headers[name] for name in kept if name in response.headers})
+    return response
 
-    Registered last. /api and a path under it, a path that names a file that is not there, and a path that names
-    nothing (``_NOT_A_NAME``) are a 404, never HTML and never a 500.
+
+def serve_web(app: FastAPI, static_dir: Path) -> None:
+    """The built UI: its files, and its one HTML file for every page of the app.
+
+    Registered last. /api and a path under it, a path under /assets or with a dot in its last segment that names no file,
+    a compressed sibling asked for by its name, and a path that names nothing (``_NOT_A_NAME``) are a 404, never HTML and
+    never a 500.
     """
     root = static_dir.resolve()
-    app.mount("/assets", _Assets(directory=root / "assets"), name="assets")
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     async def page(path: str, request: Request) -> Response:
         # The scope's path, not ``path``: the route's pattern drops one leading slash (``//api/x`` is ``/api/x``) and,
         # ending in ``$``, a trailing newline.
         asked = request.scope["path"].lstrip("/")
-        if _NOT_A_NAME.search(asked) or asked == "api" or asked.startswith("api/"):
+        if _NOT_A_NAME.search(asked) or asked == "api" or asked.startswith("api/") or asked.endswith(_COMPRESSED):
             raise HTTPException(status_code=404)
-        if "." in path.rsplit("/", 1)[-1]:
-            if (candidate := _file_under(root, path)) is not None:
-                return FileResponse(candidate)
-            raise HTTPException(status_code=404)
-        return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})
+        hashed = path.startswith("assets/")
+        if hashed or "." in path.rsplit("/", 1)[-1]:
+            return _file_response(request, root, path, ASSET_CACHE_CONTROL if hashed else REVALIDATE)
+        return _file_response(request, root, "index.html", REVALIDATE)

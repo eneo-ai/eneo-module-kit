@@ -94,8 +94,8 @@ flowchart TB
   lim --> kit["Kit routes: /health, /api/healthz, /api/auth/*, /api/branding*"]
   kit --> own["The module's routers, in the order given"]
   own --> prx["Proxy: /api/eneo/*"]
-  prx --> assets["/assets: files of the built UI"]
-  assets --> page["Any other path: index.html. A missing file, /api/*, a dotfile, and a path with a control character, a backslash or a dot segment are 404"]
+  prx --> assets["/assets: files of the built UI, named by their content, kept a year; a .br or .gz beside one to a browser that accepts it"]
+  assets --> page["Any other path: a file beside index.html, or index.html; asked for again each time (ETag, 304). A missing file, /api/*, a dotfile, and a path with a control character, a backslash or a dot segment are 404"]
 ```
 
 Source: `packages/bff/src/eneo_module_bff/app.py` (`create_app`). Routes added to the app after `create_app` returns come after the page and are never reached: use `routers=`. The security-headers middleware is the outermost, so even the body limit's 413 carries the headers.
@@ -310,7 +310,7 @@ Look at: two builds in one image. Node builds the UI to static files, Python ins
 ```mermaid
 flowchart LR
   subgraph build["Build"]
-    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist"]
+    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist with a .br and a .gz beside each script and stylesheet"]
     pkgs["Stage python-packages: pip install with hashes from requirements.lock, then the BFF"]
   end
   kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"until the release"| web
@@ -363,7 +363,8 @@ flowchart TB
   commit["A commit or pull request"] --> bff["bff: the suite at the lowest and the newest versions, pip-audit"]
   commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
   commit --> tb["template-backend: the template's tests on this commit's BFF"]
-  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers and the gate, in four parts"]
+  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers, the gate and the production checks, in five parts, main in two shards"]
+  commit --> tu["template-unit: the template's unit tests and the rules its code keeps"]
   commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
   commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
   commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]

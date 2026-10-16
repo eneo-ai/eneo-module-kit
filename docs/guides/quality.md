@@ -8,7 +8,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 
 ## What is checked, and where
 
-`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo. The projects are in `web/tests/e2e/playwright.config.ts`, which also says which specs each one runs:
+`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo, in two workers. The stub is one for both: each test's browser context has a scope of its own there (the `stub_scope` cookie of `web/tests/e2e/fixtures.ts`), so what a test sets with `stubControl` or `stubFlows`, an ended login included, holds for its own logins only. A context a test makes itself gets its scope at its first control: call one before it signs in. The projects are in `web/tests/e2e/playwright.config.ts`, which also says which specs each one runs:
 
 | Projects | For |
 |---|---|
@@ -16,6 +16,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | `phone-320-light`, `phone-390-light`, `phone-390-dark`, `laptop-1440-light`, `laptop-1440-dark`, `zoom-200`, `forced-colors`, `reduced-motion` | The gate's eight, in Chromium |
 | `tablet-portrait` (768 x 1024), `tablet-landscape` (1024 x 768), `landscape-844` (a phone on its side) | The gate on a tablet and on a phone on its side, in Chromium |
 | `phone-390-webkit`, `tablet-landscape-webkit`, `laptop-1440-webkit`, `laptop-1440-firefox` | The gate in the other engines ([below](#webkit-and-firefox)) |
+| `prod-chromium`, `prod-webkit`, `prod-firefox` | The production checks, in `web/tests/prod/` (`npm run test:prod` runs them alone) |
 
 | Check | Lives in | Runs in |
 |---|---|---|
@@ -31,10 +32,14 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | The checks themselves, against pages built to fail them | `harness.spec.ts` | `laptop-1440-light`, `laptop-1440-webkit`, `laptop-1440-firefox`: once in each engine |
 | No policy violation, no redirect, and no console error, uncaught error or failed request that the test did not declare ([below](#what-every-test-watches-for)) | The `sentinel` fixture of `fixtures.ts` | Every spec that imports `test` from it |
 | The sentinel itself, made to see each thing it fails a test for | `sentinel.spec.ts` | `chromium` |
+| The page's security headers on its files, the API and an error; the page asked for again with an ETag (304), the files under `/assets` kept a year; the scripts and stylesheets compressed for a browser that accepts it; no server banner | `tests/prod/headers.spec.ts` | The three `prod-` projects |
+| Each address of the app is its page, with no redirect; an address that is none of the app's is the page, which goes to the start; a missing file or API path is a 404 that is not the page; `HEAD` | `tests/prod/routes.spec.ts` | The three `prod-` projects |
+| The JS and CSS each page transfers, against its budget in the spec: the measured value rounded up to the next 5 KB. A new page adds its own; a change that raises one says why | `tests/prod/weight.spec.ts` | `prod-chromium` (the engine that reports transfer sizes) |
+| A page whose script a release took away: the backend's 404 for it is not the page and no cache keeps it, and the next visit starts the release | `tests/prod/stale-chunk.spec.ts` | The three `prod-` projects |
 
 ## A red CI job
 
-The browser tests run in CI as one job in four parts, each on a runner of its own and each naming its projects:
+The browser tests run in CI as one job in five parts, each naming its projects. A part runs in shards (Playwright's `--shard`), each on a runner of its own at the config's two workers; `main`, the longest, is in two:
 
 | Part | Runs |
 |---|---|
@@ -42,8 +47,9 @@ The browser tests run in CI as one job in four parts, each on a runner of its ow
 | `devices` | Both tablets and the phone on its side |
 | `webkit` | The gate in WebKit: a phone, a tablet and a laptop |
 | `firefox` | The gate in Firefox, on a laptop, with a sound server |
+| `prod` | The production checks in Chromium, WebKit and Firefox |
 
-A part that fails keeps its evidence: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the part's job: `web-main-results`, `web-devices-results`, `web-webkit-results` and `web-firefox-results`, and `template-web-main-results` and so on in the kit's own CI. Read it on your machine:
+A shard that fails keeps its evidence: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the shard's job (`web main 1 (of 2)`): `web-main-1-results`, `web-main-2-results`, `web-devices-1-results`, `web-webkit-1-results`, `web-firefox-1-results` and `web-prod-1-results`, and `template-web-main-1-results` and so on in the kit's own CI. Read it on your machine:
 
 ```bash
 npm run ci:failure                   # the latest CI run of the branch that is checked out
@@ -65,7 +71,7 @@ For any other failed job it prints the command that shows the job's log (`gh run
 | Part | Where |
 |---|---|
 | The report | `reporter` in `web/tests/e2e/playwright.config.ts` writes `web/test-results/results.json` on every run |
-| The parts and the upload | The `web` job of `.github/workflows/ci.yml` (`template-web` in the kit's own): its matrix names each part's projects, and its last step uploads a failed part's results |
+| The parts and the upload | The `web` job of `.github/workflows/ci.yml` (`template-web` in the kit's own): its matrix names each part's projects and shards, and its last step uploads a failed shard's results |
 | The script | `web/scripts/ci-failure.mjs`. It finds the artifact from the job's name: the name up to a parenthesis, a dash for each space, then `-results` |
 
 ## A test that fails only in CI

@@ -31,18 +31,23 @@ class StubEneoTests(unittest.TestCase):
 
     KEY = {"X-API-Key": server.API_KEY}
 
-    def ticket(self) -> str:
-        response, _ = self.call("GET", f"/module-login?module_key={server.MODULE_KEY}&redirect_uri=http://module.test/api/auth/callback&state=abc")
+    def ticket(self, browser: dict | None = None) -> str:
+        """A login's ticket; ``browser`` is the headers the browser sends to the stub (a test's scope cookie)."""
+        response, _ = self.call("GET", f"/module-login?module_key={server.MODULE_KEY}&redirect_uri=http://module.test/api/auth/callback&state=abc", browser)
         self.assertEqual(response.status, 303)
         location = response.getheader("Location")
         self.assertTrue(location.startswith("http://module.test/api/auth/callback?ticket="))
         self.assertTrue(location.endswith("&state=abc"), "the state comes back unchanged")
         return location.split("ticket=")[1].split("&")[0]
 
-    def token(self) -> str:
-        response, body = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
+    def login(self, browser: dict | None = None) -> dict:
+        """What the module's backend gets for a login: the ticket exchanged with the service key, and no cookie."""
+        response, body = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket(browser)})
         self.assertEqual(response.status, 200)
-        return body["access_token"]
+        return body
+
+    def token(self) -> str:
+        return self.login()["access_token"]
 
     def test_it_says_when_it_is_up(self) -> None:
         response, body = self.call("GET", "/health")
@@ -120,6 +125,33 @@ class StubEneoTests(unittest.TestCase):
         _, next_login = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket()})
         self.assertEqual(next_login["user"]["username"], "Erik Lund")
         self.assertEqual(self.call("POST", "/__stub/login-as?user=nobody")[0].status, 400)
+
+    def test_the_controls_hold_for_the_scope_that_set_them_and_its_logins_only(self) -> None:
+        # Two browser tests at once, each with its own scope cookie: what one sets does not reach the other's logins and calls.
+        mine, theirs = {"Cookie": "other=1; stub_scope=mine"}, {"Cookie": "stub_scope=theirs"}
+
+        def both(login: dict) -> dict:
+            return {**self.KEY, "Authorization": f"Bearer {login['access_token']}"}
+
+        self.call("POST", "/__stub/flows?mode=empty", mine)
+        self.call("POST", "/__stub/login-as?user=sara", mine)
+        self.call("POST", "/__stub/session?token_seconds=4", mine)
+        first, other, anyone = self.login(mine), self.login(theirs), self.login()
+        self.assertEqual((first["user"]["username"], first["expires_in"]), ("Sara Holm", 4))
+        for login in (other, anyone):
+            self.assertEqual((login["user"]["username"], login["expires_in"]), ("Erik Lund", server.TOKEN_SECONDS))
+        self.assertEqual(self.call("GET", "/api/v1/flows/", both(first))[1]["items"], [])
+        self.assertEqual(len(self.call("GET", "/api/v1/flows/", both(other))[1]["items"]), 2)
+        # A refresh stays in the login's scope, and the end of the session ends only the scope's tokens.
+        _, refreshed = self.call("POST", f"/api/v1/module-auth/{server.MODULE_KEY}/token/refresh/", both(first))
+        self.call("POST", "/__stub/end-session", mine)
+        for login in (first, refreshed):
+            self.assertEqual(self.call("GET", "/api/v1/flows/", both(login))[0].status, 401)
+        for login in (other, anyone):
+            self.assertEqual(self.call("GET", "/api/v1/flows/", both(login))[0].status, 200)
+        self.call("POST", "/__stub/end-session")
+        self.assertEqual(self.call("GET", "/api/v1/flows/", both(anyone))[0].status, 401, "a call without a scope ends the logins without one")
+        self.assertEqual(self.call("GET", "/api/v1/flows/", both(other))[0].status, 200)
 
 
 if __name__ == "__main__":
