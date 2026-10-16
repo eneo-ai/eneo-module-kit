@@ -46,10 +46,11 @@ Run from the module's directory, with the environment of [configuration](https:/
 | Name | What it is |
 |---|---|
 | `create_app(settings=None, *, title, routers, proxy_rules, forward_request_headers, static_dir, security_headers, http_client)` | Builds the app. `settings=None` loads the environment. |
-| `serve(app, *, host="0.0.0.0", port=3001, **overrides)` | Runs it: one worker, no access log, bounded WebSocket buffers, stops within 8 s of SIGTERM. Refuses `workers=` and `access_log=`. |
+| `serve(app, *, host="0.0.0.0", port=3001, **overrides)` | Runs it: one worker, no access log, no `Server` header, bounded WebSocket buffers, stops within 8 s of SIGTERM. Refuses `workers=` and `access_log=`. |
 | `Settings`, `Organization`, `load_settings(*, default_organization=None, home_path="/")` | Configuration and its start-up validation. |
 | `require_session` | Route dependency: the caller's live session, else 401 with `X-Auth-Required: session` (a WebSocket handshake is refused). |
 | `require_same_origin` | Route dependency: writes and WebSocket handshakes only from the module's own origin, else 403. |
+| `require_expected_user` | Route dependency: the page names the session's user in `X-Expected-User`, else 409 `user_changed`. A write and a WebSocket handshake must name one, a read may name none. Runs `require_session` first. The proxy applies it. |
 | `upstream_auth_headers(request)` | The service key and `Authorization: Bearer <module-user token>`, for a call to Eneo from a module's route. |
 | `heavy_io_slot(request_or_websocket)` | Context manager yielding whether a module operation was admitted, without waiting. Keep it through upstream cleanup. |
 | `rule(methods, pattern)`, `ProxyRule`, `RESOURCE_ID` | One allowed proxy route, its type, and `[^/]+`. |
@@ -60,14 +61,14 @@ Run from the module's directory, with the environment of [configuration](https:/
 
 ## The proxy
 
-The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
+The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. A write needs the module's origin and must name the session's user in `X-Expected-User` (`fetchWithSession` of the UI package does); the header never reaches Eneo. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. Of Eneo's answer headers, `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security`, `Clear-Site-Data`, `X-Content-Type-Options` and the CORS headers (`Access-Control-Allow-*`, `Access-Control-Expose-Headers`) are dropped, as are `Set-Cookie` and `Location`: a proxied answer carries the module's security headers and `Cache-Control: no-store`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` and `require_expected_user` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
 
 ## Uploads
 
 An upload route has no `File(...)` parameter, because FastAPI reads a route's body before it runs the route's dependencies, and a big body would be taken before the session is checked. `forward_upload` reads it itself, after them:
 
 ```python
-@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin)])
+@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
 async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
@@ -95,7 +96,9 @@ Stable for the UI package and for any other frontend.
 | `GET /api/branding/theme.css` | The validated deployment accent as `text/css`, or a harmless comment with no override. No session needed; no user data or cookie. `Cache-Control: public, max-age=300`, content ETag and `nosniff`. A matching `If-None-Match` (including weak, listed or wildcard validators) returns 304 with no body. A changed accent produces a different ETag; cached colours can remain until the five-minute freshness period ends. |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
+| anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
+
+There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: the slash twin of a route (`/api/healthz/`) is a 404, never a redirect. Every answer, an unhandled error's 500 included, carries the security headers ([security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md)) unless its route set its own, and an answer under `/api` gets `Cache-Control: no-store` unless its route says how it may be kept.
 
 ## Answers the package gives
 
@@ -106,6 +109,7 @@ Stable for the UI package and for any other frontend.
 | 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
+| 409 | A route with `require_expected_user` (the proxy's): a write that does not name the session's user in `X-Expected-User`, or a request that names another | `{"detail": "user_changed"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |
 | 400 | A forwarded request header (the proxy's, or `Range`, `If-Range`, `Accept` of a file stream) whose value is not ASCII | `{"detail": ...}` |
 | 411 | An upload without `Content-Length` | `{"detail": ...}` |
@@ -119,6 +123,7 @@ Stable for the UI package and for any other frontend.
 | 503 | No upload slot or shared heavy-operation capacity. Headers `Retry-After: 2`, `Connection: close` | `{"error": "uploads_busy", ...}` |
 | 408 | The upload body exceeds its total or inactivity receive deadline. Header `Connection: close` | `{"error": "upload_receive_timeout", ...}` |
 | 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
+| 500 | An error no route handled. Headers: the security headers, `Cache-Control: no-store` | `Internal Server Error` (text) |
 | other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
 
 A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid`. Two Swedish query values are read by the UI package: `fel=utgangen` and `fel=annan-anvandare`.
@@ -135,7 +140,7 @@ A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_s
   an upload's own forwarding budget). Upload reception has total and inactivity deadlines.
 - One process, one replica: sessions live in memory. `serve()` fixes one worker and turns the access log off,
   because the callback URL carries a login ticket.
-- Nothing in the package configures logging: a module sets up its own.
+- The package configures one thing about logging: `create_app` sets the `httpx2` and `httpcore2` loggers to WARNING, because their INFO lines carry full URLs and a signed file URL is a credential. A failed call to Eneo is logged by the kind of its error, never its text, which can quote a token, the service key or a signed URL. A module sets up the rest.
 
 More in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/design.md) section 6 and the [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md).
 

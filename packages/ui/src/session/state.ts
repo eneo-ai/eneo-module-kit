@@ -25,6 +25,8 @@ export interface Question {
 
 export interface SessionState {
   readonly signedOut: boolean;
+  /** The id of the user the page was opened for, which `fetchWithSession` names on a write; null where no page holds the login. */
+  readonly expectedUser: string | null;
   /** Who is signed in instead of the page's user, while the page stays covered for them. */
   readonly otherUser: SessionUser | null;
   /** How many times a new login of the page's user has been confirmed; a page that shows the login's end starts over on each. */
@@ -32,8 +34,9 @@ export interface SessionState {
   /** How many requests wait for the new login. */
   readonly waiting: number;
   subscribe(listener: () => void): () => void;
-  /** A page signed in as `owner` from here on (the gate); the returned function ends it. */
-  begin(owner: SessionUser): () => void;
+  /** A page signed in as `owner` from here on (the gate); `reread` reads the status again (see `userChanged`); the returned
+   * function ends it. */
+  begin(owner: SessionUser, reread?: () => void): () => void;
   /** Starts a question to the backend: ask before sending, and give the question back with its answer. */
   ask(): Question;
   /**
@@ -48,6 +51,12 @@ export interface SessionState {
    * login is ended.
    */
   ended(question?: Question): boolean;
+  /**
+   * The session under the page is someone else's (a write found 409 user_changed): the login ends as above, and the
+   * status is read again, which says whose session it is. False, and nothing changes, for a question asked before the
+   * login changed.
+   */
+  userChanged(question?: Question): boolean;
   /**
    * A login window of the module says it is done. The backend has replaced the cookie and deleted the old session by then,
    * so from this word on everything asked before it, and the deadline of the old login, is about a login that is gone: the
@@ -69,6 +78,7 @@ interface Waiter {
 export function createSessionState(): SessionState {
   let pages = 0;
   let owner: SessionUser | null = null;
+  let reread: (() => void) | undefined;
   let signedOut = false;
   let otherUser: SessionUser | null = null;
   let endTimer: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +131,9 @@ export function createSessionState(): SessionState {
     get signedOut() {
       return signedOut;
     },
+    get expectedUser() {
+      return pages > 0 && owner ? owner.id : null;
+    },
     get otherUser() {
       return otherUser;
     },
@@ -134,8 +147,9 @@ export function createSessionState(): SessionState {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    begin(user) {
+    begin(user, read) {
       owner = user;
+      reread = read;
       pages += 1;
       arm();
       let open = true;
@@ -144,6 +158,7 @@ export function createSessionState(): SessionState {
         open = false;
         pages -= 1;
         if (pages > 0) return;
+        reread = undefined;
         clearTimeout(endTimer);
         settle(false);
         setSignedOut(false);
@@ -177,6 +192,11 @@ export function createSessionState(): SessionState {
       return true;
     },
     ended,
+    userChanged(question) {
+      if (!ended(question)) return false;
+      if (pages > 0) reread?.();
+      return true;
+    },
     loginWindowDone() {
       windowDoneAt = asked;
       revision += 1;

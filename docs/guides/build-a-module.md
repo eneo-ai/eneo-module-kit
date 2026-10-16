@@ -50,9 +50,9 @@ The template builds its app in a function instead, `build_app(settings=None, *, 
 python -c "from eneo_module_bff import serve; serve('main:app')"
 ```
 
-`serve()` listens on port 3001, runs one worker and keeps the access log off. It refuses `workers=` and `access_log=`. Other uvicorn options pass through (`serve('main:app', port=3464)`).
+`serve()` listens on port 3001, runs one worker, keeps the access log off and sends no `Server` header. It refuses `workers=` and `access_log=`. Other uvicorn options pass through (`serve('main:app', port=3464)`).
 
-`static_dir` must hold an `assets/` directory, or the app refuses to start. A request for a path under `/api`, or for a file that is not there, is a 404, never the page.
+`static_dir` must hold an `assets/` directory, or the app refuses to start. A request for a path under `/api` (`//api/x` too), for a file that is not there, for a dotfile, or with a control character, a backslash or a `.` or `..` segment is a 404, never the page and never a 500.
 
 ## 3. What `create_app` gives you
 
@@ -65,7 +65,7 @@ python -c "from eneo_module_bff import serve; serve('main:app')"
 | `GET\|POST\|PATCH /api/eneo/{path}` | the proxy, for your `proxy_rules=` only |
 | anything else | the built UI, if `static_dir` is given |
 
-Your routes are matched after the kit's own and before the proxy and the page. They win over the proxy (also under `/api/eneo/`) and cannot replace a kit route. Add routes with `routers=`: a route added to the app after `create_app` returns is never reached. Details: [architecture](../architecture.md#how-the-app-is-assembled).
+There is no `/docs`, `/redoc` or `/openapi.json`, and a path is matched as written: `/api/notes/` for a route `/api/notes` is a 404, never a redirect. Your routes are matched after the kit's own and before the proxy and the page. They win over the proxy (also under `/api/eneo/`) and cannot replace a kit route. Add routes with `routers=`: a route added to the app after `create_app` returns is never reached. Details: [architecture](../architecture.md#how-the-app-is-assembled).
 
 ## 4. Guard every route you write
 
@@ -74,22 +74,22 @@ The kit adds no guard to your routes. Declare them yourself:
 | Route | Dependencies |
 |---|---|
 | Reads | `Depends(require_session)` |
-| Writes (`POST`, `PUT`, `PATCH`, `DELETE`) | `Depends(require_session)` and `Depends(require_same_origin)` |
-| WebSocket | both, in `dependencies=` or as parameters. A handshake acts for the user, so it is checked like a write. |
+| Writes (`POST`, `PUT`, `PATCH`, `DELETE`) | `Depends(require_session)`, `Depends(require_same_origin)` and `Depends(require_expected_user)` |
+| WebSocket | `require_session` and `require_same_origin`, in `dependencies=` or as parameters. A handshake acts for the user, so it is checked like a write. Not `require_expected_user`: a browser cannot set a header on a handshake. |
 
 ```python
-from eneo_module_bff import require_same_origin, require_session
+from eneo_module_bff import require_expected_user, require_same_origin, require_session
 
-@router.post("/api/notes", dependencies=[Depends(require_session), Depends(require_same_origin)])
+@router.post("/api/notes", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
 async def add_note() -> dict[str, bool]:
     return {"ok": True}
 ```
 
-`require_session` answers 401 with `X-Auth-Required: session`; `require_same_origin` answers 403. A route you leave public on purpose still gets the request body cap, because the cap looks at no session.
+`require_session` answers 401 with `X-Auth-Required: session`; `require_same_origin` answers 403; `require_expected_user` answers 409 `user_changed` when a write does not name the session's user in `X-Expected-User` (the page's `fetchWithSession` does), or a request names another: a login in another tab put someone else's session under the page. The proxy applies all three. A route you leave public on purpose still gets the request body cap, because the cap looks at no session.
 
 To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run.
 
-Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route it cannot check (a mount, a nested include) instead of passing it.
+Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route without `require_session`, a write or WebSocket without `require_same_origin`, a write without `require_expected_user`, and a route it cannot check (a mount, a nested include) instead of passing it.
 
 ## 5. Name the Eneo routes you expose
 
@@ -108,9 +108,9 @@ proxy_rules = [
 - The pattern is matched with `fullmatch`, and a trailing slash counts: `flows/` and `flows` are different paths.
 - A path with a `.` or `..` segment (written or percent-encoded), `?`, `#`, a control character or a backslash is refused before any rule is tried. What a rule matched is sent to Eneo encoded as that one path (a literal `%` in an id is sent as `%25`), so an id can never become a separator upstream.
 - A forwarded header whose value is not ASCII is a 400, and a URL longer than the HTTP client writes (65,536 characters once the path is encoded for Eneo) is a 414, on the proxy, uploads and file streams: Eneo hears nothing of either.
-- The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed.
+- The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed. A write must name the session's user in `X-Expected-User` (409 `user_changed` otherwise), which never reaches Eneo.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. Add more with `create_app(forward_request_headers=["X-Thing"])`. A credential or framing header (`Authorization`, `Cookie`, `Origin`, `Referer`, `X-API-Key`, `Proxy-Authorization`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`) is a `ValueError` when the app is built. The service key and the module-user token are always set by the module, whatever the browser sent.
-- Eneo's `Set-Cookie` and `Location` never reach the browser. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
+- Eneo's `Set-Cookie` and `Location` never reach the browser, nor its `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security`, `Clear-Site-Data`, `X-Content-Type-Options` and the CORS headers (`Access-Control-Allow-*`, `Access-Control-Expose-Headers`): a proxied answer carries the module's security headers and `Cache-Control: no-store`. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
 
 ## 6. Forward an upload
 
@@ -120,7 +120,7 @@ An upload route has no `File(...)` parameter: FastAPI reads a route's body befor
 from fastapi import Request
 from eneo_module_bff import forward_upload
 
-@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin)])
+@router.post("/api/upload/{flow_id}", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
 async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
@@ -197,6 +197,8 @@ The UI side of a login that can end while a page is open. Wrap every page that n
 - Signed in, it keeps the login: it asks the backend when the page is seen, when a login window says it is done, and when the backend wants Eneo's token renewed. It warns five minutes before the end.
 - When the login has ended it covers the page with a modal dialog that asks for a new login in place, so nothing on the page is lost.
 - A read waits for the new login and is sent once more. A write waits only if it carries an `Idempotency-Key`; otherwise it fails with `SessionExpiredError`.
+- A request no answer has begun for within 90 s fails with `RequestTimeoutError`, whose Swedish message the page shows beside a way to try again.
+- A write names the page's user (`X-Expected-User`). When the session under the page is someone else's, the backend answers 409 `user_changed`: the page is covered, the dialog says whom to sign in as, and the write fails with `SessionExpiredError`, never sent as them.
 - A dialog of your own page must be closed while `useSignedOut()` is true (`isOpen={open && !signedOut}`), with its state held above the dialog, so it is back as it was after the new login. Render page dialogs in place, inside the children of `RequireSession`.
 - `onIdentity(user)` is awaited before the page is shown: clear what belongs to someone else there.
 

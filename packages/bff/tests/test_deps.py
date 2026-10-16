@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleAuth, ModuleSession, ModuleUser
-from eneo_module_bff.deps import require_same_origin, require_session, upstream_auth_headers
+from eneo_module_bff.deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
 
 MODULE_ORIGIN = "https://module.example.test"
@@ -36,6 +36,20 @@ def build_app(module_public_url: str = MODULE_ORIGIN) -> tuple[FastAPI, ModuleAu
     @app.post("/write", dependencies=[Depends(require_session), Depends(require_same_origin)])
     async def write() -> dict[str, bool]:
         return {"ok": True}
+
+    # It runs require_session itself: a route that names only it is still behind a session.
+    @app.get("/named-read", dependencies=[Depends(require_expected_user)])
+    async def named_read() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.post("/named-write", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
+    async def named_write() -> dict[str, bool]:
+        return {"ok": True}
+
+    @app.websocket("/named-socket")
+    async def named_socket(websocket: WebSocket, _: None = Depends(require_expected_user)) -> None:
+        await websocket.accept()
+        await websocket.close()
 
     @app.get("/upstream", dependencies=[Depends(require_session)])
     async def upstream(request: Request) -> dict[str, str]:
@@ -65,8 +79,9 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
     """What a module author may have forgotten on the routes of ``routers``.
 
     Every route needs ``require_session``. A route that writes, and every WebSocket route (a handshake acts for the
-    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route this
-    cannot check (a mount, a raw route, a nested include) is reported, never passed over.
+    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route that writes
+    also needs ``require_expected_user``; a WebSocket route does not (a browser cannot name its user on a handshake).
+    A route this cannot check (a mount, a raw route, a nested include) is reported, never passed over.
 
     It walks the module's routers, not ``app.routes``: FastAPI keeps an included router as one object there.
     The template's test (Phase 3) reuses it.
@@ -75,9 +90,9 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
     for router in routers:
         for route in router.routes:
             if isinstance(route, APIWebSocketRoute):
-                label, writes = f"WebSocket {route.path}", True
+                label, writes, socket = f"WebSocket {route.path}", True, True
             elif isinstance(route, APIRoute):
-                label, writes = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS)
+                label, writes, socket = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS), False
             else:
                 problems.append(f"{getattr(route, 'path', '?')}: a {type(route).__name__} cannot be checked")
                 continue
@@ -86,6 +101,8 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
                 problems.append(f"{label}: no require_session")
             if writes and require_same_origin not in calls:
                 problems.append(f"{label}: no require_same_origin")
+            if writes and not socket and require_expected_user not in calls:
+                problems.append(f"{label}: no require_expected_user")
     return problems
 
 
@@ -106,9 +123,14 @@ class RouteWalkerTests(unittest.TestCase):
         @router.get("/api/by-its-own-dependency", dependencies=[Depends(module_dependency)])
         async def by_its_own_dependency() -> None: ...
 
-        @router.post("/api/write", dependencies=[Depends(require_session), Depends(require_same_origin)])
+        @router.post("/api/write", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
         async def write() -> None: ...
 
+        # require_expected_user runs require_session itself.
+        @router.patch("/api/write-by-the-user", dependencies=[Depends(require_same_origin), Depends(require_expected_user)])
+        async def write_by_the_user() -> None: ...
+
+        # A browser cannot name its user on a handshake: a socket needs no require_expected_user.
         @router.websocket("/api/socket", dependencies=[Depends(require_same_origin)])
         async def socket(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
 
@@ -120,8 +142,11 @@ class RouteWalkerTests(unittest.TestCase):
         @router.get("/api/open")
         async def open_route() -> None: ...
 
-        @router.delete("/api/write-without-origin", dependencies=[Depends(require_session)])
+        @router.delete("/api/write-without-origin", dependencies=[Depends(require_session), Depends(require_expected_user)])
         async def write_without_origin() -> None: ...
+
+        @router.put("/api/write-without-user", dependencies=[Depends(require_session), Depends(require_same_origin)])
+        async def write_without_user() -> None: ...
 
         @router.websocket("/api/socket-without-origin")
         async def socket_without_origin(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
@@ -134,6 +159,7 @@ class RouteWalkerTests(unittest.TestCase):
             [
                 "GET /api/open: no require_session",
                 "DELETE /api/write-without-origin: no require_same_origin",
+                "PUT /api/write-without-user: no require_expected_user",
                 "WebSocket /api/socket-without-origin: no require_same_origin",
                 "WebSocket /socket-without-session: no require_session",
             ],
@@ -231,6 +257,45 @@ class DependencyTests(unittest.TestCase):
             self.client.get("/upstream").json(),
             {"X-API-Key": "test-key", "Authorization": "Bearer module-user-token"},
         )
+
+    def test_a_write_must_name_the_sessions_user(self) -> None:
+        # One cookie for every tab: a login in one tab puts another person's session under a page open in another.
+        self.sign_in()
+        origin = {"Origin": MODULE_ORIGIN}
+
+        self.assertEqual(self.client.post("/named-write", headers={**origin, "X-Expected-User": "user-id"}).status_code, 200)
+        for named in ({"X-Expected-User": "someone-else"}, {"X-Expected-User": ""}, {}):
+            with self.subTest(named=named):
+                response = self.client.post("/named-write", headers={**origin, **named})
+
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.json(), {"detail": "user_changed"})
+
+    def test_a_read_may_name_nobody_but_one_it_names_must_be_the_sessions_user(self) -> None:
+        # An <img src> or a navigation sends no header of the page's.
+        self.sign_in()
+
+        self.assertEqual(self.client.get("/named-read").status_code, 200)
+        self.assertEqual(self.client.get("/named-read", headers={"X-Expected-User": "user-id"}).status_code, 200)
+        response = self.client.get("/named-read", headers={"X-Expected-User": "someone-else"})
+        self.assertEqual((response.status_code, response.json()), (409, {"detail": "user_changed"}))
+
+    def test_the_expected_user_rests_on_the_session(self) -> None:
+        response = self.client.get("/named-read", headers={"X-Expected-User": "user-id"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["x-auth-required"], "session")
+
+    def test_a_websocket_handshake_must_name_the_sessions_user_like_a_write(self) -> None:
+        self.sign_in()
+
+        with self.client.websocket_connect("/named-socket", headers={"X-Expected-User": "user-id"}):
+            pass
+        for named in ({"X-Expected-User": "someone-else"}, {}):
+            with self.subTest(named=named), self.assertRaises(WebSocketDisconnect) as refused:
+                with self.client.websocket_connect("/named-socket", headers=named):
+                    pass
+            self.assertEqual(refused.exception.code, 1008)
 
     def test_a_websocket_without_a_session_is_refused_before_it_is_accepted(self) -> None:
         with self.assertRaises(WebSocketDisconnect) as refused:

@@ -105,6 +105,6 @@ curl -s -b jar -c jar -X POST -H "Origin: $M" -w ' %{http_code}\n' "$M/api/auth/
 
 ## Limits of this setup
 
-- Over http: `COOKIE_SECURE=false` is for this only. In production it stays `true`.
+- Over http: `COOKIE_SECURE=false` is for this only. In production it stays `true`: start-up refuses `false` and the secrets `.env.example` publishes unless `MODULE_PUBLIC_URL` is `localhost`, `127.0.0.1` or `[::1]`, and a public URL over http unless its own host is.
 - The stub does not check the redirect URI, and it signs in anyone: Eneo does the real login. The module checks `state` itself.
 - For the UI with hot reload, see [new module](new-module.md#4-run-it-against-the-stub).

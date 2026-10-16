@@ -25,8 +25,8 @@ run `npm run astryx -- docs eneo-module` from `web/`.
 
 ## Rules
 
-- **Every API route needs `require_session`; a route that writes also needs `require_same_origin`.** Never remove them
-  to make a test pass. `backend/tests/test_routes.py` fails when one is missing.
+- **Every API route needs `require_session`; a route that writes also needs `require_same_origin` and
+  `require_expected_user`.** Never remove them to make a test pass. `backend/tests/test_routes.py` fails when one is missing.
 - **The proxy denies by default.** Add one `rule(...)` to `PROXY_RULES` per Eneo route the app calls, with the methods
   it needs, and a test for it. Do not add a catch-all.
 - Build UI from Astryx components. From `web/`: `npm run astryx -- build "<idea>"`, then

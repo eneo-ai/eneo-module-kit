@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import unittest
 from unittest.mock import patch
@@ -132,6 +133,41 @@ class AppFactoryTests(unittest.TestCase):
         self.assertEqual(client.get("/api/branding").json(), {"organization": None})
         # Without a login state the callback refuses and redirects; the module's route would have answered 200.
         self.assertEqual(client.get("/api/auth/callback").status_code, 303)
+
+    def test_the_app_publishes_no_api_documentation(self) -> None:
+        client = TestClient(create_app(make_settings(), http_client=self.injected_client()))
+
+        for path in ("/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"):
+            with self.subTest(path=path):
+                self.assertEqual(client.get(path).status_code, 404)
+
+    def test_a_slash_twin_of_a_route_is_a_404_never_a_redirect(self) -> None:
+        # Behind a proxy that ends TLS the redirect's Location says http://, which an https page refuses as mixed content.
+        client = TestClient(create_app(make_settings(), http_client=self.injected_client()), follow_redirects=False)
+
+        for path in ("/health/", "/api/healthz/", "/api/auth/status/", "/api/branding/"):
+            with self.subTest(path=path):
+                response = client.get(path)
+
+                self.assertEqual(response.status_code, 404)
+                self.assertNotIn("location", response.headers)
+
+    def test_the_http_clients_libraries_log_no_url_even_where_the_module_logs_everything(self) -> None:
+        # httpx2 logs each request's full URL at INFO, and a signed file URL carries its bearer token in the query.
+        root = logging.getLogger()
+        self.addCleanup(root.setLevel, root.level)
+        root.setLevel(logging.DEBUG)
+        for name in ("httpx2", "httpcore2"):
+            library = logging.getLogger(name)
+            self.addCleanup(library.setLevel, library.level)
+            library.setLevel(logging.NOTSET)
+
+        create_app(make_settings(), http_client=self.injected_client())
+
+        for name in ("httpx2", "httpcore2.http11", "httpcore2.connection"):
+            with self.subTest(logger=name):
+                self.assertFalse(logging.getLogger(name).isEnabledFor(logging.INFO))
+                self.assertTrue(logging.getLogger(name).isEnabledFor(logging.WARNING))
 
     def test_two_apps_share_no_state(self) -> None:
         first = create_app(make_settings(), http_client=self.injected_client())

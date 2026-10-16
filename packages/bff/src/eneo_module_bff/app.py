@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
@@ -40,6 +41,10 @@ def create_app(
     """
     if settings is None:
         settings = load_settings()
+    # httpx2 logs each request's full URL at INFO, and a signed file URL carries its bearer token in the query: the
+    # HTTP client's libraries stay at WARNING, whatever level the module logs at.
+    for library in ("httpx2", "httpcore2"):
+        logging.getLogger(library).setLevel(logging.WARNING)
     owns_client = http_client is None
     if http_client is None:
         # At once, not at start-up: the auth router needs its ModuleAuth before the app starts.
@@ -54,7 +59,17 @@ def create_app(
             if owns_client:
                 await http_client.aclose()
 
-    app = FastAPI(title=title, lifespan=lifespan)
+    app = FastAPI(
+        title=title,
+        lifespan=lifespan,
+        # No documentation routes: the schema describes a surface that is not for browsers, and is not left open on
+        # the module's origin.
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        # A slash twin of a route is a 404, never a 307 whose Location says http:// behind a proxy that ends TLS.
+        redirect_slashes=False,
+    )
     app.state.settings = settings
     app.state.http = http_client
     # One slot per file streaming at once (transport.stream_signed): the rest are 503, and the pool keeps room for the API.

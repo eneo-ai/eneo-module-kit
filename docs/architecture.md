@@ -89,13 +89,13 @@ Look at: the order a request meets things. Routes match in registration order, s
 
 ```mermaid
 flowchart TB
-  req["Request"] --> sec["Security headers on every response"]
+  req["Request"] --> sec["Security headers on every answer, a 500 too; Cache-Control no-store under /api unless the route sets its own"]
   sec --> lim["Body limit: 413 over the cap"]
   lim --> kit["Kit routes: /health, /api/healthz, /api/auth/*, /api/branding*"]
   kit --> own["The module's routers, in the order given"]
   own --> prx["Proxy: /api/eneo/*"]
   prx --> assets["/assets: files of the built UI"]
-  assets --> page["Any other path: index.html. A missing file and /api/* are 404"]
+  assets --> page["Any other path: index.html. A missing file, /api/*, a dotfile, and a path with a control character, a backslash or a dot segment are 404"]
 ```
 
 Source: `packages/bff/src/eneo_module_bff/app.py` (`create_app`). Routes added to the app after `create_app` returns come after the page and are never reached: use `routers=`. The security-headers middleware is the outermost, so even the body limit's 413 carries the headers.
@@ -158,7 +158,7 @@ A refresh is due at half the token's lifetime, and only while a new token could 
 
 ## A proxied request
 
-Look at: the order of the checks. Nothing reaches Eneo until the session, the origin and the allowlist have each said yes.
+Look at: the order of the checks. Nothing reaches Eneo until the session, the origin, the page's user and the allowlist have each said yes.
 
 ```mermaid
 flowchart TB
@@ -168,7 +168,9 @@ flowchart TB
   s -->|"no"| e401["401, X-Auth-Required: session"]
   s -->|"yes"| o{"Origin is the module's? Only checked for writes"}
   o -->|"no"| e403a["403 Invalid request origin"]
-  o -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
+  o -->|"yes"| u{"X-Expected-User names the session's user? A write must name one; a read may name none"}
+  u -->|"no"| e409["409 user_changed"]
+  u -->|"yes"| a{"Path stays on its route, and a rule names this method and path?"}
   a -->|"no"| e403b["403 Eneo resource is not exposed"]
   a -->|"yes"| h["Headers: the allowlist from the browser, then service key and module-user token. A value that is not ASCII is a 400"]
   h --> b["Read the body, at most MAX_BODY_BYTES: 413 when the stream passes it"]
@@ -177,7 +179,7 @@ flowchart TB
   up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
-  up -->|"any other status"| resp["Same status and body. Set-Cookie and Location dropped. Cache-Control private, no-store if Eneo sent none"]
+  up -->|"any other status"| resp["Same status and body. Set-Cookie, Location and Eneo's security and caching headers dropped; the module's added, Cache-Control no-store"]
 ```
 
 Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`) and `limits.py`. A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
@@ -281,7 +283,7 @@ sequenceDiagram
   P->>P: lift the cover, give the focus back
 ```
 
-Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
+Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. The page reads the status again at once, so the dialog says whom to sign in as. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
 
 ## Where the organisation's branding enters
 

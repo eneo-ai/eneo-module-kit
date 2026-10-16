@@ -293,18 +293,35 @@ class InvalidLengthTests(Case):
 class StreamingResponseTests(Case):
     async def test_a_body_sent_to_a_streaming_get_ends_the_stream_instead_of_failing_it_late(self) -> None:
         # A GET has no body. If one arrives anyway and passes the cap while the response is already streaming, the
-        # response is cut as if the client had gone: no error from "response already started".
+        # response is cut as if the client had gone: no error from "response already started". Driven as ASGI, with the
+        # body's bytes ready at once as a server has them buffered: a cut answer never finishes, which the test client
+        # refuses, and the server closes the connection.
         body = Lazy(400)
+        chunks = body.stream()
+        sent: list[dict] = []
 
-        response = await self.post("/api/stream", body, declare_length=False, headers={"Content-Type": "application/octet-stream"}, method="GET")
+        async def receive() -> dict:
+            return {"type": "http.request", "body": await anext(chunks), "more_body": True}
 
-        self.assertIn(response.status_code, (200, 413))
+        async def send(message: dict) -> None:
+            sent.append(message)
+
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET", "scheme": "http",
+            "path": "/api/stream", "raw_path": b"/api/stream", "query_string": b"", "root_path": "",
+            "headers": [(b"host", b"module.example.test"), (b"content-type", b"application/octet-stream")],
+        }
+
+        await self.app(scope, receive, send)
+
+        self.assertIn(sent[0]["status"], (200, 413))
         self.assertLessEqual(body.taken, CAP // MiB + 2)
 
 
 class ProxyBodyTests(Case):
     async def proxy(self, body: Lazy, **kwargs):
-        return await self.post("/api/eneo/things/", body, headers={"Content-Type": "application/octet-stream", "Origin": ORIGIN, **kwargs.pop("headers", {})}, **kwargs)
+        sent = {"Content-Type": "application/octet-stream", "Origin": ORIGIN, "X-Expected-User": "u", **kwargs.pop("headers", {})}
+        return await self.post("/api/eneo/things/", body, headers=sent, **kwargs)
 
     async def test_a_post_over_the_cap_is_413_and_never_reaches_eneo(self) -> None:
         declared, chunked = Lazy(500), Lazy(500)
