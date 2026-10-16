@@ -14,7 +14,7 @@ cpSync("src/base.css", "dist/base.css");
 
 // What was built is plain ESM that loads, with the public names a module imports.
 const built = await import(new URL("../dist/index.js", import.meta.url).href);
-const expected = ["BRANDING_DEADLINE_MS", "Brand", "BrandingProvider", "COLOR_MODE_KEY", "ColorModeProvider", "CopyButton", "ErrorPage", "LoadFailure", "LoadingShell", "ModuleProviders", "ModuleShell", "NotFoundPage", "OfflineBanner", "RouteEffects", "SlowWait", "VersionInfo", "createOnlineStatus", "eneoTheme", "lazyLoader", "onlineStatus", "readStoredColorMode", "useColorMode", "useConnection", "useLoaded", "useRouteReady"];
+const expected = ["BRANDING_DEADLINE_MS", "Brand", "BrandingProvider", "COLOR_MODE_KEY", "ColorModeProvider", "CopyButton", "ErrorPage", "LoadFailure", "LoadingShell", "ModuleProviders", "ModuleShell", "NotFoundPage", "OfflineBanner", "RouteEffects", "SlowWait", "VersionInfo", "createDrafts", "createOnlineStatus", "eneoTheme", "lazyLoader", "onlineStatus", "readStoredColorMode", "useColorMode", "useConnection", "useLoaded", "useRouteReady"];
 const missing = expected.filter((name) => !(name in built));
 if (missing.length > 0) {
   console.error(`dist/index.js does not export ${missing.join(", ")}`);

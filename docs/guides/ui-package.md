@@ -140,10 +140,11 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `lazyLoader(get)`, `useLoaded(loader)`, `LoadFailure({ children, keeps?, reload? })` | Code a page fetches when it first needs it (`lazyLoader(() => import("./Editor"))`): fetched once and kept, shared by pages that ask meanwhile. `useLoaded` gives `{ value, failed }`. A failed fetch is kept too: a browser keeps it per address, so there is no retry, and `LoadFailure` says what could not be fetched (and `keeps`, what a reload gives back) beside one action, "Ladda om sidan". Nothing reloads by itself. |
 | `RouteEffects({ path, entry, type, title?, children })`, `useRouteReady(ready)` | What a navigation gives the person, around the router's page: [below](#pages-and-navigation). |
 | `NotFoundPage({ productName, homeHref? })`, `ErrorPage({ productName, error, homeHref? })` | The pages that stand in for one that cannot be shown: [below](#pages-and-navigation). |
+| `createDrafts(prefix, storage?)` | What someone has typed but not sent, kept per person in this tab: [below](#drafts). |
 | `onlineStatus`, `createOnlineStatus(target?, now?)` | The page's one status, which the session client's requests report to, and a way to build one over a stand-in window (tests). A module's own transport reports with `onlineStatus.sending()`, `reportReachable(sent)` and `reportNetworkFailure()`. |
 | `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
 | `CopyButton({ text, label, name?, variant? })` | Copies `text` as plain text. A check replaces the copy icon and a screen reader hears "Kopierat" once; the words stay, so the button keeps its width. A copy that fails says "Kunde inte kopiera" until the next press. `name` is the accessible name when it says more than `label`, and starts with it. |
-| `Branding`, `BuildIdentity`, `ColorMode`, `Connection`, `Loader`, `OnlineStatus` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
+| `Branding`, `BuildIdentity`, `ColorMode`, `Connection`, `Drafts`, `DraftStorage`, `Loader`, `OnlineStatus` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
 
 ## Colour mode
 
@@ -194,6 +195,15 @@ The package imports no router: the module's router gives `RouteEffects` the path
 - Only a new path is a navigation: a page that writes `?run=` into the address changes its own state. The first load, and the redirect the first page sends the person on by before any page has its content, do none of it.
 - `SignInScreen`, `SignedInAgain` and the stand-in pages are ready at once. `RequireSession`'s waiting view is not.
 - `NotFoundPage` says "Sidan finns inte." at the address as it was typed, with "Till startsidan" (`homeHref`, default `/`); route it at `*`. `ErrorPage` is the router's error boundary: "Sidan kunde inte visas.", that the module may have been updated since the page was opened, "Ladda om sidan" and "Till startsidan"; the error goes to the console. It covers a page whose code cannot be fetched (a tab that was open across a release asks for files that are gone) and a page that threw. Nothing reloads by itself: a person may be in the middle of something, and a reload is theirs to choose. Both set their own title (`Sidan finns inte · <product>`), in the column of the sign-in screen.
+
+## Drafts
+
+`createDrafts(prefix)` keeps what someone has typed but not sent, so a reload after a lost login, or a tab the browser put to sleep, gives it back. Create one per module (`createDrafts("min-modul")`) and share it.
+
+- Per person, in the tab's `sessionStorage` under `<prefix>:<user id>:<name>`, not `localStorage`: a shared computer keeps nothing of it once the tab is closed. `read(ownerId, name, isDraft)`, `write(ownerId, name, value)` (JSON), `clear(ownerId, name)` once it is sent, saved or thrown away.
+- Only to the same person: call `keepOnly(user.id)` from `RequireSession`'s `onIdentity`, which removes every other person's drafts under the prefix.
+- `read` takes the reader's own check of the shape (`isDraft`): what an earlier page wrote may be of an older shape. A draft that fails it, or is not JSON, is removed and counts as none.
+- A write the storage refuses (full, blocked) returns `false`, and `unstored()` says that typed work is kept nowhere but the page until it is stored, cleared or the page is gone (`forget()`): that is when leaving should ask first (`subscribe` for a re-render). Storage that is missing or throws is no error.
 
 ## Online status
 
@@ -252,4 +262,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), what a failed request says (`errors`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), drafts (`drafts`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), what a failed request says (`errors`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
