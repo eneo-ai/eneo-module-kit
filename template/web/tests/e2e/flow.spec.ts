@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { declare, expect, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
+import { FLOWS_CODE, withoutFlowsCode } from "./screens";
 
 test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
@@ -136,9 +137,6 @@ test.describe("pages and addresses", () => {
       const active = document.activeElement;
       return { text: active?.textContent ?? "", heading: !!active?.matches("h1, h2, h3"), inMain: !!active?.closest('main, [role="main"]') };
     });
-  // The lazily loaded page's code, as the build names it.
-  const flowsCode = /\/assets\/Flows-[^/]+\.js$/;
-
   test("an address that is no page says so at that address, under its own title, and the way to the start goes there in the page", async ({ page }) => {
     await page.goto("/finns-inte");
     await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
@@ -163,12 +161,10 @@ test.describe("pages and addresses", () => {
   });
 
   test("a page whose code cannot be fetched is a page too: its own title, said once, the focus in its heading, and Ladda om sidan brings it back", async ({ page }) => {
-    declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
     await signIn(page);
     await page.addInitScript(listen);
-    // A tab older than the release that replaced the page's files: the backend has no such file.
     await page.goto("/finns-inte");
-    await page.route(flowsCode, (route) => route.fulfill({ status: 404, body: "" }));
+    await withoutFlowsCode(page);
     await page.getByRole("link", { name: "Till startsidan" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
     await expect(page).toHaveURL(/\/flows$/);
@@ -177,7 +173,7 @@ test.describe("pages and addresses", () => {
     await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Sidan kunde inte visas." });
 
     // Nothing reloads by itself; the person's reload gets the files as they are now.
-    await page.unroute(flowsCode);
+    await page.unroute(FLOWS_CODE);
     await page.getByRole("button", { name: "Ladda om sidan" }).click();
     await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
   });

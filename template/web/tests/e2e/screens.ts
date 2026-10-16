@@ -12,6 +12,23 @@ export interface State {
   go: (page: Page) => Promise<void>;
 }
 
+/** The flow page's code, as the build names it: the page fetches it when it is first entered. */
+export const FLOWS_CODE = /\/assets\/Flows-[^/]+\.js$/;
+
+/**
+ * A tab older than the release that replaced the flow page's code: its request goes to a name no build has, and the
+ * backend answers it as it answers such a file. Each engine reports that its own way, as for the page's script
+ * (tests/prod/stale-chunk.spec.ts): Firefox also refuses the 404's JSON as a script of the wrong type, and WebKit on Linux
+ * (CI) reports the request as cancelled.
+ */
+export async function withoutFlowsCode(page: Page) {
+  const engine = page.context().browser()?.browserType().name();
+  declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
+  if (engine === "firefox") declare(page, [{ requestFailed: /GET .*\/assets\/Flows-[\w-]+\.js: NS_ERROR_CORRUPTED_CONTENT/ }]);
+  if (engine === "webkit" && process.platform === "linux") declare(page, [{ requestFailed: /GET .*\/assets\/Flows-[\w-]+\.js: Load request cancelled/ }]);
+  await page.route(FLOWS_CODE, (route) => route.continue({ url: new URL("/assets/Flows-0ldbui1d.js", route.request().url()).href }));
+}
+
 export const STATES: State[] = [
   {
     name: "signin",
@@ -79,8 +96,7 @@ export const STATES: State[] = [
     // A page whose code cannot be fetched: a tab older than the release that replaced its files.
     name: "load-failure",
     go: async (page) => {
-      declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
-      await page.route(/\/assets\/Flows-[^/]+\.js$/, (route) => route.fulfill({ status: 404, body: "" }));
+      await withoutFlowsCode(page);
       await page.goto("/flows");
       await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
     },
