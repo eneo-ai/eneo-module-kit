@@ -12,6 +12,8 @@ test("a page whose script the release took away gets a 404 that no cache keeps, 
   // The browser reports the script it could not load; Firefox also refuses the 404's JSON as a script of the wrong type.
   declare(page, [{ console: /status of 404.*\/assets\/index-[\w-]+\.js/ }]);
   if (browserName === "firefox") declare(page, [{ requestFailed: /GET .*\/assets\/index-[\w-]+\.js: NS_ERROR_CORRUPTED_CONTENT/ }]);
+  // WebKit on Linux (CI) refuses it too and reports the request as cancelled; WebKit on macOS reports nothing.
+  if (browserName === "webkit" && process.platform === "linux") declare(page, [{ requestFailed: /GET .*\/assets\/index-[\w-]+\.js: Load request cancelled/ }]);
   await page.route(SCRIPT, (route) => route.continue({ url: new URL("/assets/index-0ldbui1d.js", route.request().url()).href }));
   const gone = page.waitForResponse(SCRIPT);
   await page.goto("/");

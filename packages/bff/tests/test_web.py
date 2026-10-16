@@ -150,7 +150,7 @@ class WebTests(unittest.TestCase):
                 self.assertEqual((again.status_code, again.headers["vary"]), (304, "Accept-Encoding"))
         self.assertEqual(len(etags), 4, "each body of a file has its own ETag")
         self.assertNotIn("vary", self.client.get("/favicon.svg").headers, "a file the build did not compress")
-        for path in ("/assets/app.js.br", "/assets/app.js.gz", "/assets/app.css.gz"):
+        for path in ("/assets/app.js.br", "/assets/app.js.gz", "/assets/app.css.gz", "/assets/app.js.br/", "/assets/app.js.gz/"):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 404, "a compressed body never goes out as a file of its own")
 

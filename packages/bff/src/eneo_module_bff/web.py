@@ -131,7 +131,8 @@ def _file_under(root: Path, relative: str) -> Path | None:
 def _file_response(request: Request, root: Path, relative: str, cache_control: str) -> Response:
     """The file ``relative`` names inside ``root`` (``_file_under``), or a 404: a precompressed sibling of it to a client
     that accepts one, the ETag of the body that goes out (FileResponse's), and a 304 when the client holds that body."""
-    if (file := _file_under(root, relative)) is None:
+    # The resolved name, not the asked one: pathlib drops a trailing slash, so ``app.js.br/`` names ``app.js.br``.
+    if (file := _file_under(root, relative)) is None or file.name.endswith(_COMPRESSED):
         raise HTTPException(status_code=404)
     headers = {"Cache-Control": cache_control}
     body = file
