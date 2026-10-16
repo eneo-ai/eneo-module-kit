@@ -362,7 +362,9 @@ flowchart TB
   commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
   commit --> tb["template-backend: the template's tests on this commit's BFF"]
   commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers and the gate, in four parts"]
-  commit --> ti["template-image: build the image from this commit's packages, run it, GET /health"]
+  commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
+  commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
+  commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]
 ```
 
 Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
@@ -400,3 +402,4 @@ The UI package, the template and the image:
 | Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |
 | A module's UI | `template/web/src/` | `template/web/tests/e2e/` |
 | The image | `template/Dockerfile`, `docker-compose.yml` | the `template-image` job of `.github/workflows/ci.yml` |
+| A module's CI and releases | `template/.github/workflows/ci.yml`, `release.yml` | the `workflows` job (actionlint); they run in a module's own repository |

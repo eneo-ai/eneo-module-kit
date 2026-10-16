@@ -173,5 +173,6 @@ Everything CI and the image run is pinned: actions to a commit, images to a dige
 |---|---|---|
 | A GitHub Action | `uses:` in `.github/workflows/*.yml`: the commit, its release in the comment | `git ls-remote --tags https://github.com/actions/checkout 'refs/tags/v7.*'` |
 | An image | `FROM` and the `# syntax` line in `Dockerfile`, `image:` in the compose files, the `registry` service and `SKOPEO` in the workflows | `docker buildx imagetools inspect python:3.12.15-slim-trixie --format '{{.Manifest.Digest}}'` (the tag beside the digest) |
+| A tool CI installs | `pip install pip-audit==…` in the workflows | `pip index versions pip-audit` |
 | The backend's packages | `backend/requirements.lock` | The command in its header |
 | The web app's packages | `web/package-lock.json` | `npm install <package>@<version>` in `web/` |
