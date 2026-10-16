@@ -27,7 +27,8 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Only the built UI's own files are served | A dotfile, a path with a control character, a backslash or a `.` or `..` segment, and `//api/x` are a 404, never a 500 or the page | `web.py` |
 | Browser-side hardening | The headers below, on every response unless a route set its own | `web.py` |
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |
-| One replica, no ticket in the logs | One worker, uvicorn's access log off | `serve.py` |
+| No API description and no redirect on the module's origin | No `/docs`, `/redoc` or `/openapi.json`; the slash twin of a route is a 404, not a 307 whose `Location` says http:// behind a proxy that ends TLS | `app.py` |
+| One replica, no ticket in the logs | One worker, uvicorn's access log off, no `Server` banner | `serve.py` |
 
 Headers on every response (`web.py`); `create_app(security_headers={...})` replaces one by name, for example `Permissions-Policy: camera=(), geolocation=(), microphone=(self)`:
 

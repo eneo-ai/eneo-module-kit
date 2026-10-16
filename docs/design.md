@@ -143,7 +143,7 @@ Stable for the UI package and for any other frontend:
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The static app; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
 
-A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
+A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
 
 The UI package's session client depends on four things in this surface:
 

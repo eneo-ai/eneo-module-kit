@@ -54,7 +54,17 @@ def create_app(
             if owns_client:
                 await http_client.aclose()
 
-    app = FastAPI(title=title, lifespan=lifespan)
+    app = FastAPI(
+        title=title,
+        lifespan=lifespan,
+        # No documentation routes: the schema describes a surface that is not for browsers, and is not left open on
+        # the module's origin.
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        # A slash twin of a route is a 404, never a 307 whose Location says http:// behind a proxy that ends TLS.
+        redirect_slashes=False,
+    )
     app.state.settings = settings
     app.state.http = http_client
     # One slot per file streaming at once (transport.stream_signed): the rest are 503, and the pool keeps room for the API.

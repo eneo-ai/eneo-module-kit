@@ -50,7 +50,7 @@ The template builds its app in a function instead, `build_app(settings=None, *, 
 python -c "from eneo_module_bff import serve; serve('main:app')"
 ```
 
-`serve()` listens on port 3001, runs one worker and keeps the access log off. It refuses `workers=` and `access_log=`. Other uvicorn options pass through (`serve('main:app', port=3464)`).
+`serve()` listens on port 3001, runs one worker, keeps the access log off and sends no `Server` header. It refuses `workers=` and `access_log=`. Other uvicorn options pass through (`serve('main:app', port=3464)`).
 
 `static_dir` must hold an `assets/` directory, or the app refuses to start. A request for a path under `/api` (`//api/x` too), for a file that is not there, for a dotfile, or with a control character, a backslash or a `.` or `..` segment is a 404, never the page and never a 500.
 
@@ -65,7 +65,7 @@ python -c "from eneo_module_bff import serve; serve('main:app')"
 | `GET\|POST\|PATCH /api/eneo/{path}` | the proxy, for your `proxy_rules=` only |
 | anything else | the built UI, if `static_dir` is given |
 
-Your routes are matched after the kit's own and before the proxy and the page. They win over the proxy (also under `/api/eneo/`) and cannot replace a kit route. Add routes with `routers=`: a route added to the app after `create_app` returns is never reached. Details: [architecture](../architecture.md#how-the-app-is-assembled).
+There is no `/docs`, `/redoc` or `/openapi.json`, and a path is matched as written: `/api/notes/` for a route `/api/notes` is a 404, never a redirect. Your routes are matched after the kit's own and before the proxy and the page. They win over the proxy (also under `/api/eneo/`) and cannot replace a kit route. Add routes with `routers=`: a route added to the app after `create_app` returns is never reached. Details: [architecture](../architecture.md#how-the-app-is-assembled).
 
 ## 4. Guard every route you write
 

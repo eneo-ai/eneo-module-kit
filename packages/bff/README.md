@@ -46,7 +46,7 @@ Run from the module's directory, with the environment of [configuration](https:/
 | Name | What it is |
 |---|---|
 | `create_app(settings=None, *, title, routers, proxy_rules, forward_request_headers, static_dir, security_headers, http_client)` | Builds the app. `settings=None` loads the environment. |
-| `serve(app, *, host="0.0.0.0", port=3001, **overrides)` | Runs it: one worker, no access log, bounded WebSocket buffers, stops within 8 s of SIGTERM. Refuses `workers=` and `access_log=`. |
+| `serve(app, *, host="0.0.0.0", port=3001, **overrides)` | Runs it: one worker, no access log, no `Server` header, bounded WebSocket buffers, stops within 8 s of SIGTERM. Refuses `workers=` and `access_log=`. |
 | `Settings`, `Organization`, `load_settings(*, default_organization=None, home_path="/")` | Configuration and its start-up validation. |
 | `require_session` | Route dependency: the caller's live session, else 401 with `X-Auth-Required: session` (a WebSocket handshake is refused). |
 | `require_same_origin` | Route dependency: writes and WebSocket handshakes only from the module's own origin, else 403. |
@@ -96,6 +96,8 @@ Stable for the UI package and for any other frontend.
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
+
+There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: the slash twin of a route (`/api/healthz/`) is a 404, never a redirect.
 
 ## Answers the package gives
 

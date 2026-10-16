@@ -27,7 +27,7 @@ PUBLIC_NAMES = {
 
 
 class ServeTests(unittest.TestCase):
-    def test_serve_runs_one_worker_without_an_access_log_and_with_bounded_websockets(self) -> None:
+    def test_serve_runs_one_worker_without_an_access_log_or_a_server_banner_and_with_bounded_websockets(self) -> None:
         with patch("uvicorn.run") as run:
             eneo_module_bff.serve("main:app")
 
@@ -37,6 +37,7 @@ class ServeTests(unittest.TestCase):
             port=3001,
             workers=1,
             access_log=False,
+            server_header=False,
             ws_max_size=128 * 1024,
             ws_max_queue=16,
             timeout_graceful_shutdown=8,
@@ -54,6 +55,7 @@ class ServeTests(unittest.TestCase):
             port=8080,
             workers=1,
             access_log=False,
+            server_header=False,
             ws_max_size=128 * 1024,
             ws_max_queue=16,
             timeout_graceful_shutdown=8,
