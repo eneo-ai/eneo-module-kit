@@ -109,7 +109,6 @@ export function createUploadWithProgress(state: SessionState, online: OnlineStat
         finish(() => reject(new TypeError("Network request failed")));
       };
       xhr.onabort = () => finish(() => reject(new DOMException("The upload was aborted.", "AbortError")));
-      signal?.addEventListener("abort", cancel, { once: true });
 
       xhr.open(method, path);
       xhr.withCredentials = true;
@@ -118,6 +117,8 @@ export function createUploadWithProgress(state: SessionState, online: OnlineStat
       // An upload is a write: the backend refuses it (409 user_changed) under someone else's session.
       if (state.expectedUser) xhr.setRequestHeader("X-Expected-User", state.expectedUser);
       xhr.setRequestHeader("X-Upload-Timeout-Seconds", String(Math.ceil(answerTimeoutMs / 1000)));
+      // After the headers, which can throw (a header the page gave that is no header): nothing is left on the signal.
+      signal?.addEventListener("abort", cancel, { once: true });
       wait(idleTimeoutMs);
       sent = online.sending();
       xhr.send(body);
