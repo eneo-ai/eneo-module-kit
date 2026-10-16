@@ -96,7 +96,7 @@ Stable for the UI package and for any other frontend.
 | `GET /api/branding/theme.css` | The validated deployment accent as `text/css`, or a harmless comment with no override. No session needed; no user data or cookie. `Cache-Control: public, max-age=300`, content ETag and `nosniff`. A matching `If-None-Match` (including weak, listed or wildcard validators) returns 304 with no body. A changed accent produces a different ETag; cached colours can remain until the five-minute freshness period ends. |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
+| `GET\|HEAD` anything else | The built UI, if `static_dir` is given: a file under `/assets` (the build names each by its content) with `Cache-Control: public, max-age=31536000, immutable`, the page and every other file with `no-cache`; each with an ETag, and a 304 when `If-None-Match` names it. A `.br` or `.gz` beside a file goes to a browser that accepts it, with `Vary: Accept-Encoding`. `/api/*`, a path under `/assets` or with a dot in its last segment that names no file, a `.br` or `.gz` asked for by its own name, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
 
 There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: the slash twin of a route (`/api/healthz/`) is a 404, never a redirect. Every answer, an unhandled error's 500 included, carries the security headers ([security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md)) unless its route set its own, and an answer under `/api` gets `Cache-Control: no-store` unless its route says how it may be kept.
 
@@ -104,7 +104,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 
 | Status | When | Body |
 |---|---|---|
-| 304 | The branding stylesheet's content ETag matches `If-None-Match` | empty |
+| 304 | `If-None-Match` names the ETag of the branding stylesheet, of the page or of a file of the built UI (of the body that would go out, compressed or not) | empty |
 | 400 | An upload is not exactly one file named `upload_file`, or has a control character or line separator in its file name or content type | `{"detail": ...}` |
 | 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
 | 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
