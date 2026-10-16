@@ -310,7 +310,7 @@ Look at: two builds in one image. Node builds the UI to static files, Python ins
 ```mermaid
 flowchart LR
   subgraph build["Build"]
-    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist"]
+    web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist with a .br and a .gz beside each script and stylesheet"]
     pkgs["Stage python-packages: pip install with hashes from requirements.lock, then the BFF"]
   end
   kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"until the release"| web
