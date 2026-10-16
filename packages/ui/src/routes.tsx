@@ -110,7 +110,10 @@ export function RouteEffects({
       loaded.current = true;
       if (!arrived.waiting || arrived.scheduled) return;
       arrived.scheduled = true;
+      cancelAnimationFrame(frame.current);
       frame.current = requestAnimationFrame(() => {
+        // Left before its frame came: the frame is the page's that is gone, not the one that is loading now.
+        if (navigation.current !== arrived) return;
         announce(document.title);
         // A person who acted keeps the focus where they put it; one the page removed from under them gets the heading.
         const removed = focusedSince.current instanceof Node && !focusedSince.current.isConnected;

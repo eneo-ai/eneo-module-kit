@@ -152,6 +152,58 @@ test("a navigation is said, focused and scrolled once its page has its content, 
   assert.deepEqual(scroll.calls, [0], "a link starts at the top");
 });
 
+/**
+ * Frames that wait until the test runs them (`run`), and the frames those ask for. `release` gives the page its own frames
+ * back: before the test ends, since the next test's cleanup waits for frames.
+ */
+function holdFrames() {
+  const held = new Map<number, FrameRequestCallback>();
+  let last = 0;
+  const { requestAnimationFrame: request, cancelAnimationFrame: cancel } = globalThis;
+  globalThis.requestAnimationFrame = (callback) => {
+    held.set(++last, callback);
+    return last;
+  };
+  globalThis.cancelAnimationFrame = (handle) => void held.delete(handle);
+  return {
+    run() {
+      for (let next = held.entries().next(); !next.done; next = held.entries().next()) {
+        held.delete(next.value[0]);
+        next.value[1](performance.now());
+      }
+    },
+    release() {
+      globalThis.requestAnimationFrame = request;
+      globalThis.cancelAnimationFrame = cancel;
+    },
+  };
+}
+
+test("a page left before its frame came is not said, focused or scrolled; the page after it is, once it has its content", async (t) => {
+  const scroll = windowScroll(t);
+  const { router, act, ready } = await open("/");
+  await act(async () => frames(3));
+  const frame = holdFrames();
+  try {
+    // The flow page has its content at once and asks for its frame; the list is entered before that frame comes.
+    await act(async () => router.navigate("/flows/abc"));
+    await act(async () => router.navigate("/flows"));
+    await act(async () => frame.run());
+  } finally {
+    frame.release();
+  }
+  await act(async () => frames(3));
+  assert.equal(said(), "", "nothing is said of a page that is gone, nor of one still loading");
+  assert.equal(document.activeElement?.matches("h1") ?? false, false, "the focus is not put in a page still loading");
+  assert.deepEqual(scroll.calls, [], "nor is the window scrolled for it");
+
+  await ready();
+  await act(async () => frames(3));
+  assert.equal(said(), "Välj ett flöde · Testmodul");
+  assert.equal(document.activeElement?.textContent, "Listan");
+  assert.deepEqual(scroll.calls, [0]);
+});
+
 test("Back goes to where the person left the page, and focus that is on an element stays there", async (t) => {
   const scroll = windowScroll(t);
   const { router, act, ready } = await open("/flows");
