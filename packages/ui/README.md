@@ -50,11 +50,13 @@ with a `target` other than `_self` or with `download` stays a plain anchor, so t
 | `VersionInfo` | Which build runs, from `GET /api/healthz`, read when shown: the release, the commit and the build time ("Okänd" when not known), a button that copies them as support details, and the release's and commit's pages when the repository is known. |
 | `CopyButton` | Copies a text; a check and "Kopierat" to a screen reader confirm it, and a failure says so in words. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
+| `LoadingShell`, `SlowWait` | The page while it waits (the bar and a spinner that shows only after 300 ms), and, beside a wait with no end in sight, after 15 seconds "Det tar längre tid än vanligt." with "Försök igen" (`onRetry`) and the page's other ways on. |
+| `lazyLoader()`, `useLoaded()`, `LoadFailure` | Code fetched when a page first needs it, once and kept; a failed fetch is kept too (a browser will not fetch it again), and `LoadFailure` offers the person's own reload, "Ladda om sidan". |
 | `OfflineBanner`, `useConnection()`, `onlineStatus`, `createOnlineStatus()` | Whether the page reaches the module: the browser's online events and the session client's requests decide it, telling a device without a network (`offline`) from a module that does not answer (`unreachable`). `OfflineBanner({ productName, message? })` says so above the shell's bar (`banner`): "Ingen anslutning." or "<productName> svarar inte just nu.", then the page's `message`. |
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the
-brand's mark, no transition while the colour mode switches, the text size set in iOS, reduced motion, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
+brand's mark, no transition while the colour mode switches, the text size set in iOS, reduced motion, a wait's spinner held back for 300 ms, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
 page while the login has ended, and a menu's height past Astryx's 300 px cap, up to the window below the top bar).
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an

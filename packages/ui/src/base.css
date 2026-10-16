@@ -40,6 +40,13 @@
 [data-theme-switching] *::before,
 [data-theme-switching] *::after { transition: none !important; }
 
+/* A wait's spinner (LoadingShell): hidden for its first moment, then there, so an answer within that moment leaves no blink
+   of a spinner. Not motion, so also with reduced motion. */
+.eneo-wait { animation: eneo-wait-hidden 0s 300ms backwards; }
+@keyframes eneo-wait-hidden {
+  from { visibility: hidden; }
+}
+
 /* A heading takes the focus when its state appears, so a screen reader starts there; it is not a control, and a ring
    on it would only look like one. A page marks such a heading data-phase-heading (and tabindex -1). */
 [data-phase-heading]:focus { outline: none; }

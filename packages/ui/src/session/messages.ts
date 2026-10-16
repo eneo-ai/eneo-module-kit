@@ -6,7 +6,6 @@ export const messages = {
   renewBefore: "Fortsätt arbeta",
   renewAfter: "Logga in igen",
   popupBlocked: "Fönstret kunde inte öppnas. Tillåt popup-fönster för den här sidan och försök igen.",
-  loading: "Laddar",
   signInHint: "Logga in via Eneo för att fortsätta.",
   signIn: "Logga in med Eneo",
   signInFailed: "Inloggningen kunde inte slutföras. Försök igen.",

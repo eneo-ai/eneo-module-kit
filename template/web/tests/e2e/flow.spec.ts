@@ -236,6 +236,27 @@ test.describe("when the connection goes", () => {
   });
 });
 
+test.describe("when Eneo is slow to list the flows", () => {
+  test("after 15 seconds the page says that it takes longer than usual, and Försök igen asks again", async ({ page }) => {
+    await page.clock.install();
+    // The first list is never answered; the one Försök igen asks for is.
+    let asked = 0;
+    await page.route(/\/api\/eneo\/flows\//, (route) => (++asked > 1 ? route.continue() : undefined));
+    await signIn(page);
+    // Said in a status region, and shown beside the way on.
+    const slow = page.getByRole("status").filter({ hasText: "Det tar längre tid än vanligt." });
+    const retry = page.getByRole("button", { name: "Försök igen" });
+    await page.clock.fastForward(14_000);
+    await expect(retry).toHaveCount(0);
+    await page.clock.fastForward(1_000);
+    await expect(slow).toHaveCount(1);
+    await expect(retry).toBeVisible();
+    await retry.click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await expect(page.getByText("Det tar längre tid än vanligt.")).toHaveCount(0);
+  });
+});
+
 test.describe("when Eneo cannot list the flows", () => {
   test("the page says so and offers to try again", async ({ page }) => {
     // The browser reports the 500 the stub was told to answer.

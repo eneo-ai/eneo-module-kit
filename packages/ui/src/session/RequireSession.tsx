@@ -1,12 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Center } from "@astryxdesign/core/Center";
-import { Spinner } from "@astryxdesign/core/Spinner";
-import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { Brand } from "../branding.js";
-import { ModuleShell } from "../ModuleShell.js";
+import { LoadingShell } from "../LoadingShell.js";
 import { fetchReporting, onlineStatus } from "../online-status.js";
 import { keepSessionAlive } from "./keepalive.js";
-import { messages } from "./messages.js";
 import { SessionDialog } from "./SessionDialog.js";
 import { SignedOutCover } from "./SignedOutCover.js";
 import { SESSION_CHANNEL } from "./SignedInAgain.js";
@@ -195,14 +190,7 @@ export function RequireSession({
     if (goesToSignIn) navigate(signInPath);
   }, [goesToSignIn, navigate, signInPath]);
 
-  const waiting = loading ?? (
-    <ModuleShell label={productName} heading={<Brand productName={productName} />}>
-      <VisuallyHidden as="h1">{productName}</VisuallyHidden>
-      <Center minHeight="60dvh">
-        <Spinner size="lg" aria-label={messages.loading} />
-      </Center>
-    </ModuleShell>
-  );
+  const waiting = loading ?? <LoadingShell productName={productName} />;
   if (phase === "loading" || goesToSignIn) return <>{waiting}</>;
   if (phase === "out") return <>{signIn ?? <SignInScreen productName={productName} title={signInTitle ?? productName} description={signInDescription} />}</>;
   if (phase === "failed") return <SignInScreen productName={productName} title={signInTitle ?? productName} description={signInDescription} unreachable />;

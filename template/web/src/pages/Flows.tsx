@@ -10,6 +10,7 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { VStack } from "@astryxdesign/core/VStack";
+import { SlowWait } from "@eneo-ai/module-kit";
 import { useSessionUser, useSignedOut } from "@eneo-ai/module-kit/session";
 import { Frame } from "../Frame";
 import { AccountMenu } from "../AccountMenu";
@@ -100,6 +101,8 @@ export function Flows() {
             <VisuallyHidden as="p" role="status">
               Laddar flödena…
             </VisuallyHidden>
+            {/* After 15 seconds without an answer: that it takes longer than usual, and Försök igen. */}
+            <SlowWait onRetry={retry} />
             <List hasDividers aria-hidden>
               {[0, 1, 2].map((row) => (
                 <ListItem key={row} label={<Skeleton width="50%" height={16} index={row} />} description={<Skeleton width="80%" height={14} index={row} />} />

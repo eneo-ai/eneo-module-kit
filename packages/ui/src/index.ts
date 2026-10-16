@@ -6,4 +6,7 @@ export { CopyButton } from "./CopyButton.js";
 export { VersionInfo, type BuildIdentity } from "./VersionInfo.js";
 export { createOnlineStatus, onlineStatus, useConnection, type Connection, type OnlineStatus } from "./online-status.js";
 export { OfflineBanner } from "./OfflineBanner.js";
+export { LoadingShell } from "./LoadingShell.js";
+export { SlowWait } from "./SlowWait.js";
+export { lazyLoader, LoadFailure, useLoaded, type Loader } from "./lazy.js";
 export { eneoTheme } from "./theme/built/eneo.js";
