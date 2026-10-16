@@ -33,7 +33,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 | No policy violation, no redirect, and no console error, uncaught error or failed request that the test did not declare ([below](#what-every-test-watches-for)) | The `sentinel` fixture of `fixtures.ts` | Every spec that imports `test` from it |
 | The sentinel itself, made to see each thing it fails a test for | `sentinel.spec.ts` | `chromium` |
 | The page's security headers on its files, the API and an error; the page asked for again with an ETag (304), the files under `/assets` kept a year; the scripts and stylesheets compressed for a browser that accepts it; no server banner | `tests/prod/headers.spec.ts` | The three `prod-` projects |
-| Each address of the app is its page, with no redirect; an address that is none of the app's is the page, which goes to the start; a missing file or API path is a 404 that is not the page; `HEAD` | `tests/prod/routes.spec.ts` | The three `prod-` projects |
+| Each address of the app is its page, with no redirect; an address that is none of the app's is the page, which says so at that address; a missing file or API path is a 404 that is not the page; `HEAD` | `tests/prod/routes.spec.ts` | The three `prod-` projects |
 | The JS and CSS each page transfers, against its budget in the spec: the measured value rounded up to the next 5 KB. A new page adds its own; a change that raises one says why | `tests/prod/weight.spec.ts` | `prod-chromium` (the engine that reports transfer sizes) |
 | A page whose script a release took away: the backend's 404 for it is not the page and no cache keeps it, and the next visit starts the release | `tests/prod/stale-chunk.spec.ts` | The three `prod-` projects |
 
