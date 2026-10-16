@@ -8,7 +8,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 
 ## What is checked, and where
 
-`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo. The projects are in `web/tests/e2e/playwright.config.ts`, which also says which specs each one runs:
+`npm run test:e2e` builds the app and runs every spec in `web/tests/e2e/` against it, served by the module's backend over the stub Eneo, in two workers. The stub is one for both: each test's browser context has a scope of its own there (the `stub_scope` cookie of `web/tests/e2e/fixtures.ts`), so what a test sets with `stubControl` or `stubFlows`, an ended login included, holds for its own logins only. A context a test makes itself gets its scope at its first control: call one before it signs in. The projects are in `web/tests/e2e/playwright.config.ts`, which also says which specs each one runs:
 
 | Projects | For |
 |---|---|
@@ -39,7 +39,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 
 ## A red CI job
 
-The browser tests run in CI as one job in five parts, each on a runner of its own and each naming its projects:
+The browser tests run in CI as one job in five parts, each naming its projects. A part runs in shards (Playwright's `--shard`), each on a runner of its own at the config's two workers; `main`, the longest, is in two:
 
 | Part | Runs |
 |---|---|
@@ -49,7 +49,7 @@ The browser tests run in CI as one job in five parts, each on a runner of its ow
 | `firefox` | The gate in Firefox, on a laptop, with a sound server |
 | `prod` | The production checks in Chromium, WebKit and Firefox |
 
-A part that fails keeps its evidence: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the part's job: `web-main-results`, `web-devices-results`, `web-webkit-results`, `web-firefox-results` and `web-prod-results`, and `template-web-main-results` and so on in the kit's own CI. Read it on your machine:
+A shard that fails keeps its evidence: `web/test-results`, with Playwright's report (`results.json`) and the trace of each failed test, as an artifact named after the shard's job (`web main 1 (of 2)`): `web-main-1-results`, `web-main-2-results`, `web-devices-1-results`, `web-webkit-1-results`, `web-firefox-1-results` and `web-prod-1-results`, and `template-web-main-1-results` and so on in the kit's own CI. Read it on your machine:
 
 ```bash
 npm run ci:failure                   # the latest CI run of the branch that is checked out
@@ -71,7 +71,7 @@ For any other failed job it prints the command that shows the job's log (`gh run
 | Part | Where |
 |---|---|
 | The report | `reporter` in `web/tests/e2e/playwright.config.ts` writes `web/test-results/results.json` on every run |
-| The parts and the upload | The `web` job of `.github/workflows/ci.yml` (`template-web` in the kit's own): its matrix names each part's projects, and its last step uploads a failed part's results |
+| The parts and the upload | The `web` job of `.github/workflows/ci.yml` (`template-web` in the kit's own): its matrix names each part's projects and shards, and its last step uploads a failed shard's results |
 | The script | `web/scripts/ci-failure.mjs`. It finds the artifact from the job's name: the name up to a parenthesis, a dash for each space, then `-results` |
 
 ## A test that fails only in CI

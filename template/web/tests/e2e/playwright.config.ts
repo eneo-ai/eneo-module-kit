@@ -4,7 +4,8 @@ import { defineConfig, devices, type PlaywrightTestConfig } from "@playwright/te
 
 // The built app, served by the module's backend, with the stub Eneo behind it: what runs in the image, minus the
 // container. Build first (`npm run build`). Ports are the pair of this checkout: set E2E_APP_PORT and E2E_STUB_PORT
-// when others are in use. One worker: the tests share one stub, and some of them change what it answers.
+// when others are in use. Two workers share the one stub: what a test's controls change holds for its own logins only
+// (its scope, fixtures.ts).
 const APP = Number(process.env.E2E_APP_PORT ?? 3011);
 const STUB = Number(process.env.E2E_STUB_PORT ?? 8011);
 
@@ -81,7 +82,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   // The JSON report is what `npm run ci:failure` reads from a failed CI job; it lies in the output folder, beside the traces.
   reporter: [["list"], ["json", { outputFile: "../../test-results/results.json" }]],
   use: {
