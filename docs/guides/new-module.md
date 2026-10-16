@@ -162,7 +162,7 @@ cd web && PYTHON="$(pwd)/../.venv/bin/python" npm run test:e2e
 
 ## 6. Build the image
 
-One image, one process: Node 22 builds `web/dist` from `web/package-lock.json` (`npm ci`), Python installs the locked packages with their hashes (`backend/requirements.lock`) and then the BFF, and a `python:3.12-slim` runtime image copies both and runs `serve('main:build_app', factory=True)` as a non-root user (uid 10001). `HEALTHCHECK` is `/health` on 3001. No Node and no supervisor at run time.
+One image, one process: Node 22 builds `web/dist` from `web/package-lock.json` (`npm ci`), Python installs the locked packages with their hashes (`backend/requirements.lock`) and then the BFF, and a `python:3.12-slim` runtime image copies both and runs `serve('main:build_app', factory=True)` as a non-root user (uid 10001). `HEALTHCHECK` is `/health` on 3001. No Node and no supervisor at run time. The build arguments `SOURCE_REVISION`, `BUILD_DATE` and `SOURCE_URL`, which CI passes, become the image's OCI labels (`org.opencontainers.image.revision`, `created`, `source`) and the environment `/health` answers from ([configuration](configuration.md#which-build-runs)); a build without them, as the ones below, says none.
 
 Until the release, give the build a context named `kit` that holds the packed UI package and a copy of the BFF. The Dockerfile then puts the tarball where the lock looks for it (`web/vendor/`) and installs the BFF from the copy instead of the commit pin (this is what the kit's CI does):
 
@@ -185,7 +185,7 @@ docker run -d --name my-module -p 127.0.0.1:3001:3001 \
   -e ENEO_BACKEND_URL=http://host.docker.internal:8411 -e ENEO_PUBLIC_URL=http://localhost:8411 \
   -e MODULE_PUBLIC_URL=http://localhost:3001 -e MODULE_KEY=eneo-module -e ENEO_API_KEY=stub-service-key \
   -e SESSION_SECRET=change-me-to-at-least-32-random-characters -e COOKIE_SECURE=false eneo-module
-curl -fsS http://localhost:3001/health        # {"ok":true}
+curl -fsS http://localhost:3001/health        # {"ok":true,"revision":null,"build_date":null,"release":null,"source":null}
 ```
 
 Or with compose, which also runs the stub as a second service (`stub-eneo` on 8411). Its `module` service uses the image tagged `eneo-module`, so before the release start it from the image built above, and after the release `docker compose up --build` builds it:

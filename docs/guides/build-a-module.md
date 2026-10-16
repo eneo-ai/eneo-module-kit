@@ -58,7 +58,7 @@ python -c "from eneo_module_bff import serve; serve('main:app')"
 
 | Route | Source |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET /health`, `GET /api/healthz` | `{"ok": true}` and which build runs, each `null` when not known ([configuration](configuration.md#which-build-runs)) |
 | `GET /api/auth/login`, `GET /api/auth/callback`, `POST /api/auth/logout`, `GET /api/auth/status` | the login handoff and the session |
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | the organisation of the deployment |
 | your `routers=` | whatever you declare |

@@ -11,6 +11,7 @@ from fastapi import APIRouter, FastAPI
 
 from . import branding
 from .auth import ModuleAuth
+from .build import read_build
 from .limits import BodyLimitMiddleware
 from .proxy import ProxyRule, proxy_router
 from .settings import Settings, load_settings
@@ -67,10 +68,13 @@ def create_app(
     add_security_headers(app, security_headers)
     app.include_router(app.state.module_auth.router, prefix="/api/auth")
 
+    # Read once: which build runs does not change while the process lives (build.py).
+    build = read_build()
+
     @app.get("/api/healthz")
     @app.get("/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> dict[str, bool | str | None]:
+        return {"ok": True, **build}
 
     app.include_router(branding.router)
     for router in routers:

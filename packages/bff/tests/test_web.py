@@ -165,7 +165,7 @@ class WebTests(unittest.TestCase):
         client = TestClient(create_app(make_settings(), http_client=httpx2.AsyncClient()))
 
         self.assertEqual(client.get("/").status_code, 404)
-        self.assertEqual(client.get("/health").json(), {"ok": True})
+        self.assertTrue(client.get("/health").json()["ok"])
         self.assertEqual(client.get("/").headers["x-content-type-options"], "nosniff")
 
 

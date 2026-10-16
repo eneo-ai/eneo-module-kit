@@ -48,6 +48,17 @@ WORKDIR /app
 COPY --from=python-packages /install /usr/local
 COPY backend/main.py backend/routes.py ./
 COPY --from=web /app/web/dist ./web/dist
+# What the image was built from, said twice from the same build arguments so that the two cannot differ: in the labels,
+# for whoever holds the image, and in the environment the backend answers /health from (eneo_module_bff/build.py). CI
+# passes all three; a build without them says none. The release is not here: a release gives this image its version
+# without building it, and the deployment names it (MODULE_VERSION).
+ARG SOURCE_REVISION=
+ARG BUILD_DATE=
+ARG SOURCE_URL=
+LABEL org.opencontainers.image.source="$SOURCE_URL" \
+      org.opencontainers.image.revision="$SOURCE_REVISION" \
+      org.opencontainers.image.created="$BUILD_DATE"
+ENV SOURCE_REVISION=$SOURCE_REVISION BUILD_DATE=$BUILD_DATE SOURCE_URL=$SOURCE_URL
 USER module
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \

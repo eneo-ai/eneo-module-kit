@@ -345,7 +345,7 @@ flowchart LR
 | Fact | Status |
 |---|---|
 | `serve()` runs one uvicorn worker, no access log (the callback URL carries a ticket), WebSocket buffers bounded, stops within 8 s of SIGTERM | Built (`serve.py`) |
-| Port 3001, `GET /health` answers `{"ok": true}` | Built (`serve.py`, `app.py`) |
+| Port 3001, `GET /health` answers `{"ok": true}` and which build runs: commit, build time, repository, release, each `null` when not known | Built (`serve.py`, `app.py`, `build.py`) |
 | Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Built (`template/Dockerfile`) |
 | One container on the module network, no outbound internet | Contract from [design.md](design.md) section 2 |
 | Sessions are process-local: one replica. More needs sticky sessions or a shared store | Decided when a module needs it |
@@ -381,6 +381,7 @@ Source: `.github/workflows/ci.yml`. What each job proves, and the module's own C
 | Branding routes | `branding.py` | `test_branding.py` |
 | Accent validation and derivation | `accent.py` | `test_accent.py` |
 | App factory | `app.py` | `test_app.py` |
+| Which build runs (`/health`) | `build.py` | `test_build.py` |
 | Running the server | `serve.py` | `test_serve.py`, `test_shutdown.py` |
 | Public names and version | `__init__.py` | `test_serve.py` (the names), `test_package.py` (the version) |
 
