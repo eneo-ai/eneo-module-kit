@@ -26,6 +26,7 @@ async function show<T extends string>(loader: import("../src/lazy.js").Loader<T>
 }
 
 const settle = (view: { act: (callback: () => Promise<void>) => Promise<void> }) => view.act(async () => new Promise<void>((resolve) => setTimeout(resolve, 5)));
+const frames = (count: number) => new Promise<void>((resolve) => (function next(left: number) { left === 0 ? resolve() : requestAnimationFrame(() => next(left - 1)); })(count));
 
 test("the code arrives, the page has it, and the next page has it at once", async () => {
   const { lazyLoader } = await import("../src/lazy.js");
@@ -109,7 +110,11 @@ test("where code could not be fetched there is one action, the person's own relo
   const { LoadFailure } = await import("../src/lazy.js");
   let reloads = 0;
   const view = await mount(createElement(LoadFailure, { reload: () => void (reloads += 1), keeps: "Det du har skrivit finns kvar.", children: "Kalendern kunde inte läsas in." }));
-  assert.equal(view.container.querySelector('[role="status"]')?.textContent, "Kalendern kunde inte läsas in. Det du har skrivit finns kvar.");
+  const region = () => view.container.querySelector('[role="status"]')?.textContent;
+  assert.equal(region(), "", "the region is there before its words: one that arrives with them is not reliably read out");
+  assert.match(view.container.textContent ?? "", /Kalendern kunde inte läsas in\. Det du har skrivit finns kvar\./, "shown at once");
+  await view.act(async () => frames(2));
+  assert.equal(region(), "Kalendern kunde inte läsas in. Det du har skrivit finns kvar.", "and said");
   assert.deepEqual([...view.container.querySelectorAll("button")].map((b) => b.textContent?.trim()), ["Ladda om sidan"], "one action");
   await settle(view);
   assert.equal(reloads, 0, "not by itself");
@@ -117,5 +122,6 @@ test("where code could not be fetched there is one action, the person's own relo
   assert.equal(reloads, 1, "on the press");
 
   const plain = await mount(createElement(LoadFailure, { reload: () => undefined, children: "Kalendern kunde inte läsas in." }));
+  await plain.act(async () => frames(2));
   assert.equal(plain.container.querySelector('[role="status"]')?.textContent, "Kalendern kunde inte läsas in.", "no promise where there is none to make");
 });

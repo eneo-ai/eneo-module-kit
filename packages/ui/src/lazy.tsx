@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
+import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 
 /** One piece of code that a page fetches when it first needs it: kept once it has arrived, so the next use has it at once. */
 export interface Loader<T> {
@@ -60,11 +61,26 @@ export function useLoaded<T>(loader: Loader<T>): { value: T | null; failed: bool
  * work. `keeps` says what a reload gives back, only where it does.
  */
 export function LoadFailure({ children, keeps, reload = () => window.location.reload() }: { children: ReactNode; keeps?: string; reload?: () => void }) {
+  // Said from the next frame on, into a region there before it: a region that arrives with its words is not reliably read out.
+  const [said, setSaid] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSaid(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  const text = (
+    <>
+      {children}
+      {keeps ? ` ${keeps}` : null}
+    </>
+  );
   return (
     <HStack vAlign="center" wrap="wrap" gap={2}>
-      <Text as="p" type="supporting" role="status">
-        {children}
-        {keeps ? ` ${keeps}` : null}
+      <VisuallyHidden as="p" role="status">
+        {said ? text : null}
+      </VisuallyHidden>
+      {/* Read once, by the region above. */}
+      <Text as="p" type="supporting" aria-hidden>
+        {text}
       </Text>
       <Button size="sm" label="Ladda om sidan" onClick={() => reload()} />
     </HStack>
