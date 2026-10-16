@@ -120,6 +120,9 @@ test("the version dialog, chosen in the account menu, holds focus and gives it b
   const account = page.getByRole("button", { name: /^Öppna konto för/ });
   await account.focus();
   await page.keyboard.press("Enter");
+  // The menu moves focus to its first item a frame after it shows: wait for that, or it lands after the focus below and
+  // Enter chooses a theme instead.
+  await focusMovesInto(page.getByRole("menu"));
   const dialog = page.getByRole("dialog", { name: "Version" });
   const [next, back] = [tabKey(page), tabKey(page, true)];
   // Its controls: the close button, the copy and the two pages, forward and back.
