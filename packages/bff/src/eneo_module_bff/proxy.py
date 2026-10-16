@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import gzip
 import logging
 import re
 from collections.abc import Collection, Iterable, Sequence
 from typing import NamedTuple
 from urllib.parse import quote
 
+import anyio
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -14,6 +16,7 @@ from starlette.datastructures import Headers
 from .deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 from .upstream import UnboundedAnswer
+from .web import accepted_encodings
 
 logger = logging.getLogger("eneo_proxy")
 
@@ -59,6 +62,41 @@ _UNFORWARDED_RESPONSE_HEADERS = {
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
 # error, not an answer for the browser. (304 is not one: If-None-Match is forwarded, and a conditional read gets it.)
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+
+
+# A JSON answer of Eneo's of at least this many bytes is gzipped for a browser that accepts it: a list of flows or of a
+# run's steps is tens to hundreds of KB, a tenth of that gzipped, and a smaller answer costs more to compress than it saves.
+JSON_COMPRESSION_MIN_BYTES = 1024
+
+
+def _is_json(content_type: str | None) -> bool:
+    media_type = (content_type or "").split(";")[0].strip().lower()
+    return media_type == "application/json" or (media_type.startswith("application/") and media_type.endswith("+json"))
+
+
+async def _body_for_browser(request: Request, upstream: httpx2.Response, headers: dict[str, str]) -> bytes:
+    """Eneo's answer as it goes to the browser: gzipped when that is allowed, with ``headers`` changed to say so.
+
+    Only a whole JSON answer (2xx but not 204 or 206, no Content-Range) of at least JSON_COMPRESSION_MIN_BYTES, and only
+    for a browser that accepts gzip. Such an answer says ``Vary: Accept-Encoding`` either way, so that a cache keeps the
+    two bodies apart. It is compressed off the event loop, which every other request shares.
+    """
+    content = upstream.content
+    if (
+        not 200 <= upstream.status_code < 300
+        or upstream.status_code in {204, 206}
+        or "content-range" in upstream.headers
+        or len(content) < JSON_COMPRESSION_MIN_BYTES
+        or not _is_json(upstream.headers.get("content-type"))
+    ):
+        return content
+    headers["Vary"] = "Accept-Encoding"
+    if "gzip" not in accepted_encodings(request.headers.get("accept-encoding")):
+        return content
+    headers["Content-Encoding"] = "gzip"
+    for name in [name for name in headers if name.lower() == "etag" and not headers[name].startswith("W/")]:
+        headers[name] = "W/" + headers[name]  # another body of the same answer: no longer a strong validator
+    return await anyio.to_thread.run_sync(gzip.compress, content, 6)
 
 
 def upstream_too_large() -> JSONResponse:
@@ -242,7 +280,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         }
 
         return Response(
-            content=upstream.content,
+            content=await _body_for_browser(request, upstream, resp_headers),
             status_code=upstream.status_code,
             headers=resp_headers,
             media_type=upstream.headers.get("content-type"),

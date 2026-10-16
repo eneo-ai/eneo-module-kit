@@ -1,3 +1,5 @@
+import gzip
+import json
 import random
 import time
 import timeit
@@ -47,6 +49,7 @@ class FakeProxyClient:
         self.calls: list[dict[str, object]] = []
         self.response_headers = None
         self.response_status = None
+        self.response_content = None
 
     async def request(self, **kwargs):
         self.calls.append(kwargs)
@@ -55,7 +58,13 @@ class FakeProxyClient:
             response.headers = self.response_headers
         if self.response_status is not None:
             response.status_code = self.response_status
+        if self.response_content is not None:
+            response.content = self.response_content
         return response
+
+
+# A list of flows as Eneo answers it: about 170 KB of JSON.
+LARGE = json.dumps({"items": [{"id": f"flow-{n}", "name": "Nämndmöte till rapport", "description": "x" * 40} for n in range(2000)]}).encode()
 
 
 class EneoProxyAuthTests(unittest.TestCase):
@@ -524,6 +533,69 @@ class EneoProxyAuthTests(unittest.TestCase):
 
         self.client.cookies.clear()
         self.assertEqual(self.client.post("/api/eneo/things/1/files", headers=origin).status_code, 401)
+
+    def raw(self, path: str, **headers: str) -> tuple[httpx2.Response, bytes]:
+        """The answer and its body as they went over the wire, not decoded."""
+        with self.client.stream("GET", path, headers=headers) as response:
+            return response, b"".join(response.iter_raw())
+
+    def test_a_large_json_answer_is_gzipped_for_a_browser_that_accepts_it(self) -> None:
+        self.proxy_client.response_content = LARGE
+        self.proxy_client.response_headers = {"content-type": "application/json", "etag": '"v1"'}
+
+        response, body = self.raw("/api/eneo/flows/", **{"Accept-Encoding": "gzip, deflate, br"})
+
+        self.assertEqual((response.status_code, response.headers["content-encoding"]), (200, "gzip"))
+        self.assertEqual(gzip.decompress(body), LARGE)
+        self.assertLess(len(body), len(LARGE) // 5, "compressed in more than name")
+        self.assertEqual(int(response.headers["content-length"]), len(body))
+        self.assertEqual(response.headers["vary"], "Accept-Encoding")
+        self.assertEqual(response.headers["content-type"], "application/json")
+        self.assertEqual(response.headers["etag"], 'W/"v1"', "another body of the same answer: a weak validator")
+        for name, value in SECURITY_HEADERS.items():
+            self.assertEqual(response.headers[name], value, name)
+        self.assertEqual(self.client.get("/api/eneo/flows/", headers={"Accept-Encoding": "gzip"}).content, LARGE, "the browser reads it whole")
+
+    def test_a_json_type_with_a_parameter_or_a_json_suffix_is_json(self) -> None:
+        self.proxy_client.response_content = LARGE
+        for content_type in ("application/json; charset=utf-8", "Application/JSON", "application/problem+json"):
+            with self.subTest(content_type):
+                self.proxy_client.response_headers = {"content-type": content_type}
+
+                response, body = self.raw("/api/eneo/flows/", **{"Accept-Encoding": "gzip"})
+
+                self.assertEqual((response.headers["content-encoding"], gzip.decompress(body)), ("gzip", LARGE))
+
+    def test_a_browser_that_takes_no_gzip_gets_the_json_as_it_is_and_a_cache_is_told_it_varies(self) -> None:
+        self.proxy_client.response_content = LARGE
+        for accept in ("", "identity", "deflate", "br", "gzip;q=0"):
+            with self.subTest(accept=accept):
+                response, body = self.raw("/api/eneo/flows/", **{"Accept-Encoding": accept})
+
+                self.assertEqual(body, LARGE)
+                self.assertNotIn("content-encoding", response.headers)
+                self.assertEqual(response.headers["vary"], "Accept-Encoding")
+
+    def test_only_a_whole_json_answer_of_a_kilobyte_or_more_is_compressed(self) -> None:
+        json_type = {"content-type": "application/json"}
+        for label, status, headers, content in (
+            ("small", 200, json_type, b'{"items": []}' + b" " * 1000),
+            ("not JSON", 200, {"content-type": "text/plain"}, LARGE),
+            ("a PDF", 200, {"content-type": "application/pdf"}, LARGE),
+            ("no type", 200, {}, LARGE),
+            ("an error", 500, json_type, LARGE),
+            ("a part", 206, {**json_type, "content-range": "bytes 0-9/99"}, LARGE),
+            ("a range", 200, {**json_type, "content-range": "bytes 0-9/99"}, LARGE),
+        ):
+            with self.subTest(label):
+                self.proxy_client.response_status, self.proxy_client.response_headers = status, headers
+                self.proxy_client.response_content = content
+
+                response, body = self.raw("/api/eneo/flows/", **{"Accept-Encoding": "gzip"})
+
+                self.assertEqual((response.status_code, body), (status, content))
+                self.assertNotIn("content-encoding", response.headers)
+                self.assertNotIn("vary", response.headers)
 
     def test_without_a_session_the_proxy_is_401_before_its_rules_are_consulted(self) -> None:
         self.client.cookies.clear()
