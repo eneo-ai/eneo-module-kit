@@ -11,6 +11,7 @@ export const messages = {
   signIn: "Logga in med Eneo",
   signInFailed: "Inloggningen kunde inte slutföras. Försök igen.",
   unreachable: "Kunde inte kontakta modulen. Försök igen.",
+  requestTimedOut: "Det tog för lång tid att få svar. Försök igen.",
   tryAgain: "Försök igen",
   signedInAgainTitle: "Du är inloggad igen",
   signedInAgainHint: "Du kan stänga det här fönstret och fortsätta där du var.",

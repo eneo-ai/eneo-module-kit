@@ -1,4 +1,8 @@
+import { messages } from "./messages.js";
 import { sessionState, type SessionState } from "./state.js";
+
+/** How long a request waits for its answer to begin. The backend waits 60 s for Eneo, so this ends only what it never answers. */
+export const REQUEST_TIMEOUT_MS = 90_000;
 
 /** What a request that the login's end refused fails with: the same whether the backend or the page refused it. */
 export class SessionExpiredError extends Error {
@@ -6,6 +10,15 @@ export class SessionExpiredError extends Error {
   constructor() {
     super("Session expired");
     this.name = "SessionExpiredError";
+  }
+}
+
+/** What a request fails with when no answer has begun within `REQUEST_TIMEOUT_MS`. Its message is for the page to show: trying again can help. */
+export class RequestTimeoutError extends Error {
+  readonly status = 408;
+  constructor() {
+    super(messages.requestTimedOut);
+    this.name = "RequestTimeoutError";
   }
 }
 
@@ -32,6 +45,28 @@ async function isUserChanged(res: Response): Promise<boolean> {
   return body?.detail === "user_changed";
 }
 
+/** `fetch`, ended when no answer has begun within REQUEST_TIMEOUT_MS: a wait that would never end is a timeout to say. The
+ * page's own signal still aborts it. */
+async function fetchWithin(path: string, init: RequestInit): Promise<Response> {
+  const limit = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    limit.abort();
+  }, REQUEST_TIMEOUT_MS);
+  const cancel = () => limit.abort(init.signal?.reason);
+  if (init.signal?.aborted) cancel();
+  else init.signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    return await fetch(path, { ...init, signal: limit.signal });
+  } catch (error) {
+    throw timedOut ? new RequestTimeoutError() : error;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", cancel);
+  }
+}
+
 /**
  * `fetch` for a page whose login can end. Signed out (or someone else signed in here), nothing but `/api/auth/*`
  * leaves the page: a request that is safe to send twice waits for the new login and is sent once more, any other
@@ -39,6 +74,7 @@ async function isUserChanged(res: Response): Promise<boolean> {
  * a renewal came between the request and its refusal.
  * A write names the page's user (`X-Expected-User`): a browser has one cookie for every tab, and the backend answers 409
  * `user_changed` when the session is someone else's. That ends the login too, and the write is never sent as them.
+ * A request no answer has begun for within REQUEST_TIMEOUT_MS fails with `RequestTimeoutError`.
  * Any other answer is returned as it came: parsing it is the module's.
  */
 export function createFetchWithSession(state: SessionState) {
@@ -53,7 +89,7 @@ export function createFetchWithSession(state: SessionState) {
       const headers = new Headers(init.headers);
       const user = state.expectedUser;
       if (user && writes(init)) headers.set("X-Expected-User", user);
-      const res = await fetch(path, { ...init, headers, credentials: "include" });
+      const res = await fetchWithin(path, { ...init, headers, credentials: "include" });
       if (isSessionEndedAnswer(res.status, res.headers.get("X-Auth-Required")) && !path.startsWith("/api/auth/")) {
         // A refusal that comes after a renewal belongs to the login before it: it covers nothing, and a request that is
         // safe to send twice goes once under the login now (which waits, if that one has ended too).
