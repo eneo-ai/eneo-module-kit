@@ -28,7 +28,9 @@ FORWARDED_REQUEST_HEADERS = frozenset(
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
 # several would be merged into one line, and one named like the module's session would replace it. Its Location
-# names Eneo's own host, which the browser cannot reach and which says how the network is laid out.
+# names Eneo's own host, which the browser cannot reach and which says how the network is laid out. What sets the
+# policy of the module's origin is the module's, not Eneo's: its security headers (web.py adds them where an answer
+# lacks them), what a browser may store (nothing under /api), HTTPS for its host, and what to wipe from it.
 _UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
@@ -37,6 +39,14 @@ _UNFORWARDED_RESPONSE_HEADERS = {
     "content-length",
     "set-cookie",
     "location",
+    "content-security-policy",
+    "content-security-policy-report-only",
+    "x-frame-options",
+    "permissions-policy",
+    "referrer-policy",
+    "cache-control",
+    "strict-transport-security",
+    "clear-site-data",
 }
 
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
@@ -224,9 +234,6 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             for k, v in upstream.headers.items()
             if k.lower() not in _UNFORWARDED_RESPONSE_HEADERS
         }
-        # A response is one user's: no cache keeps it unless Eneo said how it may be kept.
-        if not any(name.lower() == "cache-control" for name in resp_headers):
-            resp_headers["Cache-Control"] = "private, no-store"
 
         return Response(
             content=upstream.content,

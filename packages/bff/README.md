@@ -60,7 +60,7 @@ Run from the module's directory, with the environment of [configuration](https:/
 
 ## The proxy
 
-The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
+The proxy exposes nothing until a module names a route with `rule(...)`. A path is matched as written, against the path after `/api/eneo/`. Of the browser's request headers only `eneo_module_bff.proxy.FORWARDED_REQUEST_HEADERS` (`Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match`, `If-None-Match`) reach Eneo; `create_app(forward_request_headers=[...])` adds more, never a credential or framing header. Of Eneo's answer headers, `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security` and `Clear-Site-Data` are dropped, as are `Set-Cookie` and `Location`: a proxied answer carries the module's security headers and `Cache-Control: no-store`. `forward_upload` and `stream_signed` are functions for a module's own routes, behind `Depends(require_session)` (and `require_same_origin` for a write). `stream_signed` shows a file inline only if it is audio, video, a PDF or a common image (`png`, `jpeg`, `gif`, `webp`), and sends anything else as an attachment; `inline_types=[...]` widens that. At most `MAX_CONCURRENT_STREAMS` files stream at once (64): the next is a 503 with `Retry-After`, at once, so the connections a stream holds do not crowd out the API.
 
 ## Uploads
 
@@ -97,7 +97,7 @@ Stable for the UI package and for any other frontend.
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
 | anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
 
-There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: the slash twin of a route (`/api/healthz/`) is a 404, never a redirect.
+There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: the slash twin of a route (`/api/healthz/`) is a 404, never a redirect. Every answer, an unhandled error's 500 included, carries the security headers ([security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md)) unless its route set its own, and an answer under `/api` gets `Cache-Control: no-store` unless its route says how it may be kept.
 
 ## Answers the package gives
 
@@ -121,6 +121,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 | 503 | No upload slot or shared heavy-operation capacity. Headers `Retry-After: 2`, `Connection: close` | `{"error": "uploads_busy", ...}` |
 | 408 | The upload body exceeds its total or inactivity receive deadline. Header `Connection: close` | `{"error": "upload_receive_timeout", ...}` |
 | 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
+| 500 | An error no route handled. Headers: the security headers, `Cache-Control: no-store` | `Internal Server Error` (text) |
 | other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
 
 A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid`. Two Swedish query values are read by the UI package: `fel=utgangen` and `fel=annan-anvandare`.

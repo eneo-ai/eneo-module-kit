@@ -110,7 +110,7 @@ proxy_rules = [
 - A forwarded header whose value is not ASCII is a 400, and a URL longer than the HTTP client writes (65,536 characters once the path is encoded for Eneo) is a 414, on the proxy, uploads and file streams: Eneo hears nothing of either.
 - The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. Add more with `create_app(forward_request_headers=["X-Thing"])`. A credential or framing header (`Authorization`, `Cookie`, `Origin`, `Referer`, `X-API-Key`, `Proxy-Authorization`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`) is a `ValueError` when the app is built. The service key and the module-user token are always set by the module, whatever the browser sent.
-- Eneo's `Set-Cookie` and `Location` never reach the browser. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
+- Eneo's `Set-Cookie` and `Location` never reach the browser, nor its `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security` and `Clear-Site-Data`: a proxied answer carries the module's security headers and `Cache-Control: no-store`. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.
 
 ## 6. Forward an upload
 

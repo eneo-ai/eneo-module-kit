@@ -58,7 +58,8 @@ stub Eneo that implements the handoff.
 **K6. Deny by default.** The proxy exposes nothing until the module names a route. The kit ships the mechanism;
 each module ships its own allowlist. Deny by default holds for paths and for headers: of the browser's request
 headers only a short allowlist reaches Eneo (a module may add to it), and the credentials are the module's. Eneo's
-`Location` never reaches the browser, and a redirect from Eneo (301, 302, 303, 307, 308) is a 502 `upstream_redirect`:
+`Location`, and the headers that set the policy of the module's origin (its security headers, `Cache-Control`), never
+reach the browser, and a redirect from Eneo (301, 302, 303, 307, 308) is a 502 `upstream_redirect`:
 the module follows none and no route of a module is expected to redirect.
 
 **K7. Primitives, not routes, for uploads and files.** Forwarding a multipart upload and streaming a signed file

@@ -89,7 +89,7 @@ Look at: the order a request meets things. Routes match in registration order, s
 
 ```mermaid
 flowchart TB
-  req["Request"] --> sec["Security headers on every response"]
+  req["Request"] --> sec["Security headers on every answer, a 500 too; Cache-Control no-store under /api unless the route sets its own"]
   sec --> lim["Body limit: 413 over the cap"]
   lim --> kit["Kit routes: /health, /api/healthz, /api/auth/*, /api/branding*"]
   kit --> own["The module's routers, in the order given"]
@@ -177,7 +177,7 @@ flowchart TB
   up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
-  up -->|"any other status"| resp["Same status and body. Set-Cookie and Location dropped. Cache-Control private, no-store if Eneo sent none"]
+  up -->|"any other status"| resp["Same status and body. Set-Cookie, Location and Eneo's security and caching headers dropped; the module's added, Cache-Control no-store"]
 ```
 
 Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`) and `limits.py`. A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.

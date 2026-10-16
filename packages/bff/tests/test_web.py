@@ -169,6 +169,33 @@ class WebTests(unittest.TestCase):
             for name, value in SECURITY_HEADERS.items():
                 self.assertEqual(response.headers[name], value, f"{name} on {path}")
 
+    def test_an_unhandled_error_is_a_500_that_carries_the_security_headers(self) -> None:
+        # Starlette answers it outside every middleware, so no middleware can add them to it.
+        router = APIRouter()
+
+        @router.get("/api/broken")
+        async def broken() -> None:
+            raise RuntimeError("boom")
+
+        client = TestClient(self.build(routers=[router]).app, raise_server_exceptions=False)
+
+        response = client.get("/api/broken")
+
+        self.assertEqual((response.status_code, response.text), (500, "Internal Server Error"))
+        for name, value in SECURITY_HEADERS.items():
+            self.assertEqual(response.headers[name], value, name)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_an_api_answer_is_not_stored_unless_its_route_says_how(self) -> None:
+        client = self.build(routers=[module_router()])
+
+        self.assertEqual(client.get("/api/mine").headers["cache-control"], "no-store")
+        self.assertEqual(client.get("/api/nope").headers["cache-control"], "no-store")
+        self.assertEqual(client.get("/api/branding/theme.css").headers["cache-control"], "public, max-age=300")
+        # Not under /api: the page revalidates, and the health check says nothing about caching.
+        self.assertEqual(client.get("/flows/abc").headers["cache-control"], "no-cache")
+        self.assertNotIn("cache-control", client.get("/health").headers)
+
     def test_the_policy_allows_nothing_inline_and_nothing_from_another_origin(self) -> None:
         self.assertIn("script-src 'self'", CONTENT_SECURITY_POLICY)
         self.assertIn("style-src 'self'", CONTENT_SECURITY_POLICY)

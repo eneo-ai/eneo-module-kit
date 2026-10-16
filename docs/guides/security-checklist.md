@@ -19,18 +19,20 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Nothing is proxied until named | Rules match method and whole path; a path that could reach another Eneo route is a 403 first | `proxy.py` |
 | The browser chooses no credential and no framing header | A short request-header allowlist; the credentials come from the session | `proxy.py` |
 | Eneo's `Set-Cookie` and `Location` stay with the module; a redirect is an error | 502 `upstream_redirect` for the proxy, uploads and files | `proxy.py`, `transport.py` |
+| Eneo sets no policy for the module's origin | The proxy drops Eneo's `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security` and `Clear-Site-Data`; the module's own apply | `proxy.py` |
 | No body is read before auth or past a limit | A body cap on every route; uploads read after the route's guards, counted as they arrive | `limits.py`, `transport.py` |
 | Heavy operations leave connections for the API | Shared admission before upload parsing or file minting; module protocols use `heavy_io_slot`; a quick 503; the configured ceiling is at most 96 of 100 pool connections | `limits.py`, `transport.py`, `settings.py`, `app.py` |
 | Partial uploads cannot hold temporary storage indefinitely | Concurrent-upload cap, total and inactivity receive deadlines, incomplete-body rejection, files closed before capacity is released | `transport.py`, `settings.py` |
 | A signed URL never reaches the browser and ends with its session | Minted by the module, kept in the session store | `transport.py`, `auth.py` |
 | A user's file cannot run script from the module's origin | Inline only for audio, video, PDF and PNG, JPEG, GIF, WebP; `nosniff` | `transport.py` |
 | Only the built UI's own files are served | A dotfile, a path with a control character, a backslash or a `.` or `..` segment, and `//api/x` are a 404, never a 500 or the page | `web.py` |
-| Browser-side hardening | The headers below, on every response unless a route set its own | `web.py` |
+| Browser-side hardening | The headers below, on every answer, a 500 included, unless a route set its own | `web.py` |
+| No user's answer is kept in a browser's cache | An answer under `/api` gets `Cache-Control: no-store` unless its route says how it may be kept (the branding stylesheet, a logo, a file stream) | `web.py` |
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |
 | No API description and no redirect on the module's origin | No `/docs`, `/redoc` or `/openapi.json`; the slash twin of a route is a 404, not a 307 whose `Location` says http:// behind a proxy that ends TLS | `app.py` |
 | One replica, no ticket in the logs | One worker, uvicorn's access log off, no `Server` banner | `serve.py` |
 
-Headers on every response (`web.py`); `create_app(security_headers={...})` replaces one by name, for example `Permissions-Policy: camera=(), geolocation=(), microphone=(self)`:
+Headers on every answer (`web.py`), an unhandled error's 500 too; `create_app(security_headers={...})` replaces one by name, for example `Permissions-Policy: camera=(), geolocation=(), microphone=(self)`:
 
 | Header | Value |
 |---|---|
