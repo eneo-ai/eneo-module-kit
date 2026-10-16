@@ -11,7 +11,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { VStack } from "@astryxdesign/core/VStack";
 import { SlowWait, useRouteReady } from "@eneo-ai/module-kit";
-import { useSessionUser, useSignedOut } from "@eneo-ai/module-kit/session";
+import { errorAdvice, useSessionUser, useSignedOut, type ErrorAdvice } from "@eneo-ai/module-kit/session";
 import { Frame } from "../Frame";
 import { AccountMenu } from "../AccountMenu";
 import { getJson } from "../session";
@@ -22,7 +22,7 @@ interface Flow {
   description: string | null;
 }
 
-type Load = { state: "loading" } | { state: "failed" } | { state: "done"; flows: Flow[] };
+type Load = { state: "loading" } | { state: "failed"; advice: ErrorAdvice } | { state: "done"; flows: Flow[] };
 
 /**
  * The module's one page: the flows the user can run in Eneo, through the backend's proxy (/api/eneo/flows/, the one
@@ -49,7 +49,8 @@ export function Flows() {
     let current = true;
     getJson<{ items: Flow[] }>("/api/eneo/flows/")
       .then((body) => current && setLoad({ state: "done", flows: body.items }))
-      .catch(() => current && setLoad({ state: "failed" }));
+      // What went wrong, in words, and whether trying again can help (the kit's errorAdvice).
+      .catch((error) => current && setLoad({ state: "failed", advice: errorAdvice(error) }));
     return () => {
       current = false;
     };
@@ -81,9 +82,9 @@ export function Flows() {
           <Banner
             status="error"
             title="Flödena kunde inte visas."
-            description="Eneo svarade inte som väntat."
+            description={load.advice.message}
             collapsible={false}
-            endContent={<Button label="Försök igen" variant="secondary" onClick={retry} />}
+            endContent={load.advice.retry ? <Button label="Försök igen" variant="secondary" onClick={retry} /> : undefined}
           />
         ) : load.state === "done" && load.flows.length === 0 ? (
           <EmptyState headingLevel={2} title="Det finns inga publicerade flöden som du kan använda än." description="När ett flöde publiceras i Eneo visas det här." />

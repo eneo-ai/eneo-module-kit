@@ -403,7 +403,7 @@ The UI package, the template and the image:
 | Navigation and the stand-in pages | `packages/ui/src/routes.tsx` | `route-effects.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
 | Waiting, and code fetched when needed | `packages/ui/src/LoadingShell.tsx`, `SlowWait.tsx`, `lazy.tsx` | `waiting.test.ts`, `lazy.test.ts` |
 | Online status and its notice | `packages/ui/src/online-status.ts`, `OfflineBanner.tsx` | `online-status.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
-| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
+| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`, `errors.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
 | A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
 | Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |
