@@ -37,6 +37,21 @@ jobs:
       - run: pip install --no-deps -r backend/requirements.txt
       - run: python -m unittest discover -s backend/tests -t backend
       - run: python -m unittest discover -s stub-eneo
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Before the kit's first release the lock finds @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md).
+      - run: npm ci
+        working-directory: web
+      # The rules the module's code keeps, and its own unit tests (web/tests/unit/), none of which reaches the network.
+      - run: npm test
+        working-directory: web
   web:
     # The browser tests in five parts, each on a runner of its own, so that the other engines do not lengthen the part
     # every change waits for. The projects are named here (web/tests/e2e/playwright.config.ts has each one), so what a
@@ -201,7 +216,7 @@ jobs:
           compression-level: 0
   # Only after every job above passed on this commit, and only for main: the tested image, as the commit's.
   publish:
-    needs: [backend, web, audit, compose, image]
+    needs: [backend, unit, web, audit, compose, image]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

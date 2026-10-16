@@ -50,7 +50,7 @@ these checks also detect a route without `require_session`, and a write without
 `require_same_origin` or `require_expected_user`.
 
 For UI work, add relevant loading, empty, error and signed-out states to
-`web/tests/e2e/screens.ts`. From `web/`, run `npm run lint` and a focused browser test,
+`web/tests/e2e/screens.ts`. From `web/`, run `npm run lint`, `npm test` and a focused browser test,
 for example `npm run test:e2e -- --project=chromium tests/e2e/flow.spec.ts`. Inspect the
 changed states visually, including mobile and both themes when layout or color changes.
 Run the full `npm run test:e2e` on the final unchanged candidate, as required by `AGENTS.md`.

@@ -22,8 +22,9 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   `MODULE_PUBLIC_URL/api/auth/callback`, service key).
 - **Add a route:** in `backend/routes.py` on `router`, behind `require_session`; to call Eneo, one `rule(...)` in `backend/main.py`.
 - **Add a page:** a route in `web/src/App.tsx` inside `RequireSession`; its states in `web/tests/e2e/screens.ts`.
-- **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm run test:e2e` (browsers, the accessibility
-  gate and the production checks; builds first), or `npm run test:prod` for the production checks alone. If you set `PYTHON` for it, give an absolute path to a python that has `eneo-module-bff`.
+- **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm test` (unit tests and the code's rules),
+  `npm run test:e2e` (browsers, the accessibility gate and the production checks; builds first), or `npm run test:prod` for the
+  production checks alone. If you set `PYTHON` for them, give an absolute path to a python that has `eneo-module-bff`.
 - **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
   release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
 - **Release and deploy:** CI (`.github/workflows/ci.yml`) builds the image once and, on main, publishes it as `sha-<commit>` after

@@ -13,7 +13,7 @@ The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are 
 | `packages/ui/tests/` | node:test with jsdom, one file per concern | built |
 | `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml` (production: the published image, read-only), `docker-compose.override.yml` (development: a local build and the stub), `docker-compose.traefik.yml` (Traefik with HTTPS), `.env.example`, `.devcontainer/`, `.github/workflows/` (a module's own CI, which publishes the tested image, and `release.yml`, which releases a tag), its own `AGENTS.md` | built |
 | `docs/` | `architecture.md`, `guides/`, `decisions/`, `glossary.md`, `design.md` (long form); `docs/README.md` is the index | current |
-| `.github/workflows/ci.yml` | CI: jobs `bff` (lowest and newest versions, `pip-audit`), `ui`, `template-backend`, `template-audit`, `template-web`, `template-image`, each against the packages of the same commit, and `workflows` (actionlint). Actions pinned to commits, images to digests, tools to versions | built |
+| `.github/workflows/ci.yml` | CI: jobs `bff` (lowest and newest versions, `pip-audit`), `ui`, `template-backend`, `template-unit`, `template-audit`, `template-web`, `template-image`, each against the packages of the same commit, and `workflows` (actionlint). Actions pinned to commits, images to digests, tools to versions | built |
 
 ## Commands
 
@@ -36,6 +36,7 @@ npm run -w packages/ui build
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built   # the theme is generated: commit what it writes
 .venv/bin/python -m unittest discover -s template/backend/tests -t template/backend
 .venv/bin/python -m unittest discover -s template/stub-eneo
+npm test -w template/web                                                                   # the template's unit tests and guards
 npx playwright install --with-deps chromium webkit firefox                                 # once
 npm run -w template/web test:e2e                      # builds, starts the stub and the backend, browsers, the gate, the production checks
 ```
