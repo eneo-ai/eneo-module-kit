@@ -18,15 +18,14 @@ import "@eneo-ai/module-kit/base.css";
 import { Link } from "react-router"; // the app's own router, if it has one
 import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
 
-createRoot(document.getElementById("root")!).render(
-  <BrowserRouter>
-    <ModuleProviders linkComponent={Link}>
-      <BrandingProvider defaultLogo="/brand/logo.svg">
-        <App />
-      </BrandingProvider>
-    </ModuleProviders>
-  </BrowserRouter>,
-);
+// the root route's component: inside the router, around every page
+<ModuleProviders linkComponent={Link}>
+  <BrandingProvider defaultLogo="/brand/logo.svg">
+    <RouteEffects path={pathname} entry={key} type={navigationType} title={routeTitle}>
+      <Outlet />
+    </RouteEffects>
+  </BrandingProvider>
+</ModuleProviders>
 
 // a page
 <ModuleShell label="Min modul" heading={<Brand productName="Min modul" href="/" />} end={<AccountMenu />}>
@@ -52,6 +51,8 @@ with a `target` other than `_self` or with `download` stays a plain anchor, so t
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
 | `LoadingShell`, `SlowWait` | The page while it waits (the bar and a spinner that shows only after 300 ms), and, beside a wait with no end in sight, after 15 seconds "Det tar längre tid än vanligt." with "Försök igen" (`onRetry`) and the page's other ways on. |
 | `lazyLoader()`, `useLoaded()`, `LoadFailure` | Code fetched when a page first needs it, once and kept; a failed fetch is kept too (a browser will not fetch it again), and `LoadFailure` offers the person's own reload, "Ladda om sidan". |
+| `RouteEffects`, `useRouteReady()` | What a navigation gives the person, router-free: the route's title at once; once the page says it has its content, its title said, the focus on its heading and the scroll (the top for a link, where the person left it for Back). |
+| `NotFoundPage`, `ErrorPage` | The pages that stand in for one that cannot be shown: "Sidan finns inte." (route it at `*`), and the router's error boundary, "Sidan kunde inte visas." with "Ladda om sidan" (a page whose code is gone after a release, or that threw). |
 | `OfflineBanner`, `useConnection()`, `onlineStatus`, `createOnlineStatus()` | Whether the page reaches the module: the browser's online events and the session client's requests decide it, telling a device without a network (`offline`) from a module that does not answer (`unreachable`). `OfflineBanner({ productName, message? })` says so above the shell's bar (`banner`): "Ingen anslutning." or "<productName> svarar inte just nu.", then the page's `message`. |
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
@@ -79,7 +80,7 @@ The login of a page that can outlive its login. SSO only: it talks to the BFF's 
   productName="Min modul"
   signInTitle="Logga in i modulen"
 >
-  <Routes />   {/* and a route at /inloggad that renders <SignedInAgain productName="Min modul" /> */}
+  <Outlet />   {/* the pages that need a session; and a route at /inloggad that renders <SignedInAgain productName="Min modul" /> */}
 </RequireSession>
 
 const response = await fetchWithSession("/api/eneo/flows/");

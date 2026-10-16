@@ -68,6 +68,24 @@ export const STATES: State[] = [
     },
   },
   {
+    // An address that is no page of the module.
+    name: "not-found",
+    go: async (page) => {
+      await page.goto("/finns-inte");
+      await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
+    },
+  },
+  {
+    // A page whose code cannot be fetched: a tab older than the release that replaced its files.
+    name: "load-failure",
+    go: async (page) => {
+      declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
+      await page.route(/\/assets\/Flows-[^/]+\.js$/, (route) => route.fulfill({ status: 404, body: "" }));
+      await page.goto("/flows");
+      await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
+    },
+  },
+  {
     // The device has lost its network while the page was open: the notice above the bar, and the page as it was.
     name: "offline",
     go: async (page) => {

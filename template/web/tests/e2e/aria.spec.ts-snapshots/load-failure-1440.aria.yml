@@ -1,0 +1,12 @@
+- link "Hoppa till innehåll":
+  - /url: "#astryx-app-shell-main"
+- banner:
+  - navigation "Eneo-modul":
+    - img "Exempelkommunen"
+    - text: Eneo-modul
+- main:
+  - heading "Sidan kunde inte visas." [level=1]
+  - paragraph: Eneo-modul kan ha uppdaterats sedan sidan öppnades. Ladda om sidan.
+  - button "Ladda om sidan"
+  - link "Till startsidan":
+    - /url: /flows

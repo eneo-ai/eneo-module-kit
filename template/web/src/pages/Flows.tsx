@@ -10,7 +10,7 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { VStack } from "@astryxdesign/core/VStack";
-import { SlowWait } from "@eneo-ai/module-kit";
+import { SlowWait, useRouteReady } from "@eneo-ai/module-kit";
 import { useSessionUser, useSignedOut } from "@eneo-ai/module-kit/session";
 import { Frame } from "../Frame";
 import { AccountMenu } from "../AccountMenu";
@@ -42,6 +42,8 @@ export function Flows() {
     setLoad({ state: "loading" });
     setAttempt((n) => n + 1);
   }, []);
+  // The page has its content once the list has answered: a navigation to it is said and focused then (RouteEffects).
+  useRouteReady(load.state !== "loading");
 
   useEffect(() => {
     let current = true;

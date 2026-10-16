@@ -25,7 +25,7 @@ const state = (name: string) => STATES.find((s) => s.name === name)!;
  */
 const KNOWN: { state: string; engine: string; problem: string; why: string }[] = [];
 
-for (const name of ["signin", "flows", "flows-empty", "flows-error"]) {
+for (const name of ["signin", "flows", "flows-empty", "flows-error", "not-found", "load-failure"]) {
   const screen = state(name);
   test(`tab through ${name}`, async ({ page, browserName }, info) => {
     await screen.go(page);

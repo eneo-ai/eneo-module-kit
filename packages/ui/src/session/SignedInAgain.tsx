@@ -3,6 +3,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useRouteReady } from "../routes.js";
 import { messages, wrongUserText } from "./messages.js";
 import type { SessionStatus } from "./types.js";
 import { userDisplayName } from "./user.js";
@@ -34,6 +35,7 @@ const TITLE: Record<Refusal | "ok", string> = {
  */
 export function SignedInAgain({ productName, refusal = refusalOf(window.location.search) }: { productName: string; refusal?: Refusal | null }) {
   const [name, setName] = useState<string | null>(null);
+  useRouteReady(true);
 
   useEffect(() => {
     document.title = `${TITLE[refusal ?? "ok"]} · ${productName}`;

@@ -1,4 +1,4 @@
-import type { Route } from "@playwright/test";
+import type { Page, Route } from "@playwright/test";
 import { declare, expect, signIn, stubFlows, test, type Expectation } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
@@ -39,7 +39,7 @@ test("the deployment accent stylesheet is applied when themed content first appe
 test("sign in through the stub Eneo, see the shell and the flows, call the module's own route, sign out", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Eneo-modul" })).toBeVisible();
-  await expect(page).toHaveTitle("Eneo-modul");
+  await expect(page).toHaveTitle("Logga in · Eneo-modul");
   await page.getByRole("link", { name: "Logga in med Eneo" }).click();
 
   // The page behind the login: the flows Eneo lists, through the backend's proxy.
@@ -114,6 +114,73 @@ test("a deep link without a session shows the sign-in page, and signing in lands
   // A reload of a deep link is the page again, not a 404.
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Välj ett flöde" })).toBeVisible();
+});
+
+test.describe("pages and addresses", () => {
+  /** In the page: what the design system's live regions are given to say, in order. */
+  const listen = () => {
+    const said: string[] = [];
+    (window as unknown as { said: string[] }).said = said;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const region = (record.target instanceof Element ? record.target : record.target.parentElement)?.closest("[data-astryx-live-region]");
+        const text = region?.textContent?.trim();
+        if (region && text && said.at(-1) !== text) said.push(text);
+      }
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  };
+  const said = (page: Page) => page.evaluate(() => (window as unknown as { said: string[] }).said);
+  /** Where the focus is: its words, and whether it is a heading in the main region. */
+  const focused = (page: Page) =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return { text: active?.textContent ?? "", heading: !!active?.matches("h1, h2, h3"), inMain: !!active?.closest('main, [role="main"]') };
+    });
+  // The lazily loaded page's code, as the build names it.
+  const flowsCode = /\/assets\/Flows-[^/]+\.js$/;
+
+  test("an address that is no page says so at that address, under its own title, and the way to the start goes there in the page", async ({ page }) => {
+    await page.goto("/finns-inte");
+    await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
+    await expect(page).toHaveTitle("Sidan finns inte · Eneo-modul");
+    await expect(page).toHaveURL(/\/finns-inte$/);
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page).toHaveURL(/\/flows$/);
+    // Signed out: the gate's sign-in screen, at the page's address.
+    await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
+  });
+
+  test("a navigation in the page is titled at once, and said with the focus in the heading once the page has its content", async ({ page }) => {
+    await signIn(page);
+    await page.addInitScript(listen);
+    await page.goto("/finns-inte");
+    expect(await said(page), "the first load says nothing").toEqual([]);
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await expect(page).toHaveTitle("Välj ett flöde · Eneo-modul");
+    await expect.poll(() => said(page)).toEqual(["Välj ett flöde · Eneo-modul"]);
+    await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Välj ett flöde" });
+  });
+
+  test("a page whose code cannot be fetched is a page too: its own title, said once, the focus in its heading, and Ladda om sidan brings it back", async ({ page }) => {
+    declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
+    await signIn(page);
+    await page.addInitScript(listen);
+    // A tab older than the release that replaced the page's files: the backend has no such file.
+    await page.goto("/finns-inte");
+    await page.route(flowsCode, (route) => route.fulfill({ status: 404, body: "" }));
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
+    await expect(page).toHaveURL(/\/flows$/);
+    await expect(page).toHaveTitle("Sidan kunde inte visas · Eneo-modul");
+    await expect.poll(() => said(page)).toEqual(["Sidan kunde inte visas · Eneo-modul"]);
+    await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Sidan kunde inte visas." });
+
+    // Nothing reloads by itself; the person's reload gets the files as they are now.
+    await page.unroute(flowsCode);
+    await page.getByRole("button", { name: "Ladda om sidan" }).click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+  });
 });
 
 test("the backend answers what it should: no session is 401, an Eneo route not on the allowlist is 403, an unknown API path 404", async ({ page }) => {
@@ -222,16 +289,18 @@ test.describe("when the connection goes", () => {
   });
 
   test("a network that does not reach the module: the page says that the module does not answer, and the next answer clears it", async ({ page }) => {
-    // The browser reports the requests the test cut off.
-    declare(page, [{ requestFailed: /GET .*\/api\/eneo\/flows\/.*: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/api\/eneo\/flows\// }]);
+    // The browser reports the status read the test cut off.
+    declare(page, [{ requestFailed: /GET .*\/api\/auth\/status: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/api\/auth\/status/ }]);
     await signIn(page);
-    await page.route(/\/api\/eneo\/flows\//, (route) => route.abort());
-    await page.reload();
+    const api = /\/api\//;
+    // The page is seen again: it reads the login's status.
+    const seen = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.route(api, (route) => route.abort());
+    await seen();
     const notice = page.getByRole("alert").filter({ hasText: "Eneo-modul svarar inte just nu." });
     await expect(notice).toBeVisible();
-    await page.unroute(/\/api\/eneo\/flows\//);
-    await page.getByRole("button", { name: "Försök igen" }).click();
-    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await page.unroute(api);
+    await seen();
     await expect(notice).toHaveCount(0);
   });
 });

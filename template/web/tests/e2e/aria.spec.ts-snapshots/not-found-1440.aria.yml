@@ -1,0 +1,11 @@
+- link "Hoppa till innehåll":
+  - /url: "#astryx-app-shell-main"
+- banner:
+  - navigation "Eneo-modul":
+    - img "Exempelkommunen"
+    - text: Eneo-modul
+- main:
+  - heading "Sidan finns inte." [level=1]
+  - paragraph: Kontrollera adressen, eller gå till startsidan.
+  - link "Till startsidan":
+    - /url: /flows

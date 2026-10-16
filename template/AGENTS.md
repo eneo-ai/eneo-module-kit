@@ -18,7 +18,7 @@ run `npm run astryx -- docs eneo-module` from `web/`.
 
 - `backend/main.py`: the app, and `PROXY_RULES`, the Eneo routes this module may call. `backend/routes.py`: the module's
   own API routes (`router`). `backend/tests/`: they run without Eneo.
-- `web/src/`: the app. `main.tsx` (providers, stylesheets), `App.tsx` (routes), `Frame.tsx` (the shell every page uses, with the notice that the connection is gone),
+- `web/src/`: the app. `main.tsx` (stylesheets, the router), `App.tsx` (the routes, each with its title, and the providers in the root), `Frame.tsx` (the shell every page uses, with the notice that the connection is gone),
   `config.ts` (the module's name), `pages/`.
 - `web/tests/e2e/`: browser tests against the built app, and the accessibility gate. `stub-eneo/`: Eneo's side of the
   contract, for development and tests. It is never shipped.
@@ -45,8 +45,9 @@ run `npm run astryx -- docs eneo-module` from `web/`.
   script (`element.style.x = ...`, a React `style` prop) are fine.
 - Accessibility bar: WCAG 2.2 AA, 44 px touch targets (24 px with a mouse), a visible focus indicator. A new page adds its
   states to `web/tests/e2e/screens.ts`; `npm run test:e2e` in `web/` is the proof, and its thresholds are never lowered.
-- A page that needs a session goes inside `RequireSession`, and calls the backend with `fetchWithSession` (both from the kit's
-  `session` export): when the login ends the page is covered and kept, and a read waits for the new login. A dialog of
+- A page is a route in `App.tsx` with its title; it calls `useRouteReady` once it has its content, so a navigation to it
+  is said and focused. A page that needs a session goes under `Private` (the kit's `RequireSession`), and calls the
+  backend with `fetchWithSession` (both from the kit's `session` export): when the login ends the page is covered and kept, and a read waits for the new login. A dialog of
   the page is closed while `useSignedOut()` says so (`isOpen={open && !signedOut}`, its state above it). The browser holds only an opaque cookie; the module-user
   token never reaches it.
 

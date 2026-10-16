@@ -44,26 +44,58 @@ With a destination path, `template` writes the reference TSX, for example `npm r
 
 ## Wire it up
 
-The package imports no stylesheet from its code; the module imports five, in this order:
+The package imports no stylesheet from its code; the module imports five, in this order, and renders its router:
 
 ```tsx
-// web/src/main.tsx (the template's, with React Router's Link passed as it is)
+// web/src/main.tsx (the template's)
 import "@eneo-ai/module-kit/layers.css";   // first: declares the cascade layers
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@eneo-ai/module-kit/theme.css";    // the built Eneo theme
 import "@eneo-ai/module-kit/base.css";     // what the theme cannot say
-import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
+import { router } from "./App";
 
-createRoot(document.getElementById("root")!).render(
-  <BrowserRouter>
+history.scrollRestoration = "manual";      // RouteEffects owns the scroll after a navigation
+createRoot(document.getElementById("root")!).render(<RouterProvider router={router} />);   // RouterProvider from "react-router/dom"
+```
+
+The template's router is React Router's data router (`createBrowserRouter` in `web/src/App.tsx`): a navigation can be held back to ask first (`useBlocker`), a page's code can be fetched when its route is first entered (`lazy`), and a page that cannot be shown has an error boundary. The providers are in the root route's component, inside the router, so that `Link` works:
+
+```tsx
+// web/src/App.tsx (the template's, shortened)
+function Root() {
+  const { pathname, key } = useLocation();
+  const title = [...useMatches()].reverse().map((match) => match.handle?.title).find(Boolean);
+  return (
     <ModuleProviders linkComponent={Link}>
       <BrandingProvider defaultLogo="/brand/logo.svg">
-        <App />
+        <RouteEffects path={pathname} entry={key} type={useNavigationType()} title={title}>
+          <Outlet />
+        </RouteEffects>
       </BrandingProvider>
     </ModuleProviders>
-  </BrowserRouter>,
-);
+  );
+}
+
+export const router = createBrowserRouter([
+  {
+    Component: Root,
+    HydrateFallback: RootLoading,                     // the providers and <LoadingShell>, while the first page's code arrives
+    children: [
+      {
+        ErrorBoundary: RouteError,                    // <ErrorPage productName error={useRouteError()} />
+        children: [
+          { index: true, handle: { title: "Logga in · Min modul" }, element: <SignInScreen … /> },
+          { path: "inloggad", element: <SignedInAgain productName="Min modul" /> },
+          { Component: Private, children: [            // <RequireSession …><Outlet /></RequireSession>
+            { path: "flows", handle: { title: "Välj ett flöde · Min modul" }, lazy: page(() => import("./pages/Flows")) },
+          ] },
+          { path: "*", element: <NotFoundPage productName="Min modul" /> },
+        ],
+      },
+    ],
+  },
+]);
 ```
 
 A page is a `ModuleShell` with the brand in its heading:
@@ -106,6 +138,8 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `LoadingShell({ productName })` | The page while it waits: the bar, a hidden `<h1>` with the name and a spinner ("Laddar") that shows only after 300 ms (`eneo-wait` in `base.css`), so a quick answer leaves no blink of it. `RequireSession` waits in it, and so can a router while a page's code arrives. |
 | `SlowWait({ onRetry, children? })` | Beside a wait with no end in sight: nothing for 15 seconds, then "Det tar längre tid än vanligt." in a status region that was there from the start, "Försök igen" (which calls `onRetry` and judges the wait afresh) and the page's other ways on (`children`). |
 | `lazyLoader(get)`, `useLoaded(loader)`, `LoadFailure({ children, keeps?, reload? })` | Code a page fetches when it first needs it (`lazyLoader(() => import("./Editor"))`): fetched once and kept, shared by pages that ask meanwhile. `useLoaded` gives `{ value, failed }`. A failed fetch is kept too: a browser keeps it per address, so there is no retry, and `LoadFailure` says what could not be fetched (and `keeps`, what a reload gives back) beside one action, "Ladda om sidan". Nothing reloads by itself. |
+| `RouteEffects({ path, entry, type, title?, children })`, `useRouteReady(ready)` | What a navigation gives the person, around the router's page: [below](#pages-and-navigation). |
+| `NotFoundPage({ productName, homeHref? })`, `ErrorPage({ productName, error, homeHref? })` | The pages that stand in for one that cannot be shown: [below](#pages-and-navigation). |
 | `onlineStatus`, `createOnlineStatus(target?, now?)` | The page's one status, which the session client's requests report to, and a way to build one over a stand-in window (tests). A module's own transport reports with `onlineStatus.sending()`, `reportReachable(sent)` and `reportNetworkFailure()`. |
 | `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
 | `CopyButton({ text, label, name?, variant? })` | Copies `text` as plain text. A check replaces the copy icon and a screen reader hears "Kopierat" once; the words stay, so the button keeps its width. A copy that fails says "Kunde inte kopiera" until the next press. `name` is the accessible name when it says more than `label`, and starts with it. |
@@ -151,6 +185,16 @@ Without `linkComponent` every link is a plain anchor and a click on one to a pag
 - The module has no version of its own: the UI and the BFF ship as one image, and `/api/healthz` says what the image was built from and the release the deployment names ([configuration](configuration.md#which-build-runs)). A local build says nothing of itself.
 - It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: the template's account menu has "Version", which opens it in a dialog (`template/web/src/AccountMenu.tsx`).
 
+## Pages and navigation
+
+The package imports no router: the module's router gives `RouteEffects` the path (`useLocation().pathname`), the history entry's key (`useLocation().key`) and how it was reached (`useNavigationType()`), as the template's `Root` does.
+
+- **The title** of the route (the template's `handle.title`, `<page> · <product>`) is set at once, in a layout effect. A page that names itself more closely does so in an effect, which runs after it, and has the last word.
+- **The rest waits for the page's content**: a page calls `useRouteReady(ready)` once it has its first real content (the list answered), not a spinner. In the next frame, once: the title is said through Astryx's live region; the focus goes to the page's heading (`[data-phase-heading]`, an `h1` with `tabindex`, else the first `h1` of the main region, made focusable with `tabindex="-1"`) when it is on no element, unless the person pressed a key or the pointer since and put the focus somewhere the page did not remove; and the window scrolls to the top for a link, or to where the person left the entry for Back and Forward. Set `history.scrollRestoration = "manual"`: this is the one place that scrolls after a navigation.
+- Only a new path is a navigation: a page that writes `?run=` into the address changes its own state. The first load, and the redirect the first page sends the person on by before any page has its content, do none of it.
+- `SignInScreen`, `SignedInAgain` and the stand-in pages are ready at once. `RequireSession`'s waiting view is not.
+- `NotFoundPage` says "Sidan finns inte." at the address as it was typed, with "Till startsidan" (`homeHref`, default `/`); route it at `*`. `ErrorPage` is the router's error boundary: "Sidan kunde inte visas.", that the module may have been updated since the page was opened, "Ladda om sidan" and "Till startsidan"; the error goes to the console. It covers a page whose code cannot be fetched (a tab that was open across a release asks for files that are gone) and a page that threw. Nothing reloads by itself: a person may be in the middle of something, and a reload is theirs to choose. Both set their own title (`Sidan finns inte · <product>`), in the column of the sign-in screen.
+
 ## Online status
 
 - Two causes, told apart: the browser's `offline` event says the device has no network (`offline`); a request that did not reach the module while the browser says it has one says the module does not answer (`unreachable`). A request that reaches the module, an error status included, or the browser's `online` event, clears it. An answer to a request that left after the browser said "offline" outweighs it (Safari can go on saying so after a device wakes); one that was already on its way does not.
@@ -166,18 +210,14 @@ Without `linkComponent` every link is a plain anchor and a click on one to a pag
 
 ## The session client
 
-`@eneo-ai/module-kit/session` keeps the login of a page that can outlive its login. SSO only: it uses the BFF's `GET /api/auth/status`, `GET /api/auth/login?next=&renew=` and the `X-Auth-Required: session` mark on a 401 ([design.md](../design.md) section 5). A page's whole use of it, from the template's `web/src/App.tsx`:
+`@eneo-ai/module-kit/session` keeps the login of a page that can outlive its login. SSO only: it uses the BFF's `GET /api/auth/status`, `GET /api/auth/login?next=&renew=` and the `X-Auth-Required: session` mark on a 401 ([design.md](../design.md) section 5). A page's whole use of it, from the template's `web/src/App.tsx`: the route a login window ends at, and the pages that need a session under one layout route that is the gate:
 
 ```tsx
-<Route path="/inloggad" element={<SignedInAgain productName={PRODUCT_NAME} />} />   {/* where a login window ends */}
-<Route
-  path="/flows"
-  element={
-    <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} signInDescription={SIGN_IN_TEXT}>
-      <Flows />
-    </RequireSession>
-  }
-/>
+{ path: "inloggad", element: <SignedInAgain productName={PRODUCT_NAME} /> },   // where a login window ends
+{
+  Component: Private,    // <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} …><Outlet /></RequireSession>
+  children: [{ path: "flows", lazy: page(async () => (await import("./pages/Flows")).Flows) }],
+},
 ```
 
 and every call to the backend through `fetchWithSession(path, init)` instead of `fetch` (the template's `getJson` in `web/src/session.ts`).
@@ -211,4 +251,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), online status and its banner (`online-status`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

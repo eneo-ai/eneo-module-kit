@@ -25,6 +25,8 @@ const SNAPSHOTS: { state: string; region: (page: Page) => Locator }[] = [
   { state: "flows-empty", region: (page) => page.getByRole("main") },
   { state: "flows-error", region: (page) => page.getByRole("main") },
   { state: "offline", region: (page) => page.getByRole("banner") },
+  { state: "not-found", region: (page) => page.locator(".astryx-app-shell") },
+  { state: "load-failure", region: (page) => page.locator(".astryx-app-shell") },
   { state: "session-warning", region: (page) => page.getByRole("alertdialog") },
   { state: "signed-out", region: (page) => page.getByRole("alertdialog") },
 ];

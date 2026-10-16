@@ -31,7 +31,7 @@ or Eneo permissions.
 
 | Work | Start here | Read when needed |
 |---|---|---|
-| Page or UI state | `web/src/App.tsx`, `web/src/pages/Flows.tsx`, `web/src/Frame.tsx` | From `web/`: `npm run astryx -- docs eneo-module`, then `build "<idea>"` and `component <Name>` through the same script. Keep the existing providers and shell. |
+| Page or UI state | `web/src/App.tsx`, `web/src/pages/Flows.tsx`, `web/src/Frame.tsx` | From `web/`: `npm run astryx -- docs eneo-module`, then `build "<idea>"` and `component <Name>` through the same script. Keep the existing providers, the router's root and the shell; a new page is a route with its title and calls `useRouteReady` once it has its content. |
 | Module API | `backend/routes.py`, `backend/tests/test_routes.py` | [Build a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md): route guards, calling Eneo and transport helpers. |
 | Proxied Eneo API | `PROXY_RULES` in `backend/main.py`, `backend/tests/test_app.py` | Verify the actual Eneo endpoint, method and permission contract before adding a rule. A module owns its allowlist. |
 | Login or session behavior | Existing `RequireSession`, `web/src/session.ts`, `web/src/AccountMenu.tsx` | `web/node_modules/@eneo-ai/module-kit/README.md` after installation, and `npm run astryx -- docs eneo-module` from `web/`. Reuse the package rather than creating another token or refresh client. |

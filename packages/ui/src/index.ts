@@ -9,4 +9,5 @@ export { OfflineBanner } from "./OfflineBanner.js";
 export { LoadingShell } from "./LoadingShell.js";
 export { SlowWait } from "./SlowWait.js";
 export { lazyLoader, LoadFailure, useLoaded, type Loader } from "./lazy.js";
+export { ErrorPage, NotFoundPage, RouteEffects, useRouteReady } from "./routes.js";
 export { eneoTheme } from "./theme/built/eneo.js";
