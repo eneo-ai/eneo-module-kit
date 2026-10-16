@@ -131,6 +131,16 @@ export function parse(html: string): Document {
   return new JSDOM(html).window.document;
 }
 
+/** A clipboard that takes the text, or none at all (a page without permission, or an insecure origin), for one test. */
+export function useClipboard(t: import("node:test").TestContext, clipboard: { writeText: (text: string) => Promise<void> } | undefined): void {
+  const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+  Object.defineProperty(navigator, "clipboard", { value: clipboard, configurable: true });
+  t.after(() => {
+    if (original) Object.defineProperty(navigator, "clipboard", original);
+    else Reflect.deleteProperty(navigator, "clipboard");
+  });
+}
+
 /** A button by its visible words or its accessible name, anywhere under `within`. */
 export function button(within: ParentNode, name: string): HTMLButtonElement | null {
   return [...within.querySelectorAll("button")].find((b) => b.textContent?.trim() === name || b.getAttribute("aria-label") === name) ?? null;
