@@ -30,6 +30,9 @@ function closePopovers() {
  *   the work without a navigation (signing out), and for a navigation the router held (`blocker.proceed`, `blocker.reset`).
  *   Not active, it goes on at once.
  * - `holds()` says, at the moment the router asks, whether a navigation must be held.
+ * - `isActive`, when given, is called each time `holds`, `leaveFirst` or the browser's question asks, and reads where
+ *   the page keeps its work (a store, a ref): a handler that stores the work and leaves in one go is let through before
+ *   the page has rendered `active` false. Without it they read the last render's `active`.
  *
  * An answered "Lämna sidan" lets its own way off through: neither the router nor the browser asks again, also when the
  * page is unloaded after the action (WebKit asks `beforeunload` only after a `location.assign` has returned). A `goOn`
@@ -39,7 +42,11 @@ function closePopovers() {
  * and above the sign-in dialog when it was asked while signed out. Staying has the focus. Render `question` once on the
  * page.
  */
-export function useLeaveQuestion(active: boolean, warning: string): {
+export function useLeaveQuestion(
+  active: boolean,
+  warning: string,
+  isActive?: () => boolean,
+): {
   question: ReactNode;
   leaveFirst: (goOn: () => unknown, stay?: () => void) => void;
   holds: () => boolean;
@@ -47,35 +54,39 @@ export function useLeaveQuestion(active: boolean, warning: string): {
   const [pending, setPending] = useState<Pending | null>(null);
   // While an answered way off goes on.
   const allowed = useRef(false);
-  // What `holds` and `leaveFirst` read when they are called, after the render that set it. A page that holds no work
-  // any more holds the next from the start.
+  // The last render's `active` and `isActive`, which `holds` and `leaveFirst` read when they are called. A page that holds
+  // no work any more holds the next from the start.
   const holding = useRef(active);
+  const reads = useRef(isActive);
   useLayoutEffect(() => {
     holding.current = active;
+    reads.current = isActive;
     if (!active) allowed.current = false;
-  }, [active]);
+  }, [active, isActive]);
+  // Whether the page holds work at this moment.
+  const holdsWork = useCallback(() => reads.current?.() ?? holding.current, []);
 
   useEffect(() => {
     if (!active) return;
     const ask = (event: BeforeUnloadEvent) => {
-      if (allowed.current) return;
+      if (allowed.current || !holdsWork()) return;
       event.preventDefault();
       // Browsers that ask only when it is set.
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", ask);
     return () => window.removeEventListener("beforeunload", ask);
-  }, [active]);
+  }, [active, holdsWork]);
 
-  const holds = useCallback(() => holding.current && !allowed.current, []);
+  const holds = useCallback(() => holdsWork() && !allowed.current, [holdsWork]);
   const leaveFirst = useCallback((goOn: () => unknown, stay?: () => void) => {
-    if (!holding.current || allowed.current) {
+    if (!holdsWork() || allowed.current) {
       void goOn();
       return;
     }
     closePopovers();
     setPending({ goOn, stay });
-  }, []);
+  }, [holdsWork]);
 
   const stay = () => {
     const answered = pending;

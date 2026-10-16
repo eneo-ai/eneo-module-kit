@@ -115,14 +115,14 @@ test("a way off that runs at once (the router's proceed) is past the hold when i
 });
 
 /** The template's web/src/leave.ts: the router's blocker holds a navigation to another path while the page holds work. */
-async function routed(active: boolean) {
+async function routed(active: boolean, isActive?: () => boolean) {
   const { createMemoryRouter, RouterProvider, useBlocker, useNavigate } = await import("react-router");
   const { ModuleProviders } = await import("../src/ModuleProviders.js");
   const { useLeaveQuestion } = await import("../src/leave-question.js");
   let leaving!: Leaving;
   let navigate!: ReturnType<typeof useNavigate>;
   function Page() {
-    leaving = useLeaveQuestion(active, WARNING);
+    leaving = useLeaveQuestion(active, WARNING, isActive);
     navigate = useNavigate();
     const blocker = useBlocker(({ currentLocation, nextLocation }) => leaving.holds() && currentLocation.pathname !== nextLocation.pathname);
     const { leaveFirst } = leaving;
@@ -172,4 +172,17 @@ test("an action asked first that then navigates in the app goes through the bloc
   await act(async () => button(question()!, "Lämna sidan")!.click());
   assert.equal(router.state.location.pathname, "/");
   assert.equal(asked(), false, "asked once");
+});
+
+test("a handler that stores the work and leaves in one go is let through: the hold reads where the work is kept, not the last render", async () => {
+  let stored = false;
+  const { act, router, navigate } = await routed(true, () => !stored);
+  await act(async () => {
+    // Stored, and off at once: the page has not rendered since, so `active` is still the render's true.
+    stored = true;
+    assert.equal(unloadAsks(), false, "nor does the browser ask for a reload in the same handler");
+    void navigate()("/annan");
+  });
+  assert.equal(router.state.location.pathname, "/annan");
+  assert.equal(asked(), false);
 });

@@ -67,7 +67,7 @@ export function Flows() {
   };
   // What the browser could not keep is the page's alone: leaving asks first (a link, Back, a reload, signing out).
   const unstored = useSyncExternalStore(drafts.subscribe, drafts.unstored);
-  const leaving = useLeaveGuard(unstored, UNSTORED);
+  const leaving = useLeaveGuard(unstored, UNSTORED, drafts.unstored);
   // Left: what the browser could not keep is gone with the page.
   useEffect(() => () => drafts.forget(), []);
   const [load, setLoad] = useState<Load>({ state: "loading" });
