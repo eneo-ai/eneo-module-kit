@@ -95,7 +95,7 @@ flowchart TB
   kit --> own["The module's routers, in the order given"]
   own --> prx["Proxy: /api/eneo/*"]
   prx --> assets["/assets: files of the built UI"]
-  assets --> page["Any other path: index.html. A missing file and /api/* are 404"]
+  assets --> page["Any other path: index.html. A missing file, /api/*, a dotfile, and a path with a control character, a backslash or a dot segment are 404"]
 ```
 
 Source: `packages/bff/src/eneo_module_bff/app.py` (`create_app`). Routes added to the app after `create_app` returns come after the page and are never reached: use `routers=`. The security-headers middleware is the outermost, so even the body limit's 413 carries the headers.

@@ -19,4 +19,5 @@ The UI is a static app. `create_app(static_dir=...)` serves its `assets/` and it
 - The Content-Security-Policy has no inline script and no inline style. If a component later needs inline style attributes, only `style-src` is widened, with a note in [design.md](../design.md). The template's browser tests fail on a console error or a CSP violation, so a page that breaks the policy fails there.
 - Anything that a server render would have injected (colour mode, branding) is handled in the browser: [K9](k09-colour-mode-in-the-ui-package.md), [K10](k10-branding-without-templating.md).
 - `static_dir` must hold an `assets/` directory, or `create_app` raises.
+- Only the built UI's own files are served: a dotfile (`.vite/manifest.json`, `.env`), and a path with a control character, a backslash or a `.` or `..` segment, is a 404, never a 500 and never the page (`test_web.py`).
 - Speech-to-text can adopt the UI package only once it is a static app too.

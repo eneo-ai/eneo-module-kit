@@ -121,6 +121,44 @@ class WebTests(unittest.TestCase):
                 self.assertNotIn("secret", response.text)
                 self.assertIn(response.status_code, (404, 400))
 
+    def test_a_path_that_names_nothing_is_a_404_never_a_500_a_dotfile_or_the_page(self) -> None:
+        # NUL made Path.resolve raise and a name too long made is_file raise: a 500 that anyone could provoke.
+        (self.root / ".env").write_text("SECRET=1")
+        (self.root / ".vite").mkdir()
+        (self.root / ".vite" / "manifest.json").write_text('{"secret": 1}')
+        (self.root / "assets" / ".hidden.js").write_text("secret")
+        client = TestClient(self.client.app, raise_server_exceptions=False)
+        for path in (
+            "/x%00.js",
+            "/x%01.js",
+            "/x%7F",
+            "/x%0A",
+            "/a%5Cb.js",
+            "/a%5Cb",
+            "/a/%2E/b",
+            "/a/%2E%2E/index.html",
+            "/.env",
+            "/.vite/manifest.json",
+            "/assets/.hidden.js",
+            "/assets/x%00.js",
+            "/" + "a" * 300 + ".js",
+        ):
+            with self.subTest(path=path):
+                response = client.get(path)
+
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"detail": "Not Found"})
+                self.assertEqual(response.headers["content-security-policy"], CONTENT_SECURITY_POLICY)
+
+    def test_a_doubled_slash_never_turns_an_api_path_into_the_page(self) -> None:
+        # The route's pattern drops one leading slash: //api/x reached the page as the path /api/x.
+        for path in ("//api", "//api/x", "///api/eneo/flows/"):
+            with self.subTest(path=path):
+                response = self.client.get(f"http://testserver{path}")
+
+                self.assertEqual(response.status_code, 404)
+                self.assertNotIn("<title>", response.text)
+
     def test_every_response_carries_the_security_headers(self) -> None:
         self.assertEqual(
             set(SECURITY_HEADERS),

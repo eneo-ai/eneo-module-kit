@@ -95,7 +95,7 @@ Stable for the UI package and for any other frontend.
 | `GET /api/branding/theme.css` | The validated deployment accent as `text/css`, or a harmless comment with no override. No session needed; no user data or cookie. `Cache-Control: public, max-age=300`, content ETag and `nosniff`. A matching `If-None-Match` (including weak, listed or wildcard validators) returns 304 with no body. A changed accent produces a different ETag; cached colours can remain until the five-minute freshness period ends. |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The built UI, if `static_dir` is given. `/api/*` and a missing file are 404 |
+| anything else | The built UI, if `static_dir` is given. `/api/*`, a missing file, a dotfile, and a path with a control character, a backslash or a `.` or `..` segment are 404 |
 
 ## Answers the package gives
 

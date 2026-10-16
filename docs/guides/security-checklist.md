@@ -24,6 +24,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Partial uploads cannot hold temporary storage indefinitely | Concurrent-upload cap, total and inactivity receive deadlines, incomplete-body rejection, files closed before capacity is released | `transport.py`, `settings.py` |
 | A signed URL never reaches the browser and ends with its session | Minted by the module, kept in the session store | `transport.py`, `auth.py` |
 | A user's file cannot run script from the module's origin | Inline only for audio, video, PDF and PNG, JPEG, GIF, WebP; `nosniff` | `transport.py` |
+| Only the built UI's own files are served | A dotfile, a path with a control character, a backslash or a `.` or `..` segment, and `//api/x` are a 404, never a 500 or the page | `web.py` |
 | Browser-side hardening | The headers below, on every response unless a route set its own | `web.py` |
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |
 | One replica, no ticket in the logs | One worker, uvicorn's access log off | `serve.py` |

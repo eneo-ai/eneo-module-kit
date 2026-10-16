@@ -141,7 +141,7 @@ Stable for the UI package and for any other frontend:
 | `GET /api/branding/theme.css` | Its validated accent family; public CSS with a content ETag |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The static app; unknown assets, `/api` and unknown `/api/*` are 404 |
+| anything else | The static app; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403.
 
