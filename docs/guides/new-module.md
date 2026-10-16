@@ -20,7 +20,7 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `web/package-lock.json`, `web/vendor/`, `web/scripts/relock.mjs` | The web app's own lock, with hashes. Before the release it finds `@eneo-ai/module-kit` in `web/vendor/` (the packed tarball, not committed); `relock.mjs` regenerates the lock. Both go when the package is published. |
 | `web/tests/e2e/` | Playwright against the built app, and the accessibility gate. |
 | `web/scripts/ci-failure.mjs` | `npm run ci:failure`: what failed in a CI run, read on your machine ([quality](quality.md#a-red-ci-job)). |
-| `Dockerfile`, `.dockerignore`, `.env.example` | One image, one process, port 3001, its base images pinned by digest. `.env.example` lists every variable the backend reads, and `MODULE_VERSION`. |
+| `Dockerfile`, `.dockerignore`, `.gitignore`, `.env.example` | One image, one process, port 3001, its base images pinned by digest. `.gitignore` keeps dependencies, builds, test output and the local environment file out of the repository. `.env.example` lists every variable the backend reads, and `MODULE_VERSION`. |
 | `docker-compose.yml`, `docker-compose.override.yml`, `docker-compose.traefik.yml` | Production: the published image, chosen by `MODULE_VERSION`, read-only and without capabilities. Development: merged by `docker compose up`, it builds the image and runs the stub. Traefik with HTTPS and HSTS, for a host without a proxy. See [release and deploy](deploy.md). |
 | `.devcontainer/` | Python 3.12 and Node 22, ports 3001, 5173 and 8411 forwarded. |
 | `.github/workflows/ci.yml`, `release.yml` | A module's own CI, which publishes the tested image as `sha-<commit>`, and its releases by tag ([CI](#ci), [release and deploy](deploy.md)). |
