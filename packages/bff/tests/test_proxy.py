@@ -305,6 +305,8 @@ class EneoProxyAuthTests(unittest.TestCase):
             "Referrer-Policy": "unsafe-url",
             "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
             "Clear-Site-Data": '"cookies", "storage"',
+            "Access-Control-Allow-Origin": "https://other.example",
+            "Access-Control-Allow-Credentials": "true",
             "ETag": '"v1"',
         }
 
@@ -312,7 +314,13 @@ class EneoProxyAuthTests(unittest.TestCase):
 
         for name, value in SECURITY_HEADERS.items():
             self.assertEqual(response.headers.get_list(name), [value], name)
-        for name in ("content-security-policy-report-only", "strict-transport-security", "clear-site-data"):
+        for name in (
+            "content-security-policy-report-only",
+            "strict-transport-security",
+            "clear-site-data",
+            "access-control-allow-origin",
+            "access-control-allow-credentials",
+        ):
             self.assertNotIn(name, response.headers)
         self.assertEqual(response.headers["etag"], '"v1"', "what describes the answer itself still comes through")
 

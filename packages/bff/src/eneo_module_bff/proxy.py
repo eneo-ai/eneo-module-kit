@@ -30,7 +30,8 @@ FORWARDED_REQUEST_HEADERS = frozenset(
 # several would be merged into one line, and one named like the module's session would replace it. Its Location
 # names Eneo's own host, which the browser cannot reach and which says how the network is laid out. What sets the
 # policy of the module's origin is the module's, not Eneo's: its security headers (web.py adds them where an answer
-# lacks them), what a browser may store (nothing under /api), HTTPS for its host, and what to wipe from it.
+# lacks them), what a browser may store (nothing under /api), HTTPS for its host, what to wipe from it, and
+# which other origins may read it (none: a gateway's CORS headers in front of Eneo must not open the module).
 _UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
@@ -47,6 +48,12 @@ _UNFORWARDED_RESPONSE_HEADERS = {
     "cache-control",
     "strict-transport-security",
     "clear-site-data",
+    "x-content-type-options",
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+    "access-control-allow-methods",
+    "access-control-allow-headers",
+    "access-control-expose-headers",
 }
 
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an

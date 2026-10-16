@@ -24,8 +24,9 @@ def require_same_origin(connection: HTTPConnection) -> None:
 async def require_expected_user(
     connection: HTTPConnection, session: Annotated[ModuleSession, Depends(require_session)]
 ) -> None:
-    """409 ``user_changed`` unless the page names the session's user in ``X-Expected-User``: a write (and a WebSocket
-    handshake) must, and a read that names someone must name them. Runs ``require_session`` first."""
+    """409 ``user_changed`` unless the page names the session's user in ``X-Expected-User``: a write must, and a read
+    that names someone must name them. A WebSocket handshake is refused: a browser cannot set the header on one, so a
+    WebSocket route does not use this. Runs ``require_session`` first."""
     _auth(connection).require_expected_user(connection, session)
 
 
