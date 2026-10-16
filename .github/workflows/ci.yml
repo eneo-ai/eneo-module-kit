@@ -1,9 +1,20 @@
 name: ci
 
+# Every action is pinned to the commit of a release, the release in the comment; every image a job runs is pinned to a
+# digest, and every tool to a version. The routine that updates them: docs/guides/deploy.md ("Keep the pins current").
+
 on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the older run; a run on main always finishes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   bff:
@@ -16,11 +27,11 @@ jobs:
       matrix:
         resolution: [lowest-direct, highest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: python -m pip install uv pip-audit
+      - run: python -m pip install uv==0.13.0 pip-audit==2.10.1
       - run: uv venv bff-venv
       - run: uv pip install --python bff-venv/bin/python --resolution ${{ matrix.resolution }} -e "packages/bff[test]"
       - run: bff-venv/bin/python -m unittest discover -s packages/bff/tests -t packages/bff
@@ -30,8 +41,8 @@ jobs:
     name: ui
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -50,8 +61,8 @@ jobs:
     name: template backend (this commit's BFF)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       # What the template installs: its locked third-party packages, with hashes, and the BFF, which it pins to a commit
@@ -61,13 +72,32 @@ jobs:
       - run: python -m unittest discover -s template/backend/tests -t template/backend
       - run: python -m unittest discover -s template/stub-eneo
       # The lock is generated from the BFF's own requirements: a change to them without a new lock fails here. The
-      # index's state is fixed by the date the lock records, so the same command gives the same file.
-      - run: pip install uv
+      # index's state is fixed by the date the lock records, and uv by its version, so the same command gives the same file.
+      - run: pip install uv==0.13.0
       - run: |
           date="$(grep -o 'exclude-newer [^ ]*' template/backend/requirements.lock | cut -d' ' -f2)"
           uv pip compile packages/bff/pyproject.toml --python-version 3.12 --universal --generate-hashes \
             --exclude-newer "$date" -o template/backend/requirements.lock
           git diff --exit-code -- template/backend/requirements.lock
+
+  template-audit:
+    # The template's two locks, which every module starts from, against the known advisories, as a module's own `audit`
+    # job checks them (template/.github/workflows/ci.yml): the backend's, and the web app's own (not the workspace's)
+    # production dependencies, high and critical failing.
+    name: template audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.10.1
+      - run: pip-audit --requirement template/backend/requirements.lock --require-hashes --disable-pip
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm audit --omit=dev --audit-level=high --workspaces=false
+        working-directory: template/web
 
   template-web:
     # The browser tests in four parts, as a module's own CI runs them (template/.github/workflows/ci.yml): the module in
@@ -92,11 +122,11 @@ jobs:
             browsers: firefox
             projects: --project=laptop-1440-firefox
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -115,7 +145,7 @@ jobs:
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run -w template/web ci:failure`
       # finds them by the job's name up to its parenthesis, with `-results` after it (`template-web-main-results`), and
       # reads them.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: template-web-${{ matrix.part }}-results
@@ -125,8 +155,8 @@ jobs:
     name: template image (this commit's UI and BFF)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -138,9 +168,40 @@ jobs:
           mkdir kit-context
           npm pack -w packages/ui --pack-destination kit-context
           cp -R packages/bff kit-context/bff
-      - run: docker build --build-context kit=kit-context -t template template
+      # The compose files a module ships, with the example settings: alone (Dokploy), with the Traefik overlay and merged
+      # with the development override. A fresh secret: the example's is a placeholder.
+      - working-directory: template
+        run: |
+          sed "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" .env.example > .env
+          docker compose -f docker-compose.yml config -q
+          MODULE_HOST=modul.example.org ACME_EMAIL=it-drift@example.org docker compose -f docker-compose.yml -f docker-compose.traefik.yml config -q
+          docker compose config -q
+      # The image, built as a module's CI builds it, run as docker-compose.yml runs it (read-only, no capabilities) under
+      # the name and the release tag the file pulls: it turns healthy and says its commit (its label and /health) and the
+      # release the deployment names. The tag is this runner's alone; nothing is pushed.
+      - working-directory: template
+        run: |
+          revision="$(git rev-parse HEAD)"
+          export MODULE_VERSION=v0.0.0
+          image="$(docker compose -f docker-compose.yml config --images)"
+          docker build --build-context kit=../kit-context -t "$image" \
+            --build-arg SOURCE_REVISION="$revision" --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" .
+          docker compose -f docker-compose.yml up -d --wait || { docker compose -f docker-compose.yml logs; exit 1; }
+          health="$(docker compose -f docker-compose.yml exec -T module python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:3001/health').read().decode())")"
+          echo "$health"
+          test "$(jq -r .revision <<< "$health")" = "$revision"
+          test "$(jq -r .release <<< "$health")" = "$MODULE_VERSION"
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$revision"
+
+  workflows:
+    # The kit's workflow and the two a module ships, which no run of this repository executes: actionlint, with
+    # shellcheck on their scripts.
+    name: workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |
-          docker run -d --name template -p 3001:3001 --env-file template/.env.example template
-          for i in $(seq 1 20); do curl -fsS http://localhost:3001/health && exit 0; sleep 1; done
-          docker logs template
-          exit 1
+          docker run --rm -v "$PWD:/repo:ro" --workdir /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/ci.yml template/.github/workflows/ci.yml template/.github/workflows/release.yml

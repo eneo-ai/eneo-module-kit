@@ -25,5 +25,6 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 | [K15](k15-cover-for-an-ended-login.md) | The cover for an ended login is a native modal dialog | Built |
 | [K16](k16-heavy-io-admission.md) | Shared admission and upload reception deadlines | Built |
 | [K17](k17-module-development-skill.md) | A local skill for module setup and feature work | Built |
+| [K18](k18-a-release-promotes-the-tested-image.md) | A release gives the tested image its version; the deployment names the release | Built |
 
 "Built" means the implementation is in the repository and verified. It does not imply that a package version is published.

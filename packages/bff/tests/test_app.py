@@ -53,7 +53,7 @@ class AppFactoryTests(unittest.TestCase):
         for path in ("/health", "/api/healthz"):
             with self.subTest(path=path):
                 response = client.get(path)
-                self.assertEqual((response.status_code, response.json()), (200, {"ok": True}))
+                self.assertEqual((response.status_code, response.json()["ok"]), (200, True))
 
     def test_the_app_holds_its_settings_client_and_auth(self) -> None:
         settings = make_settings()
@@ -127,8 +127,8 @@ class AppFactoryTests(unittest.TestCase):
             follow_redirects=False,
         )
 
-        self.assertEqual(client.get("/health").json(), {"ok": True})
-        self.assertEqual(client.get("/api/healthz").json(), {"ok": True})
+        self.assertTrue(client.get("/health").json()["ok"])
+        self.assertTrue(client.get("/api/healthz").json()["ok"])
         self.assertEqual(client.get("/api/auth/status").json(), {"authenticated": False, "user": None})
         self.assertEqual(client.get("/api/branding").json(), {"organization": None})
         # Without a login state the callback refuses and redirects; the module's route would have answered 200.

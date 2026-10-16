@@ -22,6 +22,9 @@ run `npm run astryx -- docs eneo-module` from `web/`.
   `config.ts` (the module's name), `pages/`.
 - `web/tests/e2e/`: browser tests against the built app, and the accessibility gate. `stub-eneo/`: Eneo's side of the
   contract, for development and tests. It is never shipped.
+- `docker-compose.yml`: production, the published image chosen by `MODULE_VERSION`, read-only. `docker-compose.override.yml`:
+  development, merged by `docker compose up`. `.github/workflows/`: `ci.yml` builds the image once and publishes the tested
+  image on main; `release.yml` gives it a version for a tag `vX.Y.Z` and never builds. A release is a tag, never a rebuild.
 
 ## Rules
 

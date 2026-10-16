@@ -133,7 +133,7 @@ Stable for the UI package and for any other frontend:
 
 | Route | Purpose |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET /health`, `GET /api/healthz` | `{"ok": true}` and which build runs (`revision`, `build_date`, `release`, `source`, each `null` when not known) |
 | `GET /api/auth/login?next=&renew=` | Start the handoff |
 | `GET /api/auth/callback?ticket=&state=` | Finish it |
 | `POST /api/auth/logout` | End the session (same-origin) |

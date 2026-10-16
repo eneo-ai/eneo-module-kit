@@ -45,12 +45,14 @@ and a component that takes `href` needs nothing more. A router whose link wants 
 | `ColorModeProvider`, `useColorMode()`, `readStoredColorMode()` | The mode is `localStorage["theme"]` (`light`, `dark`, `system`; the key and values next-themes used), read before the first render and written back by `setMode`. `useColorMode()` returns `{ mode, resolved, setMode }`. No inline script and no cookie. |
 | `ModuleShell` | The page frame: top bar, skip link, one `role="main"` region. A page renders no `<main>` of its own. |
 | `BrandingProvider`, `Brand` | The organisation beside the product's name, from `GET /api/branding`, asked once. Until it answers (or when it fails) the lockup is the product name alone. `defaultLogo` is the module's own copy of the bundled logo. |
+| `VersionInfo` | Which build runs, from `GET /api/healthz`, read when shown: the release, the commit and the build time ("Okänd" when not known), a button that copies them as support details, and the release's and commit's pages when the repository is known. |
+| `CopyButton` | Copies a text; a check and "Kopierat" to a screen reader confirm it, and a failure says so in words. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the
-brand's mark, forced-colour edges, no ring on a programmatically focused heading, and the session cover that hides the
-page while the login has ended).
+brand's mark, forced-colour edges, no ring on a programmatically focused heading, the session cover that hides the
+page while the login has ended, and a menu's height past Astryx's 300 px cap, up to the window below the top bar).
 
 A design-system shortfall is fixed once, in `src/theme/eneo.theme.ts`, then `npm run theme:build`. Astryx is pinned to an
 exact version, here and in the peers.

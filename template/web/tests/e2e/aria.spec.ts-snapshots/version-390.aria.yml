@@ -1,0 +1,16 @@
+- dialog "Version":
+  - heading "Version" [level=2]
+  - button "Stäng"
+  - term: Utgåva
+  - definition: v1.0.0
+  - term: Commit
+  - definition:
+    - code: "0123456"
+  - term: Byggd
+  - definition:
+    - time: 1 okt. 2026 10:00
+  - button "Kopiera supportinformation"
+  - link "Visa utgåvan på GitHub i en ny flik":
+    - /url: https://github.com/eneo-ai/eneo-module/releases/tag/v1.0.0
+  - link "Visa commiten på GitHub i en ny flik":
+    - /url: https://github.com/eneo-ai/eneo-module/commit/0123456789abcdef0123456789abcdef01234567

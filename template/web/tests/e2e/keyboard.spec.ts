@@ -1,8 +1,8 @@
 /**
  * Keyboard only, on the module's real screens (harness.spec.ts only proves that the checks can fail): Tab through each
  * screen from the top. Every stop shows focus (WCAG 2.4.7) and is not hidden under anything (2.4.11); focus leaves the
- * page at the end (no trap, 2.1.2); on a phone the order reads top to bottom (2.4.3). The account menu, the page's
- * dialog, the warning and the sign-in dialog keep focus inside and give it back. Adapted from speech-to-text's gate:
+ * page at the end (no trap, 2.1.2); on a phone the order reads top to bottom (2.4.3). The account menu, the version
+ * dialog, the page's dialog, the warning and the sign-in dialog keep focus inside and give it back. Adapted from speech-to-text's gate:
  * known debt, to become a package export when a second module needs it.
  */
 import { writeFileSync } from "node:fs";
@@ -67,8 +67,11 @@ async function focusProblems(page: Page, popup: Locator): Promise<string[]> {
 const focusMovesInto = (popup: Locator) =>
   expect.poll(() => popup.evaluate((element) => element.contains(document.activeElement)), { message: "focus moves into the popup" }).toBe(true);
 
-/** Opens `popup` from its trigger with Enter, moves with `keys`, checks focus after each, and closes it with Escape. */
-async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: string[], initialHeading?: Locator) {
+/**
+ * Opens `popup` from its trigger with Enter, moves with `keys`, checks focus after each, and closes it with Escape, which
+ * gives focus back to `returnsTo`: the trigger, or what opened the menu the trigger was in.
+ */
+async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: string[], initialHeading?: Locator, returnsTo = trigger) {
   await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(popup).toBeVisible();
@@ -95,13 +98,13 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   await untilModal(page);
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
-  await expect(trigger, "Escape gives focus back to what opened it").toBeFocused();
+  await expect(returnsTo, "Escape gives focus back to what opened it").toBeFocused();
 }
 
 test("the account menu holds focus through its items and gives it back", async ({ page }) => {
   await stubFlows(page, "normal");
   await signIn(page);
-  // The items: the theme's three choices and "Logga ut", down and up again.
+  // The items: the theme's three choices, "Version" and "Logga ut", down and up again.
   await holdsFocus(page, page.getByRole("button", { name: /^Öppna konto för/ }), page.getByRole("menu"), [
     "ArrowDown",
     "ArrowDown",
@@ -109,6 +112,21 @@ test("the account menu holds focus through its items and gives it back", async (
     "ArrowDown",
     "ArrowUp",
   ]);
+});
+
+test("the version dialog, chosen in the account menu, holds focus and gives it back to the account button", async ({ page }) => {
+  await stubFlows(page, "normal");
+  await signIn(page);
+  const account = page.getByRole("button", { name: /^Öppna konto för/ });
+  await account.focus();
+  await page.keyboard.press("Enter");
+  // The menu moves focus to its first item a frame after it shows: wait for that, or it lands after the focus below and
+  // Enter chooses a theme instead.
+  await focusMovesInto(page.getByRole("menu"));
+  const dialog = page.getByRole("dialog", { name: "Version" });
+  const [next, back] = [tabKey(page), tabKey(page, true)];
+  // Its controls: the close button, the copy and the two pages, forward and back.
+  await holdsFocus(page, page.getByRole("menuitem", { name: "Version" }), dialog, [next, next, next, next, back, back], dialog.getByRole("heading", { name: "Version" }), account);
 });
 
 test("the page's dialog holds focus and gives it back", async ({ page }) => {

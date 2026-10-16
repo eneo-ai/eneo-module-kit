@@ -1,25 +1,33 @@
-# The module and a stub Eneo, for trying it without Eneo: docker compose up --build, then http://localhost:3001.
-# Against a real Eneo, drop the stub and set the variables in .env to Eneo's.
+# The module as it runs in production: one service, one process, the published image, port 3001 on the compose network.
+# Dokploy and a plain host run this file alone (`docker compose -f docker-compose.yml up -d`); docker-compose.override.yml
+# is the developer's, and `docker compose up` merges it to build the image and start a stub Eneo instead. The settings
+# come from .env, which .env.example lists.
+#
+# MODULE_VERSION chooses the image: a release tag vX.Y.Z, or latest. The same value goes into the container, so that
+# /health says which release runs. The image's name is the module's one value to set here: ghcr.io/<owner>/<repository>
+# of the module's own repository, which CI publishes to (its compose job fails until the two agree).
+#
+# The container is locked down as far as the module allows: a read-only root file system, no Linux capabilities, no new
+# privileges. The image's own HEALTHCHECK asks /health.
 services:
   module:
-    # Until the packages are released the image is built with the kit's `kit` build context and tagged as below
-    # (see README.md); after, `docker compose up --build` builds it.
-    image: eneo-module
-    build: .
+    image: ghcr.io/eneo-ai/eneo-module:${MODULE_VERSION:-latest}
     env_file: .env
-    ports:
-      - "3001:3001"
-    depends_on:
-      - stub-eneo
-  stub-eneo:
-    image: python:3.12-slim
-    # A plain python as PID 1 ignores SIGTERM; an init stops it at once.
-    init: true
-    working_dir: /stub
-    volumes:
-      - ./stub-eneo/server.py:/stub/server.py:ro
     environment:
-      STUB_HOST: 0.0.0.0
-    command: ["python", "server.py", "8411"]
-    ports:
-      - "8411:8411"
+      # The tag above: only a tag vX.Y.Z is a release.
+      MODULE_VERSION: ${MODULE_VERSION:-latest}
+    volumes:
+      # The one place the module writes: an upload waits here on its way to Eneo, on disk (a tmpfs would hold each
+      # upload in memory). Size the disk for MAX_CONCURRENT_UPLOADS × MAX_UPLOAD_BYTES.
+      - spool:/tmp
+    expose:
+      - "3001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  spool:

@@ -1,0 +1,29 @@
+# Merged by `docker compose up`, for development: the image is built from this folder, port 3001 is published, and a stub
+# Eneo runs beside the module (.env.example's values work with it as they are). Dokploy and a plain host run
+# docker-compose.yml alone, so this file is not used there. Before the kit's first release the image is built with the
+# kit's packages and tagged eneo-module:local instead (README.md).
+services:
+  module:
+    # A name of its own: a pulled release is never mistaken for a local build.
+    image: eneo-module:local
+    build: .
+    environment:
+      # A local build is no release, whatever .env names for the image it stands in for; it is built without the build
+      # arguments CI passes, so /health says null for all of it.
+      MODULE_VERSION: ""
+    ports:
+      - "3001:3001"
+    depends_on:
+      - stub-eneo
+  stub-eneo:
+    image: python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+    # A plain python as PID 1 ignores SIGTERM; an init stops it at once.
+    init: true
+    working_dir: /stub
+    volumes:
+      - ./stub-eneo/server.py:/stub/server.py:ro
+    environment:
+      STUB_HOST: 0.0.0.0
+    command: ["python", "server.py", "8411"]
+    ports:
+      - "8411:8411"

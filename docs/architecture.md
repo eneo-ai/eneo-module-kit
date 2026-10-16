@@ -12,7 +12,7 @@ Every claim about code names the file, never a line. If a diagram and the code d
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
 | UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Includes the Astryx reference templates, topic and agent guidance. |
-| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose file, module CI, agent files. |
+| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose files, module CI that publishes the tested image and releases it by tag, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
 The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
@@ -347,8 +347,10 @@ flowchart LR
 | Fact | Status |
 |---|---|
 | `serve()` runs one uvicorn worker, no access log (the callback URL carries a ticket), WebSocket buffers bounded, stops within 8 s of SIGTERM | Built (`serve.py`) |
-| Port 3001, `GET /health` answers `{"ok": true}` | Built (`serve.py`, `app.py`) |
-| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Built (`template/Dockerfile`) |
+| Port 3001, `GET /health` answers `{"ok": true}` and which build runs: commit, build time, repository, release, each `null` when not known | Built (`serve.py`, `app.py`, `build.py`) |
+| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health`; base images pinned by digest; the commit, build time and repository in its OCI labels and environment | Built (`template/Dockerfile`) |
+| `docker-compose.yml`: the published image chosen by `MODULE_VERSION`, a read-only root, no capabilities, `no-new-privileges`, `/tmp` on a volume; an overlay adds Traefik with HTTPS, HSTS and a read timeout for uploads | Built (`template/docker-compose.yml`, `docker-compose.traefik.yml`; [release and deploy](guides/deploy.md)) |
+| The image is built once per commit, published as `sha-<commit>` after every job passed, and a tag `vX.Y.Z` gives it its version without building it | Built (`template/.github/workflows/`, [K18](decisions/k18-a-release-promotes-the-tested-image.md)) |
 | One container on the module network, no outbound internet | Contract from [design.md](design.md) section 2 |
 | Sessions are process-local: one replica. More needs sticky sessions or a shared store | Decided when a module needs it |
 
@@ -362,7 +364,9 @@ flowchart TB
   commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
   commit --> tb["template-backend: the template's tests on this commit's BFF"]
   commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers and the gate, in four parts"]
-  commit --> ti["template-image: build the image from this commit's packages, run it, GET /health"]
+  commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
+  commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
+  commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]
 ```
 
 Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
@@ -383,6 +387,7 @@ Source: `.github/workflows/ci.yml`. What each job proves, and the module's own C
 | Branding routes | `branding.py` | `test_branding.py` |
 | Accent validation and derivation | `accent.py` | `test_accent.py` |
 | App factory | `app.py` | `test_app.py` |
+| Which build runs (`/health`) | `build.py` | `test_build.py` |
 | Running the server | `serve.py` | `test_serve.py`, `test_shutdown.py` |
 | Public names and version | `__init__.py` | `test_serve.py` (the names), `test_package.py` (the version) |
 
@@ -393,9 +398,11 @@ The UI package, the template and the image:
 | Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
 | Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
 | Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
+| Which version runs, copying | `packages/ui/src/VersionInfo.tsx`, `CopyButton.tsx` | `version-info.test.ts`, `copy-button.test.ts` |
 | The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
 | A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
 | Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |
 | A module's UI | `template/web/src/` | `template/web/tests/e2e/` |
 | The image | `template/Dockerfile`, `docker-compose.yml` | the `template-image` job of `.github/workflows/ci.yml` |
+| A module's CI and releases | `template/.github/workflows/ci.yml`, `release.yml` | the `workflows` job (actionlint); they run in a module's own repository |

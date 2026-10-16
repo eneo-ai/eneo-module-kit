@@ -35,7 +35,7 @@ or Eneo permissions.
 | Module API | `backend/routes.py`, `backend/tests/test_routes.py` | [Build a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md): route guards, calling Eneo and transport helpers. |
 | Proxied Eneo API | `PROXY_RULES` in `backend/main.py`, `backend/tests/test_app.py` | Verify the actual Eneo endpoint, method and permission contract before adding a rule. A module owns its allowlist. |
 | Login or session behavior | Existing `RequireSession`, `web/src/session.ts`, `web/src/AccountMenu.tsx` | `web/node_modules/@eneo-ai/module-kit/README.md` after installation, and `npm run astryx -- docs eneo-module` from `web/`. Reuse the package rather than creating another token or refresh client. |
-| Configuration or deployment | `.env.example`, `Dockerfile`, `docker-compose.yml` | [Configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md) and [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md). |
+| Configuration, release or deployment | `.env.example`, `Dockerfile`, `docker-compose*.yml`, `.github/workflows/` | [Configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md), [release and deploy](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/deploy.md) and [security checklist](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/security-checklist.md). |
 
 Eneo owns identity and upstream permissions. The kit owns the module handoff, session,
 guarded transport and shared UI. The module owns its domain data, routes, persistence

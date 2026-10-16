@@ -83,7 +83,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `@eneo-ai/module-kit` | The code, below. |
 | `@eneo-ai/module-kit/layers.css` | `@layer reset, astryx-base, astryx-theme;` Import it first, so the layers have their order. |
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
-| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended. Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose: it wins over the design system's layered styles. |
 | `@eneo-ai/module-kit/session` | The session client, below. |
 | `@eneo-ai/module-kit/templates/eneo-module-page.tsx`, `@eneo-ai/module-kit/templates/eneo-signin.tsx` | Reference TSX source used by the Astryx CLI. Adapt it into the owning module route. |
 
@@ -101,7 +101,9 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `BRANDING_DEADLINE_MS` | `2000`. |
 | `Brand({ productName, href?, onClickCapture? })` | The header lockup: the organisation's mark, a divider and the product's name; without an organisation the name alone. With `href` it is a link, named for both. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
-| `Branding`, `ColorMode` | Types: the answer of `/api/branding`, and `"light" \| "dark" \| "system"`. |
+| `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
+| `CopyButton({ text, label, name?, variant? })` | Copies `text` as plain text. A check replaces the copy icon and a screen reader hears "Kopierat" once; the words stay, so the button keeps its width. A copy that fails says "Kunde inte kopiera" until the next press. `name` is the accessible name when it says more than `label`, and starts with it. |
+| `Branding`, `BuildIdentity`, `ColorMode` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
 
 ## Colour mode
 
@@ -133,6 +135,12 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 - `Brand` takes the product's name as a prop: it is the page's own, never the kit's.
 - Sizing and the choice between a deployment's two logos are CSS in `base.css`, by the attribute `data-brand-logo` on the mark: `default`, `light`, `dark`, `plain` (one logo for both modes), `name` (no logo). The mode that decides is the document's `data-theme`.
 - The header lets the product name wrap beside the account control on narrow screens, including with wider system fonts and increased text spacing. The theme owns the gap; `base.css` handles Astryx 0.6.3's heading internals, which have no theme targets.
+
+## Which version runs
+
+- `VersionInfo` shows the release, the commit's first seven characters and when the image was built (in the reader's time), each "Okänd" when the BFF does not know it; a button that copies the support details (the product's name, each value whole, the page's address); and, when the repository is known, the release's and the commit's pages on GitHub, in a new tab.
+- The module has no version of its own: the UI and the BFF ship as one image, and `/api/healthz` says what the image was built from and the release the deployment names ([configuration](configuration.md#which-build-runs)). A local build says nothing of itself.
+- It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: the template's account menu has "Version", which opens it in a dialog (`template/web/src/AccountMenu.tsx`).
 
 ## The shell
 

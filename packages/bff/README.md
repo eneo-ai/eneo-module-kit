@@ -87,7 +87,7 @@ Stable for the UI package and for any other frontend.
 
 | Route | Purpose |
 |---|---|
-| `GET /health`, `GET /api/healthz` | `{"ok": true}` |
+| `GET /health`, `GET /api/healthz` | `{"ok": true}` and which build runs: `revision`, `build_date`, `release`, `source`, each `null` when not known ([configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md#which-build-runs)). No session needed |
 | `GET /api/auth/login?next=&renew=` | Starts the handoff: 303 to Eneo's `/module-login`, with a state cookie |
 | `GET /api/auth/callback?ticket=&state=` | Finishes it: 303 to `next` with the session cookie set, or to `/?auth_error=<code>` |
 | `POST /api/auth/logout` | Ends the session (same origin required) |

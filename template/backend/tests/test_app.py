@@ -55,7 +55,7 @@ class TheModuleAsServedTests(unittest.TestCase):
         self.static.cleanup()
 
     def test_health_and_the_page_need_no_session_and_a_deep_link_is_the_page(self) -> None:
-        self.assertEqual(self.client.get("/health").json(), {"ok": True})
+        self.assertTrue(self.client.get("/health").json()["ok"])
         deep = self.client.get("/flows")
         self.assertEqual(deep.status_code, 200)
         self.assertIn("<title>Modul</title>", deep.text)

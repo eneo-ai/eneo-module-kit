@@ -30,6 +30,8 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Signed URL | A short-lived URL from Eneo that is itself the credential for one file. Kept with the session, never given to the browser. |
 | Stream slot | One of `MAX_CONCURRENT_STREAMS` places for files streaming at once. |
 | Stub Eneo | `template/stub-eneo/server.py`: Eneo's side of the module contract in about 170 lines, for development and tests. Never shipped. |
+| Tested image | The image a module's CI built once for a commit of main, ran, and pushed as `sha-<commit>` after every job passed. It is the only image a release can name. |
+| Release | A tag `vX.Y.Z` on a commit of main. It gives that commit's tested image the tags `vX.Y.Z` and `latest` without building it; a deployment names it with `MODULE_VERSION`, and `/health` says it. See [release and deploy](guides/deploy.md). |
 | Gate | The accessibility gate: Playwright and axe over every state of the template at several widths and themes (`template/web/tests/e2e/`). Its thresholds are never lowered. |
 | Colour mode | The person's choice of `light`, `dark` or `system`, stored under `localStorage["theme"]`. Owned by the UI package. |
 | Cover | What hides and disables the page while the login has ended (`SignedOutCover`): the page stays mounted under it, `inert` and invisible, with the sign-in dialog above. |

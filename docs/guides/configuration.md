@@ -41,6 +41,19 @@ With no name or logo variable set, the organisation is the `default_organization
 
 The checks use the Eneo theme's surfaces and tint proportions, pinned against `packages/ui/src/theme/built/eneo.css` by `packages/bff/tests/test_accent.py`. The formatter accepts only validated hex colours, preventing CSS injection. The template links `/api/branding/theme.css` in its document head, so the override is available when themed content first appears. With no accent configured the response is a harmless CSS comment; the built theme remains in use. The endpoint's cache behavior is in the [BFF HTTP reference](../../packages/bff/README.md#http-surface).
 
+## Which build runs
+
+`create_app()` reads four more variables once (`packages/bff/src/eneo_module_bff/build.py`), and `GET /health` and `GET /api/healthz` answer them. They never stop the start: an unset value, or one of another form, is `null`, and nothing stands in for what is not known. A developer's run from a checkout answers `null` for all four.
+
+| Variable | Set by | Form | In the answer |
+|---|---|---|---|
+| `SOURCE_REVISION` | The image: the template's `Dockerfile`, from CI's build argument | the commit, 40 lowercase hex characters | `revision` |
+| `BUILD_DATE` | The image, as above, from the same clock reading as its `org.opencontainers.image.created` label | UTC, `2026-01-31T12:00:00Z` | `build_date` |
+| `SOURCE_URL` | The image, as above: the repository CI built it from | an `https` address with no query or fragment | `source` |
+| `MODULE_VERSION` | The deployment: the tag of the image it runs, which the template's `docker-compose.yml` also passes into the container | a version tag `vX.Y.Z`; `latest`, `sha-<commit>` and anything else name no release | `release` |
+
+The release comes from the deployment because a release gives the tested image its version without building it again ([K18](../decisions/k18-a-release-promotes-the-tested-image.md)). Reading the answer in a deployment: [release and deploy](deploy.md#which-version-runs).
+
 ## Not environment variables
 
 | Argument of `load_settings` | Default | Meaning |
