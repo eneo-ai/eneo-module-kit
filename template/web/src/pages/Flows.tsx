@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
@@ -14,6 +14,8 @@ import { SlowWait, useRouteReady } from "@eneo-ai/module-kit";
 import { errorAdvice, useSessionUser, useSignedOut, type ErrorAdvice } from "@eneo-ai/module-kit/session";
 import { Frame } from "../Frame";
 import { AccountMenu } from "../AccountMenu";
+import { drafts } from "../drafts";
+import { useLeaveGuard } from "../leave";
 import { getJson } from "../session";
 
 interface Flow {
@@ -23,6 +25,11 @@ interface Flow {
 }
 
 type Load = { state: "loading" } | { state: "failed"; advice: ErrorAdvice } | { state: "done"; flows: Flow[]; truncated: boolean };
+
+/** The note's draft, and the shape it is read in. */
+const NOTE = "anteckning";
+const isText = (value: unknown): value is string => typeof value === "string";
+const UNSTORED = "Det du har skrivit kunde inte sparas i webbläsaren och försvinner om du lämnar sidan.";
 
 /** One page of Eneo's list: at most this many flows, and `has_more` says whether another page follows. */
 const PAGE_SIZE = 200;
@@ -48,10 +55,21 @@ async function discoverFlows(): Promise<{ flows: Flow[]; truncated: boolean }> {
 export function Flows() {
   const user = useSessionUser();
   // A dialog of the page is native, so it must be closed while the login has ended (the cover cannot reach it); what is
-  // typed in it lives here, above the dialog, so it is back as it was after the new login.
+  // typed in it lives here, above the dialog, so it is back as it was after the new login, and is kept as the person's
+  // draft in this tab, so it is back after a reload too.
   const signedOut = useSignedOut();
   const [noting, setNoting] = useState(false);
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(() => drafts.read(user.id, NOTE, isText) ?? "");
+  const write = (next: string) => {
+    setNote(next);
+    if (next) drafts.write(user.id, NOTE, next);
+    else drafts.clear(user.id, NOTE);
+  };
+  // What the browser could not keep is the page's alone: leaving asks first (a link, Back, a reload, signing out).
+  const unstored = useSyncExternalStore(drafts.subscribe, drafts.unstored);
+  const leaving = useLeaveGuard(unstored, UNSTORED);
+  // Left: what the browser could not keep is gone with the page.
+  useEffect(() => () => drafts.forget(), []);
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [greeting, setGreeting] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -84,7 +102,7 @@ export function Flows() {
   }, []);
 
   return (
-    <Frame brandHref="/flows" end={<AccountMenu user={user} />}>
+    <Frame brandHref="/flows" end={<AccountMenu user={user} leaveFirst={leaving.leaveFirst} />}>
       <VStack gap={6} paddingBlockStart={4}>
         <VStack gap={1}>
           <Heading level={1}>Välj ett flöde</Heading>
@@ -141,12 +159,13 @@ export function Flows() {
       <Dialog isOpen={noting && !signedOut} onOpenChange={setNoting} purpose="form" aria-label="Anteckning">
         <DialogHeader title="Anteckning" onOpenChange={setNoting} />
         <VStack gap={3} padding={4}>
-          <TextInput label="Anteckning" value={note} onChange={setNote} />
+          <TextInput label="Anteckning" value={note} onChange={write} />
           <HStack hAlign="end">
             <Button label="Klar" variant="primary" onClick={() => setNoting(false)} />
           </HStack>
         </VStack>
       </Dialog>
+      {leaving.question}
     </Frame>
   );
 }

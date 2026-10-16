@@ -14,9 +14,10 @@ import { signOut } from "./session";
 
 /**
  * Who is signed in, the colour mode, which version runs, and signing out: one icon-only button in the top bar, which
- * keeps the bar short enough for a 320 px screen (the design system's bar never shrinks the brand beside it).
+ * keeps the bar short enough for a 320 px screen (the design system's bar never shrinks the brand beside it). Signing out
+ * ends the page's work: a page that holds some passes its leave question's `leaveFirst`, which asks first.
  */
-export function AccountMenu({ user }: { user: SessionUser }) {
+export function AccountMenu({ user, leaveFirst = (goOn) => void goOn() }: { user: SessionUser; leaveFirst?: (goOn: () => unknown) => void }) {
   const { mode, setMode } = useColorMode();
   const [leaving, setLeaving] = useState(false);
   const toast = useToast();
@@ -51,14 +52,17 @@ export function AccountMenu({ user }: { user: SessionUser }) {
           isDisabled={leaving}
           // The menu stays open to say that it is signing out.
           hasCloseOnSelect={false}
-          onClick={async () => {
-            setLeaving(true);
-            // Still signed in: the control is the person's to use again, and the toast says what happened.
-            if (!(await signOut())) {
+          onClick={() =>
+            leaveFirst(async () => {
+              setLeaving(true);
+              if (await signOut()) return;
+              // Still signed in: the control is the person's to use again, the toast says what happened, and the page,
+              // still here, asks again before it is left (`false`).
               setLeaving(false);
               toast({ type: "error", body: "Det gick inte att logga ut. Försök igen.", uniqueID: "sign-out-failed" });
-            }
-          }}
+              return false;
+            })
+          }
         />
       </DropdownMenu>
       <Dialog

@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test";
-import { declare, expect, signIn, stubFlows, test, type Expectation } from "./fixtures";
+import { declare, expect, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
@@ -302,6 +302,110 @@ test.describe("when the connection goes", () => {
     await page.unroute(api);
     await seen();
     await expect(notice).toHaveCount(0);
+  });
+});
+
+test.describe("what the person has typed", () => {
+  const note = (page: Page) => page.getByRole("textbox", { name: "Anteckning", exact: true });
+  async function writeNote(page: Page, text: string) {
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await note(page).fill(text);
+    await page.getByRole("button", { name: "Klar" }).click();
+  }
+
+  test("a note is kept in the tab: back after a reload for the same person, and gone for the next person who signs in here", async ({ page }) => {
+    await signIn(page);
+    await writeNote(page, "Ring tillbaka i morgon");
+    await page.reload();
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await expect(note(page)).toHaveValue("Ring tillbaka i morgon");
+    await page.getByRole("button", { name: "Klar" }).click();
+
+    await stubControl(page, "login-as?user=sara");
+    await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+    await page.getByRole("menuitem", { name: "Logga ut" }).click();
+    await page.getByRole("link", { name: "Logga in med Eneo" }).click();
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await expect(note(page)).toHaveValue("");
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("eneo-modul:"))), "Erik's draft is gone from the tab").toEqual([]);
+  });
+
+  test.describe("when the browser cannot keep it", () => {
+    test.beforeEach(async ({ page }) => {
+      // A storage that refuses the module's drafts (full, or blocked for the site): what is typed is the page's alone.
+      await page.addInitScript(() => {
+        const setItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key: string, value: string) {
+          if (key.startsWith("eneo-modul:")) throw new DOMException("full", "QuotaExceededError");
+          return setItem.call(this, key, value);
+        };
+      });
+    });
+    const question = (page: Page) => page.getByRole("alertdialog", { name: "Lämna sidan?" });
+
+    test("signing out asks first in the page: Stanna kvar keeps the page and the note, Lämna sidan signs out without the browser asking again", async ({ page }) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (dialog) => {
+        dialogs.push(dialog.type());
+        void dialog.dismiss();
+      });
+      await signIn(page);
+      await writeNote(page, "Ring tillbaka i morgon");
+      const signOut = async () => {
+        await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+        await page.getByRole("menuitem", { name: "Logga ut" }).click();
+      };
+
+      await signOut();
+      await expect(question(page)).toBeVisible();
+      await expect(question(page).getByRole("button", { name: "Stanna kvar" }), "staying has the focus").toBeFocused();
+      await question(page).getByRole("button", { name: "Stanna kvar" }).click();
+      await expect(question(page)).toHaveCount(0);
+      expect(await (await page.request.get("/api/auth/status")).json(), "still signed in").toMatchObject({ authenticated: true });
+      await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+      await expect(note(page)).toHaveValue("Ring tillbaka i morgon");
+      await page.getByRole("button", { name: "Klar" }).click();
+
+      await signOut();
+      await question(page).getByRole("button", { name: "Lämna sidan" }).click();
+      await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
+      expect(dialogs, "the browser did not ask a second time").toEqual([]);
+    });
+
+    test("a reload is the browser's own question", async ({ page }) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (dialog) => {
+        dialogs.push(dialog.type());
+        void dialog.dismiss();
+      });
+      await signIn(page);
+      await writeNote(page, "Ring tillbaka i morgon");
+      await page.reload({ timeout: 3_000 }).catch(() => null);
+      await expect.poll(() => dialogs).toEqual(["beforeunload"]);
+      await expect(question(page)).toHaveCount(0);
+      await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+      await expect(note(page), "the page stayed, with what was typed").toHaveValue("Ring tillbaka i morgon");
+    });
+
+    test("Back to a page of the app is held by the router and asked in the page: Stanna kvar stays, Lämna sidan goes", async ({ page }) => {
+      await signIn(page);
+      // A visit with a page of the app behind it: the not-found page, then the flows by its link.
+      await page.goto("/finns-inte");
+      await page.getByRole("link", { name: "Till startsidan" }).click();
+      await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+      await writeNote(page, "Ring tillbaka i morgon");
+
+      await page.goBack();
+      await expect(question(page)).toBeVisible();
+      await question(page).getByRole("button", { name: "Stanna kvar" }).click();
+      await expect(page).toHaveURL(/\/flows$/);
+      await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+
+      await page.goBack();
+      await question(page).getByRole("button", { name: "Lämna sidan" }).click();
+      await expect(page).toHaveURL(/\/finns-inte$/);
+      await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
+    });
   });
 });
 

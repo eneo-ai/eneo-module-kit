@@ -18,7 +18,9 @@ run `npm run astryx -- docs eneo-module` from `web/`.
 
 - `backend/main.py`: the app, and `PROXY_RULES`, the Eneo routes this module may call. `backend/routes.py`: the module's
   own API routes (`router`). `backend/tests/`: they run without Eneo.
-- `web/src/`: the app. `main.tsx` (stylesheets, the router), `App.tsx` (the routes, each with its title, and the providers in the root), `Frame.tsx` (the shell every page uses, with the notice that the connection is gone),
+- `web/src/`: the app. `main.tsx` (stylesheets, the router), `App.tsx` (the routes, each with its title, and the
+  providers in the root), `Frame.tsx` (the shell every page uses, with the notice that the connection is gone),
+  `leave.ts` (asking before a page with work is left), `drafts.ts` (typed work kept per person in the tab),
   `config.ts` (the module's name), `pages/`.
 - `web/tests/e2e/`: browser tests against the built app, and the accessibility gate. `stub-eneo/`: Eneo's side of the
   contract, for development and tests. It is never shipped.

@@ -3,6 +3,7 @@ import { createBrowserRouter, Link, Outlet, useLocation, useMatches, useNavigati
 import { BrandingProvider, ErrorPage, LoadingShell, ModuleProviders, NotFoundPage, RouteEffects } from "@eneo-ai/module-kit";
 import { RequireSession, SignInScreen, SignedInAgain } from "@eneo-ai/module-kit/session";
 import { documentTitle, PRODUCT_NAME } from "./config";
+import { drafts } from "./drafts";
 
 const SIGN_IN_TEXT = "Logga in med ditt Eneo-konto för att fortsätta.";
 
@@ -54,11 +55,12 @@ function RouteError() {
 
 /**
  * The pages that need a session. The kit's gate shows the sign-in screen without one, keeps the login, and covers the
- * page with a dialog that asks for a new login in place when it ends.
+ * page with a dialog that asks for a new login in place when it ends. Before the pages are shown to someone, what another
+ * person typed in this tab goes.
  */
 function Private() {
   return (
-    <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} signInDescription={SIGN_IN_TEXT}>
+    <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} signInDescription={SIGN_IN_TEXT} onIdentity={(user) => drafts.keepOnly(user.id)}>
       <Outlet />
     </RequireSession>
   );
