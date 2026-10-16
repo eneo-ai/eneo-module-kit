@@ -22,8 +22,8 @@ function Themed({ children }: { children: ReactNode }) {
 }
 
 /**
- * A path of the app's own pages: not another origin (`//host`, and `/\\host`, which a browser reads the same way), and not
- * the backend's `/api`, which answers files and the login, not pages.
+ * A path of the app's own pages: absolute (a relative address stays an anchor), not another origin (`//host`, and
+ * `/\\host`, which a browser reads the same way), and not the backend's `/api`, which answers files and the login, not pages.
  */
 function isPage(href: unknown): href is string {
   if (typeof href !== "string" || !href.startsWith("/") || href.startsWith("//") || href.startsWith("/\\")) return false;

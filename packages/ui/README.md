@@ -37,8 +37,9 @@ import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
 heading) call it with `href`, `children` and the usual anchor attributes, and with `to`, the same address, which Astryx adds
 for routers that take their address as `to` (`useLinkComponent`, Astryx 0.6.3). So React Router's `Link` is passed as it is,
 and a component that takes `href` needs nothing more. A router whose link wants something else needs a small adapter of its own.
-Only a link to a page of the app opened in the same tab goes to it: one under `/api` (a file, the login), to another origin,
-with a `target` other than `_self` or with `download` stays a plain anchor, so the router never takes a file for a page.
+Only a link to a page of the app by its absolute path (`/flows`), opened in the same tab, goes to it: a relative address
+(`flows`, `?run=1`), one under `/api` (a file, the login), to another origin, with a `target` other than `_self` or with
+`download` stays a plain anchor, so the router never takes a file for a page. Write links to the module's pages as absolute paths.
 
 | Export | What it is |
 |---|---|

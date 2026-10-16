@@ -167,7 +167,7 @@ The package imports no router. Astryx draws some links itself (the brand in the 
 
 A router whose link wants something else needs a small adapter of its own. (`packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.)
 
-Only a page of the app opened in the same tab is the router's. Every other link stays a plain anchor that the router never sees, whatever component was given: a fragment, `mailto:`, another origin (also `//host`), a path under `/api` (a file of the backend, the login), a `target` other than `_self`, and a `download`. A router link to `/api/...` would be a navigation to a path the router has no page for. `packages/ui/tests/links.test.ts` presses each kind.
+Only a page of the app opened in the same tab is the router's, and only by an absolute path (`/flows`, `/flows?run=1`): write a module's links to its own pages that way. Every other link stays a plain anchor that the router never sees, whatever component was given: a relative address (`flows`, `?run=1`), whose click loads the page, a fragment, `mailto:`, another origin (also `//host`), a path under `/api` (a file of the backend, the login), a `target` other than `_self`, and a `download`. A router link to `/api/...` would be a navigation to a path the router has no page for. `packages/ui/tests/links.test.ts` presses each kind.
 
 Without `linkComponent` every link is a plain anchor and a click on one to a page reloads the page.
 

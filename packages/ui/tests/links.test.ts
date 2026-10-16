@@ -52,6 +52,8 @@ test("a link to a page with target _self is still the router's", async () => {
 
 for (const [name, props] of [
   ["a fragment", { href: "#x" }],
+  ["a relative address", { href: "flows" }],
+  ["a relative query", { href: "?run=1" }],
   ["mailto:", { href: "mailto:stod@example.se" }],
   ["another origin", { href: "https://example.se/" }],
   ["a protocol-relative address", { href: "//example.se/flows" }],
