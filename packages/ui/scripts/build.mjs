@@ -14,14 +14,14 @@ cpSync("src/base.css", "dist/base.css");
 
 // What was built is plain ESM that loads, with the public names a module imports.
 const built = await import(new URL("../dist/index.js", import.meta.url).href);
-const expected = ["BRANDING_DEADLINE_MS", "Brand", "BrandingProvider", "COLOR_MODE_KEY", "ColorModeProvider", "CopyButton", "ModuleProviders", "ModuleShell", "VersionInfo", "eneoTheme", "readStoredColorMode", "useColorMode"];
+const expected = ["BRANDING_DEADLINE_MS", "Brand", "BrandingProvider", "COLOR_MODE_KEY", "ColorModeProvider", "CopyButton", "ErrorPage", "LoadFailure", "LoadingShell", "ModuleProviders", "ModuleShell", "NotFoundPage", "OfflineBanner", "RouteEffects", "SlowWait", "VersionInfo", "createDrafts", "createOnlineStatus", "eneoTheme", "lazyLoader", "onlineStatus", "readStoredColorMode", "useColorMode", "useConnection", "useLeaveQuestion", "useLoaded", "useRouteReady"];
 const missing = expected.filter((name) => !(name in built));
 if (missing.length > 0) {
   console.error(`dist/index.js does not export ${missing.join(", ")}`);
   process.exit(1);
 }
 const session = await import(new URL("../dist/session/index.js", import.meta.url).href);
-const expectedSession = ["RequireSession", "SESSION_CHANNEL", "SessionExpiredError", "SignInScreen", "SignedInAgain", "createFetchWithSession", "createSessionState", "fetchWithSession", "isSessionEndedAnswer", "refusalOf", "sessionState", "sessionUser", "useSessionUser", "useSignedOut", "useSignedOutSlot", "userDisplayName", "userInitial"];
+const expectedSession = ["RequestTimeoutError", "RequireSession", "SESSION_CHANNEL", "SessionExpiredError", "SignInScreen", "SignedInAgain", "createFetchWithSession", "createSessionState", "createUploadWithProgress", "errorAdvice", "fetchWithSession", "isSessionEndedAnswer", "refusalOf", "sessionState", "sessionUser", "uploadWithProgress", "useSessionUser", "useSignedOut", "useSignedOutSlot", "userDisplayName", "userInitial"];
 const missingSession = expectedSession.filter((name) => !(name in session));
 if (missingSession.length > 0) {
   console.error(`dist/session/index.js does not export ${missingSession.join(", ")}`);

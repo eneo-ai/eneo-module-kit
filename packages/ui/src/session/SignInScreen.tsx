@@ -8,6 +8,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Brand } from "../branding.js";
 import { ModuleShell } from "../ModuleShell.js";
+import { useRouteReady } from "../routes.js";
 import { messages } from "./messages.js";
 
 // Signing in leaves the app for Eneo's login: a plain link, not the router's (a `linkComponent` of ModuleProviders).
@@ -40,6 +41,8 @@ export function SignInScreen({
   children?: ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
+  // The screen is all there at once: a navigation to it is said and focused at once (RouteEffects).
+  useRouteReady(true);
 
   // The callback sends a failed login to the home page with `auth_error`; it is said once and taken off the address.
   useEffect(() => {

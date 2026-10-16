@@ -18,8 +18,8 @@ for package installation and local startup. Check whether the package versions a
 before the first release, use the documented tarball and BFF package path rather than
 retrying a registry install or rewriting the lock by hand.
 
-Set the product name in `web/src/config.ts`, the browser title in `web/index.html`,
-and the API title in `backend/main.py`. Copy `.env.example` to `.env` only if no `.env`
+Set the product name in `web/src/config.ts`, the browser title and the `<noscript>` text in `web/index.html`, the icons in `web/public/`,
+the drafts' prefix in `web/src/drafts.ts`, and the API title in `backend/main.py`. Copy `.env.example` to `.env` only if no `.env`
 exists. Develop against `stub-eneo/` first; a real instance additionally needs its
 registered module key, callback URL and service key. Never print or commit real secrets.
 
@@ -31,7 +31,7 @@ or Eneo permissions.
 
 | Work | Start here | Read when needed |
 |---|---|---|
-| Page or UI state | `web/src/App.tsx`, `web/src/pages/Flows.tsx`, `web/src/Frame.tsx` | From `web/`: `npm run astryx -- docs eneo-module`, then `build "<idea>"` and `component <Name>` through the same script. Keep the existing providers and shell. |
+| Page or UI state | `web/src/App.tsx`, `web/src/pages/Flows.tsx`, `web/src/Frame.tsx` | From `web/`: `npm run astryx -- docs eneo-module`, then `build "<idea>"` and `component <Name>` through the same script. Keep the existing providers, the router's root and the shell; a new page is a route with its title and calls `useRouteReady` once it has its content. |
 | Module API | `backend/routes.py`, `backend/tests/test_routes.py` | [Build a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md): route guards, calling Eneo and transport helpers. |
 | Proxied Eneo API | `PROXY_RULES` in `backend/main.py`, `backend/tests/test_app.py` | Verify the actual Eneo endpoint, method and permission contract before adding a rule. A module owns its allowlist. |
 | Login or session behavior | Existing `RequireSession`, `web/src/session.ts`, `web/src/AccountMenu.tsx` | `web/node_modules/@eneo-ai/module-kit/README.md` after installation, and `npm run astryx -- docs eneo-module` from `web/`. Reuse the package rather than creating another token or refresh client. |

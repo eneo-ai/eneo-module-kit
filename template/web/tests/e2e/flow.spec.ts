@@ -1,5 +1,6 @@
-import type { Route } from "@playwright/test";
-import { declare, expect, signIn, stubFlows, test, type Expectation } from "./fixtures";
+import type { Page, Route } from "@playwright/test";
+import { declare, expect, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
+import { FLOWS_CODE, withoutFlowsCode } from "./screens";
 
 test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
@@ -39,7 +40,7 @@ test("the deployment accent stylesheet is applied when themed content first appe
 test("sign in through the stub Eneo, see the shell and the flows, call the module's own route, sign out", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Eneo-modul" })).toBeVisible();
-  await expect(page).toHaveTitle("Eneo-modul");
+  await expect(page).toHaveTitle("Logga in · Eneo-modul");
   await page.getByRole("link", { name: "Logga in med Eneo" }).click();
 
   // The page behind the login: the flows Eneo lists, through the backend's proxy.
@@ -116,6 +117,68 @@ test("a deep link without a session shows the sign-in page, and signing in lands
   await expect(page.getByRole("heading", { level: 1, name: "Välj ett flöde" })).toBeVisible();
 });
 
+test.describe("pages and addresses", () => {
+  /** In the page: what the design system's live regions are given to say, in order. */
+  const listen = () => {
+    const said: string[] = [];
+    (window as unknown as { said: string[] }).said = said;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        const region = (record.target instanceof Element ? record.target : record.target.parentElement)?.closest("[data-astryx-live-region]");
+        const text = region?.textContent?.trim();
+        if (region && text && said.at(-1) !== text) said.push(text);
+      }
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  };
+  const said = (page: Page) => page.evaluate(() => (window as unknown as { said: string[] }).said);
+  /** Where the focus is: its words, and whether it is a heading in the main region. */
+  const focused = (page: Page) =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return { text: active?.textContent ?? "", heading: !!active?.matches("h1, h2, h3"), inMain: !!active?.closest('main, [role="main"]') };
+    });
+  test("an address that is no page says so at that address, under its own title, and the way to the start goes there in the page", async ({ page }) => {
+    await page.goto("/finns-inte");
+    await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
+    await expect(page).toHaveTitle("Sidan finns inte · Eneo-modul");
+    await expect(page).toHaveURL(/\/finns-inte$/);
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page).toHaveURL(/\/flows$/);
+    // Signed out: the gate's sign-in screen, at the page's address.
+    await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
+  });
+
+  test("a navigation in the page is titled at once, and said with the focus in the heading once the page has its content", async ({ page }) => {
+    await signIn(page);
+    await page.addInitScript(listen);
+    await page.goto("/finns-inte");
+    expect(await said(page), "the first load says nothing").toEqual([]);
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await expect(page).toHaveTitle("Välj ett flöde · Eneo-modul");
+    await expect.poll(() => said(page)).toEqual(["Välj ett flöde · Eneo-modul"]);
+    await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Välj ett flöde" });
+  });
+
+  test("a page whose code cannot be fetched is a page too: its own title, said once, the focus in its heading, and Ladda om sidan brings it back", async ({ page }) => {
+    await signIn(page);
+    await page.addInitScript(listen);
+    await page.goto("/finns-inte");
+    await withoutFlowsCode(page);
+    await page.getByRole("link", { name: "Till startsidan" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
+    await expect(page).toHaveURL(/\/flows$/);
+    await expect(page).toHaveTitle("Sidan kunde inte visas · Eneo-modul");
+    await expect.poll(() => said(page)).toEqual(["Sidan kunde inte visas · Eneo-modul"]);
+    await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Sidan kunde inte visas." });
+
+    // Nothing reloads by itself; the person's reload gets the files as they are now.
+    await page.unroute(FLOWS_CODE);
+    await page.getByRole("button", { name: "Ladda om sidan" }).click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+  });
+});
+
 test("the backend answers what it should: no session is 401, an Eneo route not on the allowlist is 403, an unknown API path 404", async ({ page }) => {
   expect((await page.request.get("/api/example")).status()).toBe(401);
   expect((await page.request.get("/api/eneo/flows/")).status()).toBe(401);
@@ -178,6 +241,223 @@ test.describe("colour mode", () => {
     expect(await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches)).toBe(true);
     const scheme = await page.evaluate(() => getComputedStyle(document.querySelector("[data-astryx-theme]")!).colorScheme);
     expect(scheme).toContain("dark");
+  });
+
+  test("before the page's code has run, the stored choice is already the document's (public/color-mode.js)", async ({ page }) => {
+    // The app's code never arrives: what the document shows is the first-paint script's and the stylesheets'.
+    declare(page, [{ requestFailed: /GET .*\/assets\/[^/]+\.js: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/assets\/[^/]+\.js\]/ }]);
+    await page.route("**/assets/*.js", (route) => route.abort());
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.addInitScript(() => localStorage.setItem("theme", "dark"));
+    await page.goto("/");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme), "the theme's own rule for the mode applies").toBe("dark");
+    expect(await page.locator("#root").innerHTML(), "and React has drawn nothing").toBe("");
+
+    // System leaves the choice to the browser, as the design system does (init scripts run in the order they were added).
+    await page.addInitScript(() => localStorage.setItem("theme", "system"));
+    await page.reload();
+    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+  });
+});
+
+test.describe("without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("the page says in Swedish that it needs JavaScript", async ({ page }) => {
+    await page.goto("/");
+    // Playwright's text matchers pass over <noscript>; the element itself is what is shown when scripts are off.
+    const notice = page.locator("noscript");
+    await expect(notice).toBeVisible();
+    expect(await notice.textContent()).toBe("Eneo-modul kräver JavaScript. Aktivera det i webbläsaren och ladda om sidan.");
+  });
+});
+
+test.describe("when the connection goes", () => {
+  test("without a network the page says so above the bar, keeps what it shows, and the notice goes when the network is back", async ({ page }) => {
+    await signIn(page);
+    const notice = page.getByRole("alert").filter({ hasText: "Ingen anslutning." });
+    await page.context().setOffline(true);
+    await expect(notice).toBeVisible();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await page.context().setOffline(false);
+    await expect(notice).toHaveCount(0);
+  });
+
+  test("a network that does not reach the module: the page says that the module does not answer, and the next answer clears it", async ({ page }) => {
+    // The browser reports the status read the test cut off.
+    declare(page, [{ requestFailed: /GET .*\/api\/auth\/status: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/api\/auth\/status/ }]);
+    await signIn(page);
+    const api = /\/api\//;
+    // The page is seen again: it reads the login's status.
+    const seen = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.route(api, (route) => route.abort());
+    await seen();
+    const notice = page.getByRole("alert").filter({ hasText: "Eneo-modul svarar inte just nu." });
+    await expect(notice).toBeVisible();
+    await page.unroute(api);
+    await seen();
+    await expect(notice).toHaveCount(0);
+  });
+});
+
+test.describe("what the person has typed", () => {
+  const note = (page: Page) => page.getByRole("textbox", { name: "Anteckning", exact: true });
+  async function writeNote(page: Page, text: string) {
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await note(page).fill(text);
+    await page.getByRole("button", { name: "Klar" }).click();
+  }
+
+  test("a note is kept in the tab: back after a reload for the same person, and gone for the next person who signs in here", async ({ page }) => {
+    await signIn(page);
+    await writeNote(page, "Ring tillbaka i morgon");
+    await page.reload();
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await expect(note(page)).toHaveValue("Ring tillbaka i morgon");
+    await page.getByRole("button", { name: "Klar" }).click();
+
+    await stubControl(page, "login-as?user=sara");
+    await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+    await page.getByRole("menuitem", { name: "Logga ut" }).click();
+    await page.getByRole("link", { name: "Logga in med Eneo" }).click();
+    await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+    await expect(note(page)).toHaveValue("");
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("eneo-modul:"))), "Erik's draft is gone from the tab").toEqual([]);
+  });
+
+  test.describe("when the browser cannot keep it", () => {
+    test.beforeEach(async ({ page }) => {
+      // A storage that refuses the module's drafts (full, or blocked for the site): what is typed is the page's alone.
+      await page.addInitScript(() => {
+        const setItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key: string, value: string) {
+          if (key.startsWith("eneo-modul:")) throw new DOMException("full", "QuotaExceededError");
+          return setItem.call(this, key, value);
+        };
+      });
+    });
+    const question = (page: Page) => page.getByRole("alertdialog", { name: "Lämna sidan?" });
+
+    test("signing out asks first in the page: Stanna kvar keeps the page and the note, Lämna sidan signs out without the browser asking again", async ({ page }) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (dialog) => {
+        dialogs.push(dialog.type());
+        void dialog.dismiss();
+      });
+      await signIn(page);
+      await writeNote(page, "Ring tillbaka i morgon");
+      const signOut = async () => {
+        await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
+        await page.getByRole("menuitem", { name: "Logga ut" }).click();
+      };
+
+      await signOut();
+      await expect(question(page)).toBeVisible();
+      await expect(question(page).getByRole("button", { name: "Stanna kvar" }), "staying has the focus").toBeFocused();
+      await question(page).getByRole("button", { name: "Stanna kvar" }).click();
+      await expect(question(page)).toHaveCount(0);
+      expect(await (await page.request.get("/api/auth/status")).json(), "still signed in").toMatchObject({ authenticated: true });
+      await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+      await expect(note(page)).toHaveValue("Ring tillbaka i morgon");
+      await page.getByRole("button", { name: "Klar" }).click();
+
+      await signOut();
+      await question(page).getByRole("button", { name: "Lämna sidan" }).click();
+      await expect(page.getByRole("link", { name: "Logga in med Eneo" })).toBeVisible();
+      expect(dialogs, "the browser did not ask a second time").toEqual([]);
+    });
+
+    test("a reload is the browser's own question", async ({ page }) => {
+      const dialogs: string[] = [];
+      page.on("dialog", (dialog) => {
+        dialogs.push(dialog.type());
+        void dialog.dismiss();
+      });
+      await signIn(page);
+      await writeNote(page, "Ring tillbaka i morgon");
+      await page.reload({ timeout: 3_000 }).catch(() => null);
+      await expect.poll(() => dialogs).toEqual(["beforeunload"]);
+      await expect(question(page)).toHaveCount(0);
+      await page.getByRole("button", { name: "Anteckning", exact: true }).click();
+      await expect(note(page), "the page stayed, with what was typed").toHaveValue("Ring tillbaka i morgon");
+    });
+
+    test("Back to a page of the app is held by the router and asked in the page: Stanna kvar stays, Lämna sidan goes", async ({ page }) => {
+      await signIn(page);
+      // A visit with a page of the app behind it: the not-found page, then the flows by its link.
+      await page.goto("/finns-inte");
+      await page.getByRole("link", { name: "Till startsidan" }).click();
+      await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+      await writeNote(page, "Ring tillbaka i morgon");
+
+      await page.goBack();
+      await expect(question(page)).toBeVisible();
+      await question(page).getByRole("button", { name: "Stanna kvar" }).click();
+      await expect(page).toHaveURL(/\/flows$/);
+      await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+
+      await page.goBack();
+      await question(page).getByRole("button", { name: "Lämna sidan" }).click();
+      await expect(page).toHaveURL(/\/finns-inte$/);
+      await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
+    });
+  });
+});
+
+test.describe("a list longer than one page", () => {
+  /** Eneo's list, answered here: `pages` flows on each page asked for, and `has_more` until the last. */
+  async function pagedList(page: Page, pages: number[], hasMoreAfterLast = false) {
+    const asked: Record<string, string>[] = [];
+    await page.route(/\/api\/eneo\/flows\//, async (route) => {
+      const query = Object.fromEntries(new URL(route.request().url()).searchParams);
+      asked.push(query);
+      const index = asked.length - 1;
+      const offset = Number(query.offset);
+      const items = Array.from({ length: pages[index] ?? 0 }, (_, n) => ({ id: `flow-${offset + n}`, name: `Flöde ${offset + n + 1}`, description: null }));
+      await route.fulfill({ json: { items, has_more: index < pages.length - 1 || hasMoreAfterLast, count: items.length } });
+    });
+    return asked;
+  }
+
+  test("the flow list reads each page that Eneo says follows, from where the last one ended", async ({ page }) => {
+    const asked = await pagedList(page, [3, 1]);
+    await signIn(page);
+    await expect(page.getByRole("list", { name: "Flöden" }).getByRole("listitem")).toHaveCount(4);
+    expect(asked).toEqual([
+      { published_only: "true", limit: "200", offset: "0" },
+      { published_only: "true", limit: "200", offset: "3" },
+    ]);
+    await expect(page.getByText(/Visar de första/)).toHaveCount(0);
+  });
+
+  test("a list that goes on past five pages is read that far, and the page says where it stops", async ({ page }) => {
+    const asked = await pagedList(page, [1, 1, 1, 1, 1], true);
+    await signIn(page);
+    await expect(page.getByRole("list", { name: "Flöden" }).getByRole("listitem")).toHaveCount(5);
+    expect(asked.map((query) => query.offset)).toEqual(["0", "1", "2", "3", "4"]);
+    await expect(page.getByText("Visar de första 1 000 flödena.")).toBeVisible();
+  });
+});
+
+test.describe("when Eneo is slow to list the flows", () => {
+  test("after 15 seconds the page says that it takes longer than usual, and Försök igen asks again", async ({ page }) => {
+    await page.clock.install();
+    // The first list is never answered; the one Försök igen asks for is.
+    let asked = 0;
+    await page.route(/\/api\/eneo\/flows\//, (route) => (++asked > 1 ? route.continue() : undefined));
+    await signIn(page);
+    // Said in a status region, and shown beside the way on.
+    const slow = page.getByRole("status").filter({ hasText: "Det tar längre tid än vanligt." });
+    const retry = page.getByRole("button", { name: "Försök igen" });
+    await page.clock.fastForward(14_000);
+    await expect(retry).toHaveCount(0);
+    await page.clock.fastForward(1_000);
+    await expect(slow).toHaveCount(1);
+    await expect(retry).toBeVisible();
+    await retry.click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await expect(page.getByText("Det tar längre tid än vanligt.")).toHaveCount(0);
   });
 });
 

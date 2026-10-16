@@ -160,6 +160,7 @@ export const eneoTheme = {
       },
       "base": {
         "overflowWrap": "anywhere",
+        "textWrap": "balance",
         ":focus-visible": {
           "outline": "none"
         }
@@ -287,6 +288,23 @@ export const eneoTheme = {
         "overflowWrap": "anywhere"
       }
     },
+    "table-header-cell": {
+      "base": {
+        "whiteSpace": "normal",
+        "textOverflow": "clip",
+        "overflowWrap": "break-word",
+        "wordBreak": "break-word"
+      }
+    },
+    "table-scroll-wrapper": {
+      "base": {
+        "backgroundImage": "linear-gradient(to right, var(--color-background-card), transparent), linear-gradient(to left, var(--color-background-card), transparent), radial-gradient(farthest-side at 0 50%, var(--color-border), transparent), radial-gradient(farthest-side at 100% 50%, var(--color-border), transparent)",
+        "backgroundPosition": "left center, right center, left center, right center",
+        "backgroundSize": "var(--spacing-6) 100%, var(--spacing-6) 100%, var(--spacing-2) 100%, var(--spacing-2) 100%",
+        "backgroundRepeat": "no-repeat",
+        "backgroundAttachment": "local, local, scroll, scroll"
+      }
+    },
     "slider-control": {
       "base": {
         "minBlockSize": "24px"
@@ -309,6 +327,11 @@ export const eneoTheme = {
     "avatar-fallback": {
       "base": {
         "color": "var(--color-text-primary)"
+      }
+    },
+    "switch": {
+      "base": {
+        "--color-background-gray": "var(--color-border-emphasized)"
       }
     }
   },
@@ -376,6 +399,11 @@ export const eneoTheme = {
             "collapsible-trigger": {
               "base": {
                 "minHeight": "44px"
+              }
+            },
+            "text-area-control": {
+              "base": {
+                "minBlockSize": "44px"
               }
             }
           }

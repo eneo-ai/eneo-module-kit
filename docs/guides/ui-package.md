@@ -44,26 +44,58 @@ With a destination path, `template` writes the reference TSX, for example `npm r
 
 ## Wire it up
 
-The package imports no stylesheet from its code; the module imports five, in this order:
+The package imports no stylesheet from its code; the module imports five, in this order, and renders its router:
 
 ```tsx
-// web/src/main.tsx (the template's, with React Router's Link passed as it is)
+// web/src/main.tsx (the template's)
 import "@eneo-ai/module-kit/layers.css";   // first: declares the cascade layers
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@eneo-ai/module-kit/theme.css";    // the built Eneo theme
 import "@eneo-ai/module-kit/base.css";     // what the theme cannot say
-import { BrandingProvider, ModuleProviders } from "@eneo-ai/module-kit";
+import { router } from "./App";
 
-createRoot(document.getElementById("root")!).render(
-  <BrowserRouter>
+history.scrollRestoration = "manual";      // RouteEffects owns the scroll after a navigation
+createRoot(document.getElementById("root")!).render(<RouterProvider router={router} />);   // RouterProvider from "react-router/dom"
+```
+
+The template's router is React Router's data router (`createBrowserRouter` in `web/src/App.tsx`): a navigation can be held back to ask first (`useBlocker`), a page's code can be fetched when its route is first entered (`lazy`), and a page that cannot be shown has an error boundary. The providers are in the root route's component, inside the router, so that `Link` works:
+
+```tsx
+// web/src/App.tsx (the template's, shortened)
+function Root() {
+  const { pathname, key } = useLocation();
+  const title = [...useMatches()].reverse().map((match) => match.handle?.title).find(Boolean);
+  return (
     <ModuleProviders linkComponent={Link}>
       <BrandingProvider defaultLogo="/brand/logo.svg">
-        <App />
+        <RouteEffects path={pathname} entry={key} type={useNavigationType()} title={title}>
+          <Outlet />
+        </RouteEffects>
       </BrandingProvider>
     </ModuleProviders>
-  </BrowserRouter>,
-);
+  );
+}
+
+export const router = createBrowserRouter([
+  {
+    Component: Root,
+    HydrateFallback: RootLoading,                     // the providers and <LoadingShell>, while the first page's code arrives
+    children: [
+      {
+        ErrorBoundary: RouteError,                    // <ErrorPage productName error={useRouteError()} />
+        children: [
+          { index: true, handle: { title: "Logga in · Min modul" }, element: <SignInScreen … /> },
+          { path: "inloggad", element: <SignedInAgain productName="Min modul" /> },
+          { Component: Private, children: [            // <RequireSession …><Outlet /></RequireSession>
+            { path: "flows", handle: { title: "Välj ett flöde · Min modul" }, lazy: page(() => import("./pages/Flows")) },
+          ] },
+          { path: "*", element: <NotFoundPage productName="Min modul" /> },
+        ],
+      },
+    ],
+  },
+]);
 ```
 
 A page is a `ModuleShell` with the brand in its heading:
@@ -83,7 +115,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `@eneo-ai/module-kit` | The code, below. |
 | `@eneo-ai/module-kit/layers.css` | `@layer reset, astryx-base, astryx-theme;` Import it first, so the layers have their order. |
 | `@eneo-ai/module-kit/theme.css` | The built Eneo theme. Generated from `packages/ui/src/theme/eneo.theme.ts` by `npm run theme:build` (in `packages/ui`), committed in `src/theme/built/`, and CI fails when it is stale. |
-| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, forced-colour edges for buttons and the slider, no ring on a heading that takes focus (`data-phase-heading`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose: it wins over the design system's layered styles. |
+| `@eneo-ai/module-kit/base.css` | What the theme cannot say: the shell's bar scrolls away with the page, the brand's mark sizing and colour-mode swap, no transition while the colour mode switches (`data-theme-switching`), the text size set in iOS on an iPhone or iPad (Dynamic Type, in the `reset` layer), no smooth scroll and a still spinner and progress bar with reduced motion, forced-colour edges for buttons, the slider and the progress bar, no ring on a heading that takes focus (`data-phase-heading`), a wait's spinner held back for its first 300 ms (`eneo-wait`), and the cover that hides the page while the login has ended, and a menu's height: Astryx caps a menu at 300 px, which holds six of the theme's 44 px touch rows, so a longer menu may take the window below the top bar (at most 30rem) and scrolls beyond it. Unlayered on purpose, but for the iOS text size: it wins over the design system's layered styles. |
 | `@eneo-ai/module-kit/session` | The session client, below. |
 | `@eneo-ai/module-kit/templates/eneo-module-page.tsx`, `@eneo-ai/module-kit/templates/eneo-signin.tsx` | Reference TSX source used by the Astryx CLI. Adapt it into the owning module route. |
 
@@ -101,30 +133,43 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `BRANDING_DEADLINE_MS` | `2000`. |
 | `Brand({ productName, href?, onClickCapture? })` | The header lockup: the organisation's mark, a divider and the product's name; without an organisation the name alone. With `href` it is a link, named for both. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
+| `OfflineBanner({ productName, message?, status? })` | The notice that the connection is gone, for the shell's `banner`: [below](#online-status). |
+| `useConnection(status?)` | `"online"`, `"offline"` (the device has no network) or `"unreachable"` (it has, and a request did not reach the module), and a new render when it changes. |
+| `LoadingShell({ productName })` | The page while it waits: the bar, a hidden `<h1>` with the name and a spinner ("Laddar") that shows only after 300 ms (`eneo-wait` in `base.css`), so a quick answer leaves no blink of it. `RequireSession` waits in it, and so can a router while a page's code arrives. |
+| `SlowWait({ onRetry, children? })` | Beside a wait with no end in sight: nothing for 15 seconds, then "Det tar längre tid än vanligt." in a status region that was there from the start, "Försök igen" (which calls `onRetry` and judges the wait afresh) and the page's other ways on (`children`). |
+| `lazyLoader(get)`, `useLoaded(loader)`, `LoadFailure({ children, keeps?, reload? })` | Code a page fetches when it first needs it (`lazyLoader(() => import("./Editor"))`): fetched once and kept, shared by pages that ask meanwhile. `useLoaded` gives `{ value, failed }`. A failed fetch is kept too: a browser keeps it per address, so there is no retry, and `LoadFailure` says what could not be fetched (and `keeps`, what a reload gives back) beside one action, "Ladda om sidan". Nothing reloads by itself. |
+| `RouteEffects({ path, entry, type, title?, children })`, `useRouteReady(ready)` | What a navigation gives the person, around the router's page: [below](#pages-and-navigation). |
+| `NotFoundPage({ productName, homeHref? })`, `ErrorPage({ productName, error, homeHref? })` | The pages that stand in for one that cannot be shown: [below](#pages-and-navigation). |
+| `useLeaveQuestion(active, warning)` | Leaving a page that holds work asks first: `{ question, leaveFirst, holds }`, [below](#leaving-a-page). |
+| `createDrafts(prefix, storage?)` | What someone has typed but not sent, kept per person in this tab: [below](#drafts). |
+| `onlineStatus`, `createOnlineStatus(target?, now?)` | The page's one status, which the session client's requests report to, and a way to build one over a stand-in window (tests). A module's own transport reports with `onlineStatus.sending()`, `reportReachable(sent)` and `reportNetworkFailure()`. |
 | `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
 | `CopyButton({ text, label, name?, variant? })` | Copies `text` as plain text. A check replaces the copy icon and a screen reader hears "Kopierat" once; the words stay, so the button keeps its width. A copy that fails says "Kunde inte kopiera" until the next press. `name` is the accessible name when it says more than `label`, and starts with it. |
-| `Branding`, `BuildIdentity`, `ColorMode` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
+| `Branding`, `BuildIdentity`, `ColorMode`, `Connection`, `Drafts`, `DraftStorage`, `Loader`, `OnlineStatus` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
 
 ## Colour mode
 
 - The key is `localStorage["theme"]` with the values `light`, `dark`, `system`: the key and values next-themes used, so a person's choice made in an app on it carries over ([K9](../decisions/k09-colour-mode-in-the-ui-package.md)).
-- It is read when the provider first renders, so the first paint is already in the right mode, and passed to Astryx's `<Theme mode>`, which sets `data-theme` on the document for `light` and `dark` (for `system` it sets none, and the browser's preference decides).
-- There is no inline script and no cookie: the page's Content-Security-Policy has no `unsafe-inline` ([K4](../decisions/k04-static-ui-served-by-the-bff.md)). A module must not add one to fix a flash of the wrong mode.
+- Before the page's code has run, the template's first-paint script sets it: `web/public/color-mode.js`, which `web/index.html` loads in its head, sets `data-theme` on the document for a stored `light` or `dark` and nothing for `system`. It is a file of the page's own origin, so the Content-Security-Policy, which has no `unsafe-inline` ([K4](../decisions/k04-static-ui-served-by-the-bff.md)), allows it; a module must not add an inline script instead. It reads the same key as the provider (`COLOR_MODE_KEY`).
+- The provider reads the choice when it first renders and passes it to Astryx's `<Theme mode>`, which sets `data-theme` on the document for `light` and `dark` (for `system` it sets none, and the browser's preference decides). No cookie.
+- For the frames that apply a new mode, `<html>` carries `data-theme-switching`, and a rule in `base.css` turns every transition off: the surfaces and the text change at once, and no control fades in after them.
 - `system` follows `prefers-color-scheme` and its changes. A choice made in another tab reaches this one (the `storage` event).
 - Storage that is missing or throws is not an error: no choice is `system`, and a choice still applies for the visit.
 - A module's own menu uses `useColorMode()`: the template's `AccountMenu` has the three choices.
 
 ## Links
 
-The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes them the app's router links, through Astryx's `LinkProvider`. The component receives the props of an anchor, `href` first (`href`, `children` and the usual anchor attributes), and also `to`, the same address, which Astryx adds for routers that take their address as `to`. So React Router's `Link` is passed as it is, and a component that takes `href` needs nothing more:
+The package imports no router. Astryx draws some links itself (the brand in the top bar, a link button); `ModuleProviders linkComponent={...}` makes those that go to a page of the app the app's router links, through Astryx's `LinkProvider`. The component receives the props of an anchor, `href` first (`href`, `children` and the usual anchor attributes), and also `to`, the same address, which Astryx adds for routers that take their address as `to`. So React Router's `Link` is passed as it is, and a component that takes `href` needs nothing more:
 
 ```tsx
 <ModuleProviders linkComponent={Link}>   {/* Link from "react-router" */}
 ```
 
-A router whose link wants something else needs a small adapter of its own. (A test in `packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.) The template's `main.tsx` still wraps `Link` in a small `RouterLink` that turns `href` into `to`: it predates this and is not needed.
+A router whose link wants something else needs a small adapter of its own. (`packages/ui/tests/readme.test.ts` pins this: Astryx gives the component `href` and `to`, and a press moves the router, not the page.)
 
-Without `linkComponent` the links are plain anchors and a click reloads the page. A link that leaves the app for another origin or for the BFF (`/api/auth/login`) is a plain `<a>`, as the template's sign-in page does.
+Only a page of the app opened in the same tab is the router's, and only by an absolute path (`/flows`, `/flows?run=1`): write a module's links to its own pages that way. Every other link stays a plain anchor that the router never sees, whatever component was given: a relative address (`flows`, `?run=1`), whose click loads the page, a fragment, `mailto:`, another origin (also `//host`), a path under `/api` (a file of the backend, the login), a `target` other than `_self`, and a `download`. A router link to `/api/...` would be a navigation to a path the router has no page for. `packages/ui/tests/links.test.ts` presses each kind.
+
+Without `linkComponent` every link is a plain anchor and a click on one to a page reloads the page.
 
 ## Branding
 
@@ -142,6 +187,43 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 - The module has no version of its own: the UI and the BFF ship as one image, and `/api/healthz` says what the image was built from and the release the deployment names ([configuration](configuration.md#which-build-runs)). A local build says nothing of itself.
 - It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: the template's account menu has "Version", which opens it in a dialog (`template/web/src/AccountMenu.tsx`).
 
+## Pages and navigation
+
+The package imports no router: the module's router gives `RouteEffects` the path (`useLocation().pathname`), the history entry's key (`useLocation().key`) and how it was reached (`useNavigationType()`), as the template's `Root` does.
+
+- **The title** of the route (the template's `handle.title`, `<page> · <product>`) is set at once, in a layout effect. A page that names itself more closely does so in an effect, which runs after it, and has the last word.
+- **The rest waits for the page's content**: a page calls `useRouteReady(ready)` once it has its first real content (the list answered), not a spinner. In the next frame, once: the title is said through Astryx's live region; the focus goes to the page's heading (`[data-phase-heading]`, an `h1` with `tabindex`, else the first `h1` of the main region, made focusable with `tabindex="-1"`) when it is on no element, unless the person pressed a key or the pointer since and put the focus somewhere the page did not remove; and the window scrolls to the top for a link, or to where the person left the entry for Back and Forward. Set `history.scrollRestoration = "manual"`: this is the one place that scrolls after a navigation.
+- Only a new path is a navigation: a page that writes `?run=` into the address changes its own state. The first load, and the redirect the first page sends the person on by before any page has its content, do none of it.
+- `SignInScreen`, `SignedInAgain` and the stand-in pages are ready at once. `RequireSession`'s waiting view is not.
+- `NotFoundPage` says "Sidan finns inte." at the address as it was typed, with "Till startsidan" (`homeHref`, default `/`); route it at `*`. `ErrorPage` is the router's error boundary: "Sidan kunde inte visas.", that the module may have been updated since the page was opened, "Ladda om sidan" and "Till startsidan"; the error goes to the console. It covers a page whose code cannot be fetched (a tab that was open across a release asks for files that are gone) and a page that threw. Nothing reloads by itself: a person may be in the middle of something, and a reload is theirs to choose. Both set their own title (`Sidan finns inte · <product>`), in the column of the sign-in screen.
+
+## Leaving a page
+
+`useLeaveQuestion(active, warning, isActive?)` is for a page that holds work that leaving would lose (`active`). It imports no router; the template's `web/src/leave.ts` (`useLeaveGuard`) gives it React Router's blocker.
+
+- While `active`, the browser's own question (`beforeunload`) covers what no navigation of the app reaches: a reload, a closed tab, another site.
+- `leaveFirst(goOn, stay?)` asks in the page's own dialog, "Lämna sidan?" with `warning`, "Stanna kvar" (which has the focus) and "Lämna sidan": before an action that ends the work without a navigation (the template's account menu signs out through it), and for a navigation the router held (`leaveFirst(blocker.proceed, blocker.reset)`). Not `active`, it goes on at once.
+- `holds()` says, when the router asks, whether a navigation must be held: `useBlocker(({ currentLocation, nextLocation }) => leaving.holds() && currentLocation.pathname !== nextLocation.pathname)`, so a page that writes `?run=` into its address is not held.
+- `holds()`, `leaveFirst` and the browser's question read the last render's `active`, unless the page gives `isActive`, a function they call when they ask, which reads where the work is kept (a store, a ref). Give it when a handler stores the work and leaves in one go: before the page has rendered `active` false, only `isActive` knows the work is stored. The template passes `drafts.unstored`.
+- An answered "Lämna sidan" lets its own way off through: neither the router nor the browser asks again, also when the page unloads after the action (WebKit asks `beforeunload` only after a `location.assign` has returned). A `goOn` that runs at once (`blocker.proceed`) is past the hold when it returns, and the hold is back. An action that finishes later and did not leave (a sign-out that failed) returns `false`, and the hold is back; so it is once the page holds no work (`active` false), for the next.
+- A menu the question is asked from (the account menu's "Logga ut") is closed first, in every engine: WebKit hides it under the modal without telling the design system, which then takes the next press on its trigger for a close.
+- Render `question` once on the page. It is a native modal dialog, not closed while the login has ended: asked while signed out, it stands above the sign-in dialog.
+
+## Drafts
+
+`createDrafts(prefix)` keeps what someone has typed but not sent, so a reload after a lost login, or a tab the browser put to sleep, gives it back. Create one per module (`createDrafts("min-modul")`) and share it.
+
+- Per person, in the tab's `sessionStorage` under `<prefix>:<user id>:<name>`, not `localStorage`: a shared computer keeps nothing of it once the tab is closed. `read(ownerId, name, isDraft)`, `write(ownerId, name, value)` (JSON), `clear(ownerId, name)` once it is sent, saved or thrown away.
+- Only to the same person: call `keepOnly(user.id)` from `RequireSession`'s `onIdentity`, which removes every other person's drafts under the prefix.
+- `read` takes the reader's own check of the shape (`isDraft`): what an earlier page wrote may be of an older shape. A draft that fails it, or is not JSON, is removed and counts as none.
+- A write the storage refuses (full, blocked) returns `false`, and `unstored()` says that typed work is kept nowhere but the page until it is stored, cleared or the page is gone (`forget()`): that is when leaving should ask first (`subscribe` for a re-render). Storage that is missing or throws is no error.
+
+## Online status
+
+- Two causes, told apart: the browser's `offline` event says the device has no network (`offline`); a request that did not reach the module while the browser says it has one says the module does not answer (`unreachable`). A request that reaches the module, an error status included, or the browser's `online` event, clears it. An answer to a request that left after the browser said "offline" outweighs it (Safari can go on saying so after a device wakes); one that was already on its way does not.
+- The session client's requests report it: `fetchWithSession`, `uploadWithProgress` and the status reads of `RequireSession`. The page's own abort says nothing, nor does a timeout.
+- `OfflineBanner` says "Ingen anslutning." or "<productName> svarar inte just nu.", and after it the page's `message` (what waits, and when it goes on). It is Astryx's warning banner, an alert mounted when the connection goes, so a screen reader says it once; online it is nothing and takes no room. The template's `Frame` puts it in the shell's `banner`, above the bar.
+
 ## The shell
 
 - A page renders no `<main>` and no skip link: `ModuleShell` has them.
@@ -151,21 +233,17 @@ Without `linkComponent` the links are plain anchors and a click reloads the page
 
 ## The session client
 
-`@eneo-ai/module-kit/session` keeps the login of a page that can outlive its login. SSO only: it uses the BFF's `GET /api/auth/status`, `GET /api/auth/login?next=&renew=` and the `X-Auth-Required: session` mark on a 401 ([design.md](../design.md) section 5). A page's whole use of it, from the template's `web/src/App.tsx`:
+`@eneo-ai/module-kit/session` keeps the login of a page that can outlive its login. SSO only: it uses the BFF's `GET /api/auth/status`, `GET /api/auth/login?next=&renew=` and the `X-Auth-Required: session` mark on a 401 ([design.md](../design.md) section 5). A page's whole use of it, from the template's `web/src/App.tsx`: the route a login window ends at, and the pages that need a session under one layout route that is the gate:
 
 ```tsx
-<Route path="/inloggad" element={<SignedInAgain productName={PRODUCT_NAME} />} />   {/* where a login window ends */}
-<Route
-  path="/flows"
-  element={
-    <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} signInDescription={SIGN_IN_TEXT}>
-      <Flows />
-    </RequireSession>
-  }
-/>
+{ path: "inloggad", element: <SignedInAgain productName={PRODUCT_NAME} /> },   // where a login window ends
+{
+  Component: Private,    // <RequireSession productName={PRODUCT_NAME} signInTitle={PRODUCT_NAME} …><Outlet /></RequireSession>
+  children: [{ path: "flows", lazy: page(async () => (await import("./pages/Flows")).Flows) }],
+},
 ```
 
-and every call to the backend through `fetchWithSession(path, init)` instead of `fetch` (the template's `getJson` in `web/src/session.ts`).
+and every call to the backend through `fetchWithSession(path, init)` instead of `fetch` (the template's `getJson` in `web/src/session.ts`), or `uploadWithProgress(path, body, options)` for an upload whose progress the page shows.
 
 | Export | What it is |
 |---|---|
@@ -173,8 +251,10 @@ and every call to the backend through `fetchWithSession(path, init)` instead of 
 | `useSessionUser()`, `useSignedOut()`, `useSignedOutSlot()` | The user; whether the login has ended; the place in the sign-in dialog to portal what must stay reachable into. |
 | `fetchWithSession(path, init)` | `fetch` over the page's one session state. Signed out, nothing but `/api/auth/*` leaves the page: a GET or HEAD, or a request with an `Idempotency-Key`, waits for the new login and is sent once more; any other fails with `SessionExpiredError`. A write names the page's user in `X-Expected-User`; a 409 `user_changed` (someone else's session under the page) ends the login as a 401 does, reads the status again so that the cover says whom to sign in as, and fails with `SessionExpiredError`, never sent again. A request no answer has begun for within 90 s fails with `RequestTimeoutError`. Answers are returned as they came. |
 | `RequestTimeoutError` | What `fetchWithSession` fails with when no answer has begun within 90 s (the backend waits 60 s for Eneo): `status` 408, and a Swedish `message` to show beside a way to try again. The page's own `signal` still aborts a request, as an abort. |
+| `uploadWithProgress(path, body, options)` | An upload that says how far it has come (`onProgress({ loaded, total })`; XMLHttpRequest, as `fetch` cannot tell), under `fetchWithSession`'s rules and with its errors. Signed out it fails with `SessionExpiredError` and nothing leaves the page: an upload is never sent twice. It names the page's user in `X-Expected-User`; a 401 with `X-Auth-Required: session` and a 409 `user_changed` end the login. Nothing going up for `idleTimeoutMs`, or no answer begun within `answerTimeoutMs` of the last byte (90 s each unless said; the backend is told the second, `X-Upload-Timeout-Seconds`, so it waits for Eneo no longer), fails with `RequestTimeoutError`; not reaching the module, with a `TypeError`. `method` (`POST`), `headers` and `signal` as for `fetch`. The answer is a `Response`. |
+| `errorAdvice(error)`, `ErrorAdvice` | What a failed request says to the person: `{ message, retry }`, a Swedish sentence with the way on and whether trying again can help (offer "Försök igen" only then). It reads `SessionExpiredError` (try again: the new login is there by now), `RequestTimeoutError`, a dropped connection (a `TypeError` from `fetch`), and an error that carries the status the backend answered (`{ status }`: the module's own error class, or a `Response`): 401, 403, 404, 408, 413, 415, 429, 502, 503, 504, other 5xx and 4xx. Anything else is "Ett okänt fel uppstod. Försök igen." What the browser or the backend said in English is never shown. The template's flow list uses it. |
 | `SignInScreen`, `SignedInAgain` | The sign-in screen (one button that starts Eneo's login; it says once when a callback failed, `?auth_error=`); the page a login in a window of its own lands on: it tells the module's tabs (`SESSION_CHANNEL`, `"eneo-module:session"`) and closes itself, or says why a renewal was refused (`?fel=annan-anvandare`, `?fel=utgangen`). Route it at `signedInAgainPath` (default `/inloggad`). |
-| `createSessionState()`, `sessionState`, `createFetchWithSession(state)`, `SessionExpiredError`, `isSessionEndedAnswer`, `refusalOf`, `sessionUser`, `userDisplayName`, `userInitial` | The state (one per page, shared by the gate and `fetchWithSession`), for tests and for a transport that is not `fetch`; the error; the helpers. The package README lists them. For a transport that is not `fetch` (an upload by `XMLHttpRequest`): refuse while `sessionState.signedOut`, take `const question = sessionState.ask()` before sending, and on a 401 with `X-Auth-Required: session` (`isSessionEndedAnswer`) call `sessionState.ended(question)`. A refusal that arrives after a renewal belongs to the old login: `ended(question)` returns false and covers nothing. On a write send `X-Expected-User: sessionState.expectedUser`, and on a 409 `{"detail": "user_changed"}` call `sessionState.userChanged(question)`. |
+| `createSessionState()`, `sessionState`, `createFetchWithSession(state)`, `createUploadWithProgress(state)`, `SessionExpiredError`, `isSessionEndedAnswer`, `refusalOf`, `sessionUser`, `userDisplayName`, `userInitial` | The state (one per page, shared by the gate, `fetchWithSession` and `uploadWithProgress`), and both built over another state, for tests; the error; the helpers. The package README lists them. |
 
 When the login has ended the page is covered, not removed: it stays mounted with all it holds, hidden and out of reach (`inert`), under a native modal dialog with an opaque backdrop that nothing but the new login closes, opened in a window of its own. Only the page's own user signing in again lifts it; someone else's login keeps the page covered and says whom to sign in as. A native dialog of the page is the module's to close while signed out (`isOpen={open && !useSignedOut()}`): see [build a module](build-a-module.md#10-sessions-and-dialogs) and the [security checklist](security-checklist.md#the-cover-for-an-ended-login). The decision: [K15](../decisions/k15-cover-for-an-ended-login.md). The flow: [architecture](../architecture.md#how-a-page-learns-the-login-ended-and-gets-it-back). The Swedish words are in `packages/ui/src/session/messages.ts`.
 
@@ -182,7 +262,7 @@ When the login has ended the page is covered, not removed: it stays mounted with
 
 A design-system shortfall (a target under 44 px, a missing focus ring, a label that cannot be read in dark mode) is fixed once, in `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` in `packages/ui`, and the regenerated `src/theme/built/` is committed. Astryx is pinned to an exact version in the package and in the template ([K11](../decisions/k11-astryx-pinned.md)); an upgrade is its own change. No ejected Astryx component and no authored StyleX.
 
-The shared theme gives fields one focus frame along their rounded edge, keeps supporting text at 14 px with the default root font size, and supplies error-text and control-edge colours that meet AA on the page, card and muted surface. A dialog initially focuses its heading for announcement without drawing a control frame around it; its keyboard controls retain visible focus. Token contrast checks live in `packages/ui/tests/contrast.test.ts`, and the template's `theme.spec.ts` verifies these rendered states.
+The shared theme gives fields one focus frame along their rounded edge, keeps supporting text at 14 px with the default root font size, and supplies error-text and control-edge colours that meet AA on the page, card and muted surface. An off switch's track is the control-edge colour (3:1 on the page and under its thumb), a text area is 44 px under a finger, a table that scrolls sideways shows shadows at the edge that has more and its header cells wrap, and a heading that wraps balances its lines. A dialog initially focuses its heading for announcement without drawing a control frame around it; its keyboard controls retain visible focus. Token contrast checks live in `packages/ui/tests/contrast.test.ts`, and the template's `theme.spec.ts` verifies these rendered states.
 
 ## Develop the package
 
@@ -196,4 +276,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), drafts (`drafts`), the leave question with React Router's blocker (`leave-question`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), what a failed request says (`errors`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

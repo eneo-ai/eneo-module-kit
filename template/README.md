@@ -16,12 +16,13 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   ```
   After the release, in a module's own folder: `cp .env.example .env && docker compose up --build`. `docker compose up` merges
   `docker-compose.override.yml` (the local build, port 3001, the stub Eneo); production runs `docker-compose.yml` alone.
-- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts` and `<title>` in `web/index.html`, and
+- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts`, `<title>` and `<noscript>` in `web/index.html`, the icons in `web/public/`, the drafts' prefix in `web/src/drafts.ts`, and
   the image's name in `docker-compose.yml` to `ghcr.io/<owner>/<repository>` of the module's repository (CI checks it).
 - **Settings:** `.env.example` lists every variable. Register the module in Eneo's admin (module key, callback URL
   `MODULE_PUBLIC_URL/api/auth/callback`, service key).
 - **Add a route:** in `backend/routes.py` on `router`, behind `require_session`; to call Eneo, one `rule(...)` in `backend/main.py`.
-- **Add a page:** a route in `web/src/App.tsx` inside `RequireSession`; its states in `web/tests/e2e/screens.ts`.
+- **Add a page:** a route in `web/src/App.tsx` with its title, under `Private` (the kit's `RequireSession`) when it needs a session;
+  its states in `web/tests/e2e/screens.ts`.
 - **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm test` (unit tests and the code's rules),
   `npm run test:e2e` (browsers, the accessibility gate and the production checks; builds first), or `npm run test:prod` for the
   production checks alone. If you set `PYTHON` for them, give an absolute path to a python that has `eneo-module-bff`.

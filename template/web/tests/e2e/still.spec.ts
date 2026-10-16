@@ -40,6 +40,7 @@ const BY_ADDRESS: Record<string, (page: Page) => Locator> = {
   "flows-empty": (page) => page.getByRole("heading", { level: 2, name: /Det finns inga publicerade flöden/ }),
   "flows-error": (page) => page.getByText("Flödena kunde inte visas."),
   "session-warning": (page) => page.getByRole("alertdialog", { name: "Du loggas snart ut" }),
+  "not-found": (page) => page.getByRole("heading", { level: 1, name: "Sidan finns inte." }),
 };
 
 // The organisation's mark is 40 px high (base.css of @eneo-ai/module-kit) and arrives when the brand is read. With a
@@ -61,7 +62,7 @@ const BRAND = {
  */
 const KNOWN: { page: string; layout: string; when: RegExp; why: string }[] = process.env.E2E_EXTERNAL_URL
   ? []
-  : ["signin", "flows", "flows-empty", "flows-error", "session-warning"].flatMap((page) => LAYOUTS.map((layout) => ({ page, layout, ...BRAND })));
+  : ["signin", "flows", "flows-empty", "flows-error", "session-warning", "not-found"].flatMap((page) => LAYOUTS.map((layout) => ({ page, layout, ...BRAND })));
 
 type Anchor = { id: number; name: string; x: number; y: number; height: number; onScreen: boolean };
 type Measure = { anchors: Anchor[]; presses: number };

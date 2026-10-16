@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { cleanup, installDom, mount } from "./test-dom.js";
+
+const frames = (count: number) => new Promise<void>((resolve) => (function next(left: number) { left === 0 ? resolve() : requestAnimationFrame(() => next(left - 1)); })(count));
 
 installDom();
 afterEach(async () => {
   await cleanup();
   localStorage.clear();
+  // A switch of the mode marks <html> until two animation frames have passed: the next test must not start with this
+  // one's mark, nor have its own cleared by this one's frames.
+  await frames(2);
 });
 
 /** The operating system's choice, as a test controls it: `matches` now, and `change` events to whoever listens. */
@@ -141,4 +147,68 @@ test("the hook says so when there is no provider above it", async () => {
     return null;
   }
   await assert.rejects(() => mount(createElement(Probe)), /ColorModeProvider/);
+});
+
+// A switch of the mode must not animate: the surfaces and the text change at once, so controls that fade over 175 ms
+// (the design system's transitions) would lag behind them. For the frames that apply the new mode, `<html>` carries
+// `data-theme-switching`, which one static rule in base.css answers with `transition: none`.
+const switching = () => document.documentElement.hasAttribute("data-theme-switching");
+
+test("a chosen mode marks the document as switching for the frames that apply it, and no longer", async () => {
+  const { ColorModeProvider, useColorMode } = await load();
+  operatingSystem(false);
+  let current: ReturnType<typeof useColorMode> | undefined;
+  function Probe() {
+    current = useColorMode();
+    return null;
+  }
+  const view = await mount(createElement(ColorModeProvider, { children: createElement(Probe) }));
+  assert.equal(switching(), false, "not on the first render");
+  await view.act(async () => current?.setMode("dark"));
+  assert.equal(switching(), true, "from the choice, before the page shows the new mode");
+  await view.act(async () => frames(4));
+  assert.equal(switching(), false, "and over a frame or two later");
+});
+
+test("the operating system's change and another tab's choice mark it too, from the event, before React has rendered", async () => {
+  const { ColorModeProvider, useColorMode } = await load();
+  const system = operatingSystem(false);
+  let current: ReturnType<typeof useColorMode> | undefined;
+  function Probe() {
+    current = useColorMode();
+    return null;
+  }
+  const view = await mount(createElement(ColorModeProvider, { children: createElement(Probe) }));
+  system.choose(true); // outside act: the event itself, no render yet
+  assert.equal(switching(), true, "the system's change");
+  await view.act(async () => frames(4));
+  assert.equal(switching(), false);
+  localStorage.setItem("theme", "dark");
+  window.dispatchEvent(new window.StorageEvent("storage", { key: "theme", newValue: "dark" }));
+  assert.equal(switching(), true, "another tab's choice");
+  await view.act(async () => frames(4));
+  assert.equal(current?.mode, "dark");
+  assert.equal(switching(), false);
+});
+
+test("an event that changes nothing marks nothing: the same mode again, the same system answer, another key", async () => {
+  const { ColorModeProvider, useColorMode } = await load();
+  const system = operatingSystem(true);
+  localStorage.setItem("theme", "dark");
+  let current: ReturnType<typeof useColorMode> | undefined;
+  function Probe() {
+    current = useColorMode();
+    return null;
+  }
+  const view = await mount(createElement(ColorModeProvider, { children: createElement(Probe) }));
+  await view.act(async () => current?.setMode("dark"));
+  assert.equal(switching(), false, "dark chosen while dark");
+  system.choose(true);
+  assert.equal(switching(), false, "the system says what it said");
+  window.dispatchEvent(new window.StorageEvent("storage", { key: "other", newValue: "x" }));
+  assert.equal(switching(), false, "another key");
+});
+
+test("one static rule of base.css turns every transition off while the document is switching", () => {
+  assert.match(readFileSync("src/base.css", "utf8"), /\[data-theme-switching\] \*[^{]*\{[^}]*transition:\s*none\s*!important/);
 });

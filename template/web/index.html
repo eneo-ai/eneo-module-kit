@@ -4,10 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Eneo-modul</title>
+    <!-- The stored colour mode before the first paint (public/color-mode.js): a file of the page's own origin, as the policy wants. -->
+    <script src="/color-mode.js"></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- The browser's own bar in the top bar's colour (the theme's surface), in each mode. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FBFCFF" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191C1F" />
     <link rel="stylesheet" href="/api/branding/theme.css" />
   </head>
   <body>
     <div id="root"></div>
+    <noscript>Eneo-modul kräver JavaScript. Aktivera det i webbläsaren och ladda om sidan.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

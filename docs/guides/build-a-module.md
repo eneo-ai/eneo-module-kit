@@ -125,7 +125,7 @@ async def upload(flow_id: str, request: Request):
     return await forward_upload(request, f"flows/{flow_id}/files/")
 ```
 
-The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multipart/form-data` body with one file part named `upload_file` and no other field. The file name is forwarded as it came, a path included: Eneo owns where a file lands.
+The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multipart/form-data` body with one file part named `upload_file` and no other field. The file name is forwarded as it came, a path included: Eneo owns where a file lands. From the page, the UI package's `uploadWithProgress("/api/upload/" + flowId, form, { onProgress })` sends it with the page's user in `X-Expected-User` and says how far it has come ([UI package](ui-package.md#the-session-client)).
 
 | Request | Answer |
 |---|---|

@@ -235,24 +235,25 @@ Source: `transport.py` (`stream_signed`), `limits.py` (`heavy_io_slot`) and `aut
 
 ## The UI app and its layers
 
-Look at: the nesting of providers, top to bottom. The kit's UI package supplies the middle (colour mode, theme, words, links, branding, the shell); the module supplies the router and the pages.
+Look at: the nesting, top to bottom. The kit's UI package supplies the middle (colour mode, theme, words, links, branding, what a navigation gives, the gate, the shell); the module supplies the router, its routes and the pages.
 
 ```mermaid
 flowchart TB
-  main["main.tsx: five stylesheets in order, then render"] --> router["BrowserRouter: the module's"]
-  router --> mp["ModuleProviders: colour mode, Eneo theme, Swedish words, toasts, links"]
-  mp --> bp["BrandingProvider: asks /api/branding once"]
-  bp --> app["App: the module's routes"]
-  app --> rs["RequireSession, from the session client: asks /api/auth/status"]
-  rs --> frame["Frame: ModuleShell, Brand, Layout"]
+  html["index.html: color-mode.js, the accent stylesheet"] --> main["main.tsx: five stylesheets in order, then RouterProvider"]
+  main --> router["createBrowserRouter in App.tsx: the module's routes"]
+  router --> root["Root: ModuleProviders, BrandingProvider, RouteEffects"]
+  root --> boundary["ErrorBoundary: ErrorPage"]
+  boundary --> rs["Private: RequireSession, asks /api/auth/status"]
+  boundary --> nf["*: NotFoundPage"]
+  rs --> frame["A page's lazy code, then Frame: ModuleShell, OfflineBanner, Brand, Layout"]
   frame --> page["A page, built from Astryx components"]
 ```
 
 | Layer | Where | Owned by |
 |---|---|---|
 | Stylesheets: `layers.css`, Astryx's `reset.css` and `astryx.css`, `theme.css`, `base.css` | imported in `template/web/src/main.tsx`, in this order | the module imports, the kit and Astryx supply |
-| Providers, shell, brand, theme, colour mode, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
-| Router, pages, `Frame`, `AccountMenu`, `config.ts`, `getJson` | `template/web/src/` | the module |
+| Providers, shell, brand, theme, colour mode, what a navigation gives (`RouteEffects`), the stand-in pages, waiting and online states, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`, `uploadWithProgress`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
+| Router and its routes (`App.tsx`), pages, `Frame`, `AccountMenu`, `config.ts`, `getJson`, the first-paint script (`public/color-mode.js`) | `template/web/src/`, `template/web/public/` | the module |
 | Components | `@astryxdesign/core`, pinned to an exact version | Astryx |
 | Design-system fixes | `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` | the UI package, once, for every module |
 
@@ -397,10 +398,14 @@ The UI package, the template and the image:
 | Topic | Path | Tests |
 |---|---|---|
 | Colour mode | `packages/ui/src/color-mode.tsx` | `packages/ui/tests/color-mode.test.ts` |
-| Providers, shell | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `shell.test.ts` |
+| Providers, shell, which links are the router's | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `links.test.ts`, `shell.test.ts` |
 | Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
 | Which version runs, copying | `packages/ui/src/VersionInfo.tsx`, `CopyButton.tsx` | `version-info.test.ts`, `copy-button.test.ts` |
-| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
+| Navigation and the stand-in pages | `packages/ui/src/routes.tsx` | `route-effects.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
+| Waiting, and code fetched when needed | `packages/ui/src/LoadingShell.tsx`, `SlowWait.tsx`, `lazy.tsx` | `waiting.test.ts`, `lazy.test.ts` |
+| Drafts, the leave question | `packages/ui/src/drafts.ts`, `leave-question.tsx` | `drafts.test.ts`, `leave-question.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
+| Online status and its notice | `packages/ui/src/online-status.ts`, `OfflineBanner.tsx` | `online-status.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
+| The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`, `errors.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
 | A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |
 | Eneo's side, for development | `template/stub-eneo/server.py` | `template/stub-eneo/test_server.py` |

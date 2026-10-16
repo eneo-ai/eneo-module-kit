@@ -3,5 +3,5 @@
   - paragraph: Hej Erik Lund
   - button "Anteckning"
   - alert:
-    - text: Flödena kunde inte visas. Eneo svarade inte som väntat.
+    - text: Flödena kunde inte visas. Tjänsten svarade med ett fel. Försök igen om en stund.
     - button "Försök igen"
