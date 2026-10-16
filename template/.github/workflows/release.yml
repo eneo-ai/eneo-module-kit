@@ -1,0 +1,108 @@
+# A tag vX.Y.Z on a commit of main gives that commit's tested image its version and `latest`, and creates the GitHub Release
+# with the files a deployment needs. It builds nothing: the image is the one ci.yml tested and pushed as sha-<commit>,
+# copied registry to registry under the new tags with its digest kept, and the digest is checked after each copy.
+# Before any tag moves, the image has to say, in its revision label, the commit the tag is on.
+#
+# A tag pushed while CI still runs on its commit finds no image yet (the registry answers "manifest unknown"): it waits
+# for CI to publish it, up to an hour, and then fails, as a commit CI did not pass has no image. Run the job again once CI
+# has passed, or tag a commit it has passed.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+# Two tags pushed together are released one after the other.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # The same retained immutable release as ci.yml.
+  SKOPEO: quay.io/containers/skopeo:v1.22.3-immutable@sha256:f45eb1e14223a5ba0da4246274679a083653dab1402acc1fcb70a6339b50cf00
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write # the GitHub Release
+      packages: write # the version tags in the registry
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, to see whether the tagged commit is on main.
+          fetch-depth: 0
+      - id: promote
+        name: Give the tested image of this commit its version and latest
+        env:
+          CREDENTIALS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # The commit the tag points to, whether the tag is lightweight or annotated.
+          commit="$(git rev-parse HEAD)"
+          source="$image:sha-$commit"
+          # Only a commit of main has a tested image: CI publishes for main alone.
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is on $commit, which is not on main. Only a commit of main has a tested image: tag one."
+            exit 1
+          fi
+          # CI pushes the image last, after every job has passed. Until then the registry does not know it; any other
+          # answer is a failure at once.
+          for attempt in $(seq 120); do
+            if answer="$(docker run --rm "$SKOPEO" inspect --raw --creds "$CREDENTIALS" "docker://$source" 2>&1 >/dev/null)"; then
+              break
+            fi
+            case "$answer" in
+              *"manifest unknown"*) ;;
+              *) echo "$answer"; echo "::error::cannot read $source: the cause is in the line above."; exit 1 ;;
+            esac
+            if [ "$attempt" = 120 ]; then
+              echo "::error::CI has not published $source in an hour: it publishes a commit of main only when every job has passed. Run this job again once CI has passed, or tag a commit it has passed."
+              exit 1
+            fi
+            echo "Waiting for CI to publish $source"
+            sleep 30
+          done
+          # Before any tag moves: the tested image says it was made from the tagged commit. Its revision label is written by
+          # ci.yml from what its /health answer is written from, so a deployment of this version answers this commit.
+          revision="$(docker run --rm "$SKOPEO" inspect --creds "$CREDENTIALS" \
+            --format '{{index .Labels "org.opencontainers.image.revision"}}' "docker://$source")"
+          if [ "$revision" != "$commit" ]; then
+            echo "::error::$source says it was made from '$revision', and the tag is on $commit. No tag is moved and no release is created."
+            exit 1
+          fi
+          digest="sha256:$(docker run --rm "$SKOPEO" inspect --raw --creds "$CREDENTIALS" "docker://$source" | sha256sum | cut -d' ' -f1)"
+          for tag in "$GITHUB_REF_NAME" latest; do
+            docker run --rm "$SKOPEO" copy --all --preserve-digests --src-creds "$CREDENTIALS" --dest-creds "$CREDENTIALS" \
+              "docker://$source" "docker://$image:$tag"
+            # What the registry holds under the tag is the digest CI tested.
+            pushed="$(docker run --rm "$SKOPEO" inspect --raw --creds "$CREDENTIALS" "docker://$image:$tag" | sha256sum | cut -d' ' -f1)"
+            test "sha256:$pushed" = "$digest"
+            echo "$image:$tag $digest"
+          done
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.promote.outputs.image }}
+          DIGEST: ${{ steps.promote.outputs.digest }}
+        run: |
+          set -euo pipefail
+          assets="$RUNNER_TEMP/assets"
+          mkdir "$assets"
+          cp docker-compose.yml docker-compose.traefik.yml "$assets/"
+          # GitHub renames an asset whose name starts with a dot (".env.example" would be "default.env.example").
+          cp .env.example "$assets/env.example"
+          {
+            echo "Image: \`$IMAGE:$GITHUB_REF_NAME\` (\`$DIGEST\`), the image CI tested for commit $(git rev-parse --short=7 HEAD). It is not rebuilt."
+            echo
+            echo "Deploy: download \`docker-compose.yml\` and \`env.example\` below, save the second as \`.env\` beside the first, fill it in and set \`MODULE_VERSION=$GITHUB_REF_NAME\`. \`docker-compose.traefik.yml\` adds Traefik with HTTPS on a host without a reverse proxy. Steps for Dokploy and plain Docker Compose: [deploy a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/deploy.md)."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$GITHUB_REF_NAME" "$assets/docker-compose.yml" "$assets/docker-compose.traefik.yml" "$assets/env.example" \
+            --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --verify-tag

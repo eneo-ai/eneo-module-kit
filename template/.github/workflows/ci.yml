@@ -1,5 +1,11 @@
-# A module's own CI. It lives in the module's repository root as .github/workflows/ci.yml: move this file there when you
-# copy the template into a repository of its own (`template/` is then the repository root).
+# A module's own CI. It lives in the module's repository root as .github/workflows/ci.yml, with release.yml beside it: move
+# both there when you copy the template into a repository of its own (`template/` is then the repository root).
+#
+# Every job checks this commit. The image is built once, in `image`, and run as docker-compose.yml runs it; on main,
+# `publish` pushes those same bytes, with their SBOM and provenance, as ghcr.io/<owner>/<repository>:sha-<commit>, and only
+# after every job passed. A tag vX.Y.Z then gives that image its version (release.yml): nothing builds it again.
+# Every action is pinned to the commit of a release, the release in the comment, and every image a job runs to a digest;
+# the kit's deploy guide (docs/guides/deploy.md) has the routine that updates them.
 name: ci
 
 on:
@@ -7,12 +13,24 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the older run; a run on main is never cancelled, so a publish that has begun ends.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # What copies the tested image, by its digest: a retained immutable release, pinned (release.yml uses the same).
+  SKOPEO: quay.io/containers/skopeo:v1.22.3-immutable@sha256:f45eb1e14223a5ba0da4246274679a083653dab1402acc1fcb70a6339b50cf00
+
 jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install --require-hashes --no-deps -r backend/requirements.lock
@@ -45,11 +63,11 @@ jobs:
             browsers: firefox
             projects: --project=laptop-1440-firefox
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -71,18 +89,130 @@ jobs:
         working-directory: web
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run ci:failure`, in web/, finds
       # them by the job's name with `-results` after it (`web-main-results`), and reads them.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: web-${{ matrix.part }}-results
           path: web/test-results
-  image:
+  audit:
+    # What the image installs, against the known advisories: the backend's lock, and the web app's production
+    # dependencies (high and critical fail). The BFF itself is the kit's, pinned in requirements.txt.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t module .
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.10.1
+      - run: pip-audit --requirement backend/requirements.lock --require-hashes --disable-pip
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: web
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The files an operator runs, with the example settings: alone (Dokploy), with the Traefik overlay (a host of its
+      # own), and merged with the developer's override, as `docker compose up` merges it.
       - run: |
-          docker run -d --name module -p 3001:3001 --env-file .env.example module
-          for i in $(seq 1 20); do curl -fsS http://localhost:3001/health && exit 0; sleep 1; done
-          docker logs module
-          exit 1
+          cp .env.example .env
+          docker compose -f docker-compose.yml config -q
+          MODULE_HOST=modul.example.org ACME_EMAIL=it-drift@example.org docker compose -f docker-compose.yml -f docker-compose.traefik.yml config -q
+          docker compose config -q
+      # The image docker-compose.yml pulls is the one this repository publishes: the module's one name to set.
+      - run: |
+          pulled="$(MODULE_VERSION=v0.0.0 docker compose -f docker-compose.yml config --images)"
+          published="ghcr.io/${GITHUB_REPOSITORY,,}:v0.0.0"
+          if [ "$pulled" != "$published" ]; then
+            echo "::error file=docker-compose.yml::docker-compose.yml pulls ${pulled%:*}, and this repository publishes ${published%:*}: set the image's name there."
+            exit 1
+          fi
+  image:
+    runs-on: ubuntu-latest
+    # The candidate lives in this job's own registry, so its SBOM and provenance stay attached, and it reaches no other
+    # registry before every job has passed.
+    services:
+      registry:
+        image: registry:3@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
+        ports:
+          - 5000:5000
+    env:
+      CANDIDATE: localhost:5000/module
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver-opts: network=host
+      # What the image says it was built from, in its labels and on /health (Dockerfile): the commit that is checked out,
+      # the clock read once, so that every place that says the build time says the same, and this repository.
+      - id: source
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: true
+          tags: ${{ env.CANDIDATE }}:ci
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            SOURCE_REVISION=${{ steps.source.outputs.revision }}
+            BUILD_DATE=${{ steps.source.outputs.built }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+      # The image run as docker-compose.yml runs it (read-only, no capabilities, a fresh secret): it turns healthy, and it
+      # says the commit it was built from, in its label and on /health.
+      - name: Run the image as docker-compose.yml does
+        env:
+          IMAGE: ${{ env.CANDIDATE }}@${{ steps.build.outputs.digest }}
+          REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          sed "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" .env.example > .env
+          export MODULE_VERSION=ci
+          docker pull "$IMAGE"
+          docker tag "$IMAGE" "$(docker compose -f docker-compose.yml config --images)"
+          docker compose -f docker-compose.yml up -d --wait || { docker compose -f docker-compose.yml logs; exit 1; }
+          health="$(docker compose -f docker-compose.yml exec -T module python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:3001/health').read().decode())")"
+          echo "$health"
+          test "$(jq -r .revision <<< "$health")" = "$REVISION"
+          test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$REVISION"
+      - name: Keep the tested image, exactly
+        run: |
+          docker run --rm --network host -v "$PWD:/out" "$SKOPEO" copy --all --preserve-digests --src-tls-verify=false \
+            "docker://$CANDIDATE@${{ steps.build.outputs.digest }}" oci-archive:/out/image.tar
+          echo "${{ steps.build.outputs.digest }}" > digest.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: module-image
+          path: |
+            image.tar
+            digest.txt
+          retention-days: 7
+          compression-level: 0
+  # Only after every job above passed on this commit, and only for main: the tested image, as the commit's.
+  publish:
+    needs: [backend, web, audit, compose, image]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: module-image
+      - name: Push the tested image as sha-<commit>
+        env:
+          CREDENTIALS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="ghcr.io/${GITHUB_REPOSITORY,,}:sha-$GITHUB_SHA"
+          digest="$(cat digest.txt)"
+          docker run --rm -v "$PWD:/in:ro" "$SKOPEO" copy --all --preserve-digests --dest-creds "$CREDENTIALS" \
+            oci-archive:/in/image.tar "docker://$tag"
+          # What the registry holds under the tag is the tested digest.
+          pushed="$(docker run --rm "$SKOPEO" inspect --raw --creds "$CREDENTIALS" "docker://$tag" | sha256sum | cut -d' ' -f1)"
+          test "sha256:$pushed" = "$digest"
+          echo "$tag $digest"

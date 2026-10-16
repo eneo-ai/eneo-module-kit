@@ -20,9 +20,10 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `web/package-lock.json`, `web/vendor/`, `web/scripts/relock.mjs` | The web app's own lock, with hashes. Before the release it finds `@eneo-ai/module-kit` in `web/vendor/` (the packed tarball, not committed); `relock.mjs` regenerates the lock. Both go when the package is published. |
 | `web/tests/e2e/` | Playwright against the built app, and the accessibility gate. |
 | `web/scripts/ci-failure.mjs` | `npm run ci:failure`: what failed in a CI run, read on your machine ([quality](quality.md#a-red-ci-job)). |
-| `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example` | One image, one process, port 3001. The compose file runs the module and the stub. `.env.example` lists every variable the backend reads. |
+| `Dockerfile`, `.dockerignore`, `.env.example` | One image, one process, port 3001, its base images pinned by digest. `.env.example` lists every variable the backend reads, and `MODULE_VERSION`. |
+| `docker-compose.yml`, `docker-compose.override.yml`, `docker-compose.traefik.yml` | Production: the published image, chosen by `MODULE_VERSION`, read-only and without capabilities. Development: merged by `docker compose up`, it builds the image and runs the stub. Traefik with HTTPS and HSTS, for a host without a proxy. See [release and deploy](deploy.md). |
 | `.devcontainer/` | Python 3.12 and Node 22, ports 3001, 5173 and 8411 forwarded. |
-| `.github/workflows/ci.yml` | A module's own CI. |
+| `.github/workflows/ci.yml`, `release.yml` | A module's own CI, which publishes the tested image as `sha-<commit>`, and its releases by tag ([CI](#ci), [release and deploy](deploy.md)). |
 | `AGENTS.md`, `CLAUDE.md`, `web/AGENTS.md` | The module's rules for agents; `web/AGENTS.md` is the block `astryx init --features agents` generates. |
 | `.agents/skills/eneo-module/SKILL.md` | A local skill for setup and feature work, linked from `AGENTS.md` and imported by `CLAUDE.md`. It routes agents to the existing examples, contract and checks. |
 
@@ -62,6 +63,7 @@ cp -R template ../eneo-mod-<name> && cd ../eneo-mod-<name>
 | The browser tab | `<title>` in `web/index.html` |
 | The module key (lowercase kebab-case) | `MODULE_KEY` in `.env` (step 3). The stub's key is `eneo-module`: set `STUB_MODULE_KEY` to change it. |
 | The API title | `title=` in `backend/main.py` |
+| The image's name | `image:` in `docker-compose.yml`: `ghcr.io/<owner>/<repository>` of the module's repository, in lower case. CI's `compose` job fails until it is |
 
 A module in its own repository makes the copy its root: `template/` becomes `.`. Keep dotfiles when copying;
 they include the skill, development environment and CI.
@@ -172,7 +174,7 @@ npm ci && npm run -w packages/ui build
 mkdir kit-context
 npm pack -w packages/ui --pack-destination kit-context
 cp -R packages/bff kit-context/bff
-docker build --build-context kit=kit-context -t eneo-module template
+docker build --build-context kit=kit-context -t eneo-module:local template
 ```
 
 After the release: `docker build -t my-module .` in the module's folder.
@@ -184,15 +186,17 @@ STUB_HOST=0.0.0.0 python3 stub-eneo/server.py &
 docker run -d --name my-module -p 127.0.0.1:3001:3001 \
   -e ENEO_BACKEND_URL=http://host.docker.internal:8411 -e ENEO_PUBLIC_URL=http://localhost:8411 \
   -e MODULE_PUBLIC_URL=http://localhost:3001 -e MODULE_KEY=eneo-module -e ENEO_API_KEY=stub-service-key \
-  -e SESSION_SECRET=change-me-to-at-least-32-random-characters -e COOKIE_SECURE=false eneo-module
+  -e SESSION_SECRET=change-me-to-at-least-32-random-characters -e COOKIE_SECURE=false eneo-module:local
 curl -fsS http://localhost:3001/health        # {"ok":true,"revision":null,"build_date":null,"release":null,"source":null}
 ```
 
-Or with compose, which also runs the stub as a second service (`stub-eneo` on 8411). Its `module` service uses the image tagged `eneo-module`, so before the release start it from the image built above, and after the release `docker compose up --build` builds it:
+Or with compose. `docker compose up` merges `docker-compose.override.yml`, which runs the module from the image `eneo-module:local`, publishes port 3001 and starts the stub as a second service (`stub-eneo` on 8411). Before the release it starts the image built above; after it, `docker compose up --build` builds it. The module runs as in production, read-only and without capabilities:
 
 ```bash
 cd template && cp .env.example .env && docker compose up      # then open http://localhost:3001
 ```
+
+Production runs `docker-compose.yml` alone, with the published image: [release and deploy](deploy.md).
 
 ## 7. Add to it
 
@@ -209,11 +213,22 @@ reads the UI package's guidance locally.
 
 ## 8. Register it in Eneo and go live
 
-In Eneo's admin, register the module: its module key, the callback URL `https://<your domain>/api/auth/callback` (that is `MODULE_PUBLIC_URL` plus `/api/auth/callback`), and a service key, which becomes `ENEO_API_KEY`. The steps and the smoke test are in Eneo's [module operator guide](https://github.com/eneo-ai/eneo/blob/develop/docs/deployment/MODULES.md). Then walk the [security checklist](security-checklist.md).
+In Eneo's admin, register the module: its module key, the callback URL `https://<your domain>/api/auth/callback` (that is `MODULE_PUBLIC_URL` plus `/api/auth/callback`), and a service key, which becomes `ENEO_API_KEY`. The steps and the smoke test are in Eneo's [module operator guide](https://github.com/eneo-ai/eneo/blob/develop/docs/deployment/MODULES.md). Then walk the [security checklist](security-checklist.md), and release and run it: [release and deploy](deploy.md).
 
 ## CI
 
-A module's own CI is `template/.github/workflows/ci.yml`. In a module's repository, move it to the root as `.github/workflows/ci.yml`. Its `web` job runs the browser tests in four parts, each on a runner of its own: `main` (the module in three browsers and the gate in Chromium), `devices` (the tablets and a phone on its side), `webkit` and `firefox` (the gate in each). A part that fails keeps `web/test-results` as the artifact `web-<part>-results`, which `npm run ci:failure` reads ([quality](quality.md#a-red-ci-job)); the kit's `template-web` job does the same, as `template-web-<part>-results`.
+A module's own CI is `template/.github/workflows/ci.yml`, with `release.yml` beside it; in a module's repository both move to the root's `.github/workflows/`. Every action is pinned to the commit of a release and every image to a digest, the token may only read unless a job needs more, and a newer push to a pull request replaces the older run.
+
+| Job | What it runs |
+|---|---|
+| `backend` | The backend's and the stub's tests, on the locked packages |
+| `web` | The browser tests in four parts, each on a runner of its own: `main` (the module in three browsers and the gate in Chromium), `devices` (the tablets and a phone on its side), `webkit` and `firefox` (the gate in each). A part that fails keeps `web/test-results` as the artifact `web-<part>-results`, which `npm run ci:failure` reads ([quality](quality.md#a-red-ci-job)); the kit's `template-web` job does the same, as `template-web-<part>-results` |
+| `audit` | `pip-audit` on `backend/requirements.lock`, and `npm audit --omit=dev --audit-level=high` in `web/` |
+| `compose` | `docker compose config` for the production file alone, with the Traefik overlay, and merged with the development override; and that `docker-compose.yml` pulls the image this repository publishes |
+| `image` | Builds the image once, with its SBOM and provenance and the build arguments of [which build runs](configuration.md#which-build-runs); runs it as `docker-compose.yml` does until it is healthy; checks that `/health` and the revision label say the commit; keeps it as an artifact |
+| `publish` | On main, after every job passed: pushes the kept image, by its digest, as `ghcr.io/<owner>/<repository>:sha-<commit>` |
+
+`release.yml` gives that image its version when a tag `vX.Y.Z` is pushed, and builds nothing: [release and deploy](deploy.md#from-a-commit-to-a-release).
 
 ## What CI proves
 

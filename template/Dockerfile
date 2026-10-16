@@ -1,6 +1,8 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7.1@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # One image, one process: the module's backend serves the built UI on port 3001. No Node and no supervisor at run time.
+# Each base image is pinned to the digest of the tag named beside it; the kit's deploy guide (docs/guides/deploy.md) has
+# the routine that updates them.
 #
 #   docker build -t my-module .          a module made from the template: the versions its package-lock.json and
 #                                        requirements.lock lock (and requirements.txt pins for the BFF)
@@ -12,7 +14,7 @@ FROM scratch AS kit
 
 # ---- the UI, built to static files, from web/package-lock.json (npm ci). Before the kit's first release the lock finds
 # @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md): given a `kit` context, the packed UI package is put there.
-FROM node:22-slim AS web
+FROM node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS web
 WORKDIR /app/web
 COPY web/ ./
 RUN --mount=from=kit,target=/kit \
@@ -27,7 +29,7 @@ RUN --mount=from=kit,target=/kit \
 
 # ---- the backend's packages: what the kit's BFF depends on, locked with hashes (backend/requirements.lock), then the BFF
 # itself (git is only here: it is pinned to a commit of the kit until its first release)
-FROM python:3.12-slim AS python-packages
+FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS python-packages
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.lock backend/requirements.txt /
 RUN pip install --no-cache-dir --prefix=/install --require-hashes --no-deps -r /requirements.lock
@@ -41,7 +43,7 @@ RUN --mount=from=kit,target=/kit \
     fi
 
 # ---- what runs
-FROM python:3.12-slim
+FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 ENV PYTHONUNBUFFERED=1 STATIC_DIR=/app/web/dist
 RUN useradd --system --uid 10001 --no-create-home module
 WORKDIR /app

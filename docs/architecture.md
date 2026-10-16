@@ -12,7 +12,7 @@ Every claim about code names the file, never a line. If a diagram and the code d
 |---|---|---|
 | BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
 | UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Includes the Astryx reference templates, topic and agent guidance. |
-| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose file, module CI, agent files. |
+| Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose files, module CI that publishes the tested image and releases it by tag, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
 The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
@@ -346,7 +346,9 @@ flowchart LR
 |---|---|
 | `serve()` runs one uvicorn worker, no access log (the callback URL carries a ticket), WebSocket buffers bounded, stops within 8 s of SIGTERM | Built (`serve.py`) |
 | Port 3001, `GET /health` answers `{"ok": true}` and which build runs: commit, build time, repository, release, each `null` when not known | Built (`serve.py`, `app.py`, `build.py`) |
-| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health` | Built (`template/Dockerfile`) |
+| Dockerfile: Node builds `web/dist`, a Python slim runtime image with no Node, non-root, `HEALTHCHECK` on `/health`; base images pinned by digest; the commit, build time and repository in its OCI labels and environment | Built (`template/Dockerfile`) |
+| `docker-compose.yml`: the published image chosen by `MODULE_VERSION`, a read-only root, no capabilities, `no-new-privileges`, `/tmp` on a volume; an overlay adds Traefik with HTTPS, HSTS and a read timeout for uploads | Built (`template/docker-compose.yml`, `docker-compose.traefik.yml`; [release and deploy](guides/deploy.md)) |
+| The image is built once per commit, published as `sha-<commit>` after every job passed, and a tag `vX.Y.Z` gives it its version without building it | Built (`template/.github/workflows/`, [K18](decisions/k18-a-release-promotes-the-tested-image.md)) |
 | One container on the module network, no outbound internet | Contract from [design.md](design.md) section 2 |
 | Sessions are process-local: one replica. More needs sticky sessions or a shared store | Decided when a module needs it |
 

@@ -15,5 +15,6 @@ Related: [README](README.md), [new module](docs/guides/new-module.md), [UI packa
 - The top bar's brand link and the slider's thumb have the design system's focus ring in every engine; Safari's own ring on the link was under 3:1.
 - Shared form fields have one focus frame along their rounded edge, supporting text follows a 14 px default, and error text and control edges meet AA contrast. Dialog headings receive initial focus without a control frame.
 - The module template supplies a guarded backend, Swedish UI, stub Eneo, browser and accessibility checks, one-process image, local development and CI configuration.
+- The template's CI builds its image once, runs it as the compose file does and publishes it as `sha-<commit>` after every job passed; a tag `vX.Y.Z` gives that image its version without rebuilding it and creates the GitHub Release. Its production compose file runs the image read-only, without capabilities, chosen by `MODULE_VERSION`, and a Traefik overlay adds HTTPS, HSTS and a read timeout for uploads.
 
 Both packages use AGPL-3.0-only. Their 0.x APIs remain provisional until a second module has used them. Registry publication and release tags are pending; use the packed UI package and built BFF wheel for local acceptance.

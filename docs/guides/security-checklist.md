@@ -56,6 +56,22 @@ Tick each before a module goes live.
 - [ ] A module that calls Eneo over HTTPS with a private CA installs that CA in its image: `httpx2` uses the operating system's trust store, not `certifi`.
 - [ ] The module's dependencies are pinned and locked, and `pip-audit` finds nothing in the installed set (the package declares ranges with security floors).
 
+## The container, the release and what stands in front
+
+What the template's image, compose file and workflows already do ([release and deploy](deploy.md)):
+
+| Property | How | Source |
+|---|---|---|
+| The process cannot change its code or its image | A read-only root file system; `/tmp`, a volume, is the one place it writes | `template/docker-compose.yml` |
+| Nothing to escalate with | No Linux capabilities, `no-new-privileges`, a non-root user (uid 10001) | `template/docker-compose.yml`, `template/Dockerfile` |
+| What runs is what CI tested | The image is built once per commit and published after every job passed; a release copies its digest and refuses an image that says another commit | `template/.github/workflows/` |
+| The inputs do not move by themselves | Actions pinned to a commit, images to a digest, packages locked with hashes; `pip-audit` and `npm audit` on the locks in CI | `template/.github/workflows/ci.yml`, `template/Dockerfile` |
+| A workflow's token may only read unless a job needs more | `permissions: contents: read`; `packages: write` for `publish` and the release, `contents: write` for the release | `template/.github/workflows/` |
+
+- [ ] TLS ends in front of the module, with HSTS: the module speaks plain HTTP on 3001 and sets no `Strict-Transport-Security`. `docker-compose.traefik.yml` does both; Dokploy's Traefik needs [its two settings](deploy.md#dokploys-traefik).
+- [ ] The proxy's read timeout covers the slowest upload the module accepts, and no proxy body limit is under `MAX_UPLOAD_BYTES`.
+- [ ] The deployment pins a release (`MODULE_VERSION=vX.Y.Z`), and `/health` answers it.
+
 ## The cover for an ended login
 
 While the login has ended the page is covered, not removed: it stays mounted, hidden and out of reach, under the sign-in dialog ([K15](../decisions/k15-cover-for-an-ended-login.md)). A native dialog of the page escapes that, so a module checks:

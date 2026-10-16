@@ -14,7 +14,7 @@ The first module, [eneo-mod-speech-to-text](https://github.com/eneo-ai/eneo-mod-
 |---|---|---|---|
 | BFF package | `packages/bff/` | `eneo-module-bff`: FastAPI, the module contract with Eneo | **Built and tested.** Version 0.1.0, not released. |
 | UI package | `packages/ui/` | `@eneo-ai/module-kit`: React and Astryx: theme, colour mode, providers, page shell, brand | **Built and tested.** Version 0.1.0, not released. `@eneo-ai/module-kit/session` is the session client: the gate (`RequireSession`), the sign-in screen, the page a login window lands on (`SignedInAgain`) and `fetchWithSession`. See `packages/ui/README.md`. |
-| Template | `template/` | The smallest working module: backend, stub Eneo, Vite app, Dockerfile, compose file, CI, agent files | **Built and tested** against both packages on every commit. Its pages run on the kit's session client. |
+| Template | `template/` | The smallest working module: backend, stub Eneo, Vite app, Dockerfile, compose files, CI that publishes the tested image, releases by tag, agent files | **Built and tested** against both packages on every commit. Its pages run on the kit's session client. |
 | Docs | `docs/` | Architecture, guides, decisions, the module contract | Current. |
 | First release | | Both packages published, the template pinned to their versions | Planned. Until then a module installs the packages from a checkout of this repository. |
 
@@ -99,7 +99,7 @@ A new module starts as a copy of `template/` and imports the two packages. It do
 - A presentational page shell and brand lockup.
 - The session client, `@eneo-ai/module-kit/session`: the sign-in screen, keeping the login (a keepalive, a warning five minutes before the end), and a cover over the page, with a sign-in dialog, when the login has ended, so nothing on the page is lost.
 
-**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, compose file, module CI, devcontainer, agent instructions, browser tests in three browsers, an accessibility gate in Chromium at eleven screen settings and in WebKit and Firefox at four, and a stub Eneo for development.
+**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, a production compose file with a Traefik overlay, module CI that publishes the tested image and releases it by tag ([release and deploy](docs/guides/deploy.md)), devcontainer, agent instructions, browser tests in three browsers, an accessibility gate in Chromium at eleven screen settings and in WebKit and Firefox at four, and a stub Eneo for development.
 
 ## What stays in each module
 
@@ -125,6 +125,7 @@ Astryx's hosted MCP server is optional for discovery; the pinned CLI is the sour
 | The pictures: parts, login, proxy, uploads, UI layers, image, deployment | [docs/architecture.md](docs/architecture.md) |
 | To start a module | [docs/guides/new-module.md](docs/guides/new-module.md) |
 | To write a module's backend | [docs/guides/build-a-module.md](docs/guides/build-a-module.md) |
+| To release and deploy a module | [docs/guides/deploy.md](docs/guides/deploy.md) |
 | To build its pages | [docs/guides/ui-package.md](docs/guides/ui-package.md) |
 | Every setting | [docs/guides/configuration.md](docs/guides/configuration.md) |
 | To run against a stub Eneo | [docs/guides/local-development.md](docs/guides/local-development.md) |

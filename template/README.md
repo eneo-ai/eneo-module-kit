@@ -11,11 +11,13 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   ```bash
   npm ci && npm run -w packages/ui build && mkdir kit-context
   npm pack -w packages/ui --pack-destination kit-context && cp -R packages/bff kit-context/bff
-  docker build --build-context kit=kit-context -t eneo-module template
+  docker build --build-context kit=kit-context -t eneo-module:local template
   cd template && cp .env.example .env && docker compose up      # then open http://localhost:3001
   ```
-  After the release, in a module's own folder: `cp .env.example .env && docker compose up --build`.
-- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts` and `<title>` in `web/index.html`.
+  After the release, in a module's own folder: `cp .env.example .env && docker compose up --build`. `docker compose up` merges
+  `docker-compose.override.yml` (the local build, port 3001, the stub Eneo); production runs `docker-compose.yml` alone.
+- **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts` and `<title>` in `web/index.html`, and
+  the image's name in `docker-compose.yml` to `ghcr.io/<owner>/<repository>` of the module's repository (CI checks it).
 - **Settings:** `.env.example` lists every variable. Register the module in Eneo's admin (module key, callback URL
   `MODULE_PUBLIC_URL/api/auth/callback`, service key).
 - **Add a route:** in `backend/routes.py` on `router`, behind `require_session`; to call Eneo, one `rule(...)` in `backend/main.py`.
@@ -24,6 +26,11 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   gate; builds first). If you set `PYTHON` for it, give an absolute path to a python that has `eneo-module-bff`.
 - **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
   release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
+- **Release and deploy:** CI (`.github/workflows/ci.yml`) builds the image once and, on main, publishes it as `sha-<commit>` after
+  every job passed; `git tag vX.Y.Z && git push origin vX.Y.Z` on a commit CI passed gives that image its version without
+  rebuilding it (`release.yml`). `docker-compose.yml` runs it, chosen by `MODULE_VERSION`, read-only;
+  `docker-compose.traefik.yml` adds Traefik with HTTPS on a host without a proxy. `/health` says which build runs.
+  Dokploy and plain Docker Compose: [release and deploy](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/deploy.md).
 - **Rules for people and agents:** `AGENTS.md`. The local [eneo-module skill](.agents/skills/eneo-module/SKILL.md)
   guides setup and feature work. `CLAUDE.md` imports both the rules and the skill.
 - **Full guides:** [create a module](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md),

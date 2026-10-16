@@ -11,7 +11,7 @@ The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are 
 | `packages/bff/README.md` | The package's public names, HTTP surface, answers and limits | current |
 | `packages/ui/src/` | The UI package: `color-mode.tsx`, `ModuleProviders.tsx`, `ModuleShell.tsx`, `branding.tsx`, `session/` (the session client, the `./session` export), `theme/eneo.theme.ts` (source) and `theme/built/` (generated, committed), `layers.css`, `base.css`; `index.ts` holds the public names | built |
 | `packages/ui/tests/` | node:test with jsdom, one file per concern | built |
-| `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml`, `.env.example`, `.devcontainer/`, `.github/workflows/ci.yml` (a module's own CI), its own `AGENTS.md` | built |
+| `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml` (production: the published image, read-only), `docker-compose.override.yml` (development: a local build and the stub), `docker-compose.traefik.yml` (Traefik with HTTPS), `.env.example`, `.devcontainer/`, `.github/workflows/` (a module's own CI, which publishes the tested image, and `release.yml`, which releases a tag), its own `AGENTS.md` | built |
 | `docs/` | `architecture.md`, `guides/`, `decisions/`, `glossary.md`, `design.md` (long form); `docs/README.md` is the index | current |
 | `.github/workflows/ci.yml` | CI: jobs `bff` (lowest and newest versions, `pip-audit`), `ui`, `template-backend`, `template-web`, `template-image`, each against the packages of the same commit | built |
 
@@ -89,7 +89,7 @@ Code and docs change in one commit. If they disagree, the code wins: fix the doc
 | A limit or a security property | `docs/guides/security-checklist.md`, the decision page it belongs to |
 | The BFF's dependencies (`packages/bff/pyproject.toml`) | Regenerate `template/backend/requirements.lock` with the command in its header (CI fails on a difference) |
 | A name the UI package exports (`packages/ui/src/index.ts`) or a prop of one | `packages/ui/README.md`, `docs/guides/ui-package.md` |
-| The template (a file it ships, a command in its README, the Dockerfile, a CI job) | `docs/guides/new-module.md`, `docs/architecture.md` (the image and CI sections) |
+| The template (a file it ships, a command in its README, the Dockerfile, a CI job) | `docs/guides/new-module.md`, `docs/architecture.md` (the image and CI sections); for its compose files and workflows also `docs/guides/deploy.md` |
 | A decision | A new page in `docs/decisions/` (the next K number) and its row in `docs/decisions/README.md`; mark the old page superseded |
 
 Page rules: start with `Purpose:`, `Read this when:` and `Related:`; one fact in one place; every claim about code names a path, never a line; diagrams are Mermaid `flowchart` or `sequenceDiagram` only, with a sentence above each; say whether a part is built, planned or temporary.
