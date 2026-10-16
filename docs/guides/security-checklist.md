@@ -27,7 +27,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | A signed URL never reaches the browser and ends with its session | Minted by the module, kept in the session store | `transport.py`, `auth.py` |
 | A user's file cannot run script from the module's origin | Inline only for audio, video, PDF and PNG, JPEG, GIF, WebP; `nosniff` | `transport.py` |
 | A deployment cannot start with development settings | `load_settings` refuses an http `MODULE_PUBLIC_URL` or `ENEO_PUBLIC_URL` whose host is not `localhost`, `127.0.0.1` or `[::1]`, and, unless `MODULE_PUBLIC_URL` is on this machine, `COOKIE_SECURE=false` and the `SESSION_SECRET` or `ENEO_API_KEY` that `template/.env.example` publishes | `settings.py` |
-| Only the built UI's own files are served | A dotfile, a path with a control character, a backslash or a `.` or `..` segment, and `//api/x` are a 404, never a 500 or the page | `web.py` |
+| Only the built UI's own files are served | A dotfile, a path with a control character, a backslash or a `.` or `..` segment, and `//api/x` are a 404, never a 500 or the page. A precompressed `.br` or `.gz` goes out only in place of the file it sits beside, and only from inside the built UI | `web.py` |
 | Browser-side hardening | The headers below, on every answer, a 500 included, unless a route set its own | `web.py` |
 | No user's answer is kept in a browser's cache | An answer under `/api` gets `Cache-Control: no-store` unless its route says how it may be kept (the branding stylesheet, a logo, a file stream) | `web.py` |
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |

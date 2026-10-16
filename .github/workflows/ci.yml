@@ -80,6 +80,20 @@ jobs:
             --exclude-newer "$date" -o template/backend/requirements.lock
           git diff --exit-code -- template/backend/requirements.lock
 
+  template-unit:
+    # The template's unit tests and the rules its code keeps (template/web/tests/unit), as a module's `unit` job runs them.
+    name: template unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run -w packages/ui build
+      - run: npm test -w template/web
+
   template-audit:
     # The template's two locks, which every module starts from, against the known advisories, as a module's own `audit`
     # job checks them (template/.github/workflows/ci.yml): the backend's, and the web app's own (not the workspace's)
@@ -100,27 +114,46 @@ jobs:
         working-directory: template/web
 
   template-web:
-    # The browser tests in four parts, as a module's own CI runs them (template/.github/workflows/ci.yml): the module in
-    # three browsers and the gate in Chromium (main), the tablets and a phone on its side (devices), and the gate in WebKit
-    # and in Firefox. Together the four are every project of template/web/tests/e2e/playwright.config.ts.
-    name: template web ${{ matrix.part }} (this commit's UI and BFF)
+    # The browser tests in five parts and their shards, as a module's own CI runs them (template/.github/workflows/ci.yml):
+    # the module in three browsers and the gate in Chromium (main, in two shards), the tablets and a phone on its side
+    # (devices), the gate in WebKit and in Firefox, and the production checks in each engine (prod). Together the five are
+    # every project of template/web/tests/e2e/playwright.config.ts.
+    name: template web ${{ matrix.part }} ${{ matrix.shard }} (of ${{ matrix.shards }}, this commit's UI and BFF)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - part: main
+            shard: 1
+            shards: 2
+            browsers: chromium webkit firefox
+            projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
+          - part: main
+            shard: 2
+            shards: 2
             browsers: chromium webkit firefox
             projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
           - part: devices
+            shard: 1
+            shards: 1
             browsers: chromium
             projects: --project=tablet-portrait --project=tablet-landscape --project=landscape-844
           - part: webkit
+            shard: 1
+            shards: 1
             browsers: webkit
             projects: --project=phone-390-webkit --project=tablet-landscape-webkit --project=laptop-1440-webkit
           - part: firefox
+            shard: 1
+            shards: 1
             browsers: firefox
             projects: --project=laptop-1440-firefox
+          - part: prod
+            shard: 1
+            shards: 1
+            browsers: chromium webkit firefox
+            projects: --project=prod-chromium --project=prod-webkit --project=prod-firefox
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -140,15 +173,15 @@ jobs:
       - if: matrix.part == 'firefox'
         run: sudo apt-get install -y --no-install-recommends pulseaudio && pulseaudio --start --exit-idle-time=-1
       # Builds the template's app against the workspace UI package, serves it with the workspace BFF over the stub
-      # Eneo, and runs the part's projects.
-      - run: npm run -w template/web test:e2e -- ${{ matrix.projects }}
+      # Eneo, and runs the shard's share of the part's projects.
+      - run: npm run -w template/web test:e2e -- ${{ matrix.projects }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run -w template/web ci:failure`
-      # finds them by the job's name up to its parenthesis, with `-results` after it (`template-web-main-results`), and
+      # finds them by the job's name up to its parenthesis, with `-results` after it (`template-web-main-1-results`), and
       # reads them.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
-          name: template-web-${{ matrix.part }}-results
+          name: template-web-${{ matrix.part }}-${{ matrix.shard }}-results
           path: template/web/test-results
 
   template-image:

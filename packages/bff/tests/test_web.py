@@ -90,12 +90,86 @@ class WebTests(unittest.TestCase):
     def test_files_that_exist_are_served_and_files_that_do_not_are_404_never_html(self) -> None:
         self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
         self.assertEqual(self.client.get("/favicon.svg").status_code, 200)
-        for path in ("/assets/nope.js", "/logo.png", "/some/dir/style.css"):
+        # An old build's file after a new release is one of these: a 404 that no cache keeps.
+        for path in ("/assets/nope.js", "/assets/nope", "/logo.png", "/some/dir/style.css"):
             with self.subTest(path=path):
                 response = self.client.get(path)
 
                 self.assertEqual(response.status_code, 404)
                 self.assertNotIn("<title>", response.text)
+                self.assertNotIn("cache-control", response.headers)
+
+    def test_a_hashed_file_is_kept_for_a_year_and_everything_else_is_asked_again(self) -> None:
+        # Under /assets the build names each file by its content, so a new build has new names; the page and the files
+        # beside it keep their names, and a new release must reach the next visit.
+        for path, cache in (
+            ("/assets/app.js", "public, max-age=31536000, immutable"),
+            ("/", "no-cache"),
+            ("/flows/abc", "no-cache"),
+            ("/favicon.svg", "no-cache"),
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                etag = response.headers["etag"]
+
+                self.assertEqual(response.headers["cache-control"], cache)
+                again = self.client.get(path, headers={"If-None-Match": f'W/"other", {etag}'})
+                self.assertEqual((again.status_code, again.content), (304, b""))
+                self.assertEqual((again.headers["etag"], again.headers["cache-control"]), (etag, cache))
+                self.assertEqual(again.headers["content-security-policy"], CONTENT_SECURITY_POLICY)
+                self.assertEqual(self.client.get(path, headers={"If-None-Match": '"other"'}).status_code, 200)
+
+    def raw(self, path: str, accept_encoding: str | None) -> tuple[httpx2.Response, bytes]:
+        """The answer and its body as sent, not decoded."""
+        with self.client.stream("GET", path, headers={"Accept-Encoding": accept_encoding or ""}) as response:
+            return response, b"".join(response.iter_raw())
+
+    def test_a_precompressed_file_is_sent_to_a_client_that_accepts_it_and_only_by_negotiation(self) -> None:
+        (self.root / "assets" / "app.js.br").write_bytes(b"brotli of app.js")
+        (self.root / "assets" / "app.js.gz").write_bytes(b"gzip of app.js")
+        (self.root / "assets" / "app.css").write_text("a{}")
+        (self.root / "assets" / "app.css.gz").write_bytes(b"gzip of app.css")
+        etags = set()
+        for path, accept, encoding, body in (
+            ("/assets/app.js", "gzip, deflate, br, zstd", "br", b"brotli of app.js"),
+            ("/assets/app.js", "gzip, deflate", "gzip", b"gzip of app.js"),
+            ("/assets/app.js", "br;q=0, gzip;q=0.5", "gzip", b"gzip of app.js"),
+            ("/assets/app.js", None, None, b"console.log(1)"),
+            ("/assets/app.js", "identity", None, b"console.log(1)"),
+            ("/assets/app.css", "br, gzip", "gzip", b"gzip of app.css"),
+        ):
+            with self.subTest(path=path, accept=accept):
+                response, sent = self.raw(path, accept)
+
+                self.assertEqual((response.status_code, sent, response.headers.get("content-encoding")), (200, body, encoding))
+                self.assertEqual(response.headers["vary"], "Accept-Encoding")
+                self.assertEqual(response.headers["content-type"].split(";")[0], "text/css" if path.endswith(".css") else "text/javascript")
+                self.assertEqual(response.headers["cache-control"], "public, max-age=31536000, immutable")
+                etags.add(response.headers["etag"])
+                again = self.client.get(path, headers={"Accept-Encoding": accept or "", "If-None-Match": response.headers["etag"]})
+                self.assertEqual((again.status_code, again.headers["vary"]), (304, "Accept-Encoding"))
+        self.assertEqual(len(etags), 4, "each body of a file has its own ETag")
+        self.assertNotIn("vary", self.client.get("/favicon.svg").headers, "a file the build did not compress")
+        for path in ("/assets/app.js.br", "/assets/app.js.gz", "/assets/app.css.gz"):
+            with self.subTest(path=path):
+                self.assertEqual(self.client.get(path).status_code, 404, "a compressed body never goes out as a file of its own")
+
+    def test_a_compressed_sibling_that_leads_out_of_the_built_ui_is_none(self) -> None:
+        (self.root / "assets" / "app.js.br").symlink_to(self.root.parent / "secret.txt")
+
+        response, sent = self.raw("/assets/app.js", "br, gzip")
+
+        self.assertEqual((sent, response.headers.get("content-encoding")), (b"console.log(1)", None))
+        self.assertNotIn("vary", response.headers)
+
+    def test_head_is_answered_like_get_without_a_body(self) -> None:
+        for path in ("/", "/flows/abc", "/assets/app.js", "/favicon.svg"):
+            with self.subTest(path=path):
+                head, get = self.client.head(path), self.client.get(path)
+
+                self.assertEqual((head.status_code, head.content), (200, b""))
+                for name in ("content-type", "content-length", "etag", "cache-control", "content-security-policy"):
+                    self.assertEqual(head.headers[name], get.headers[name], name)
 
     def test_an_unknown_api_path_is_404_with_json_not_the_page(self) -> None:
         response = self.client.get("/api/nope")

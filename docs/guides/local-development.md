@@ -32,14 +32,14 @@ What it answers (the same list is the docstring of the file):
 | `GET /api/v1/flows/` | Two published flows. Needs both credentials |
 | `GET /health` | `{"ok": true}` |
 
-For tests, two unauthenticated control routes:
+For tests, unauthenticated control routes. Each holds for the caller's scope, the `stub_scope` cookie: a browser test's context sends it to these routes and to `/module-login` (`web/tests/e2e/fixtures.ts`), and a login and its tokens keep the scope of the browser that signed in, so tests that run at once do not change each other's answers. A call without the cookie (`curl`, a browser by hand) has the scope of everyone else without one.
 
 | Call | Effect |
 |---|---|
-| `POST /__stub/end-session` | Every token is refused from now on, as when Eneo ends the login: the module's session ends at its next token refresh |
-| `POST /__stub/session?ends_in=S&token_seconds=T` | For the logins made after this call: the session ends S seconds after the login (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module refreshes at half). Defaults 28800 and 900; `reset` as a value restores them |
-| `POST /__stub/login-as?user=erik\|sara` | Who the logins made after this call are (default Erik Lund), to show a renewal that signs in someone else |
-| `POST /__stub/flows?mode=normal\|empty\|error` | What the flow list answers: two flows, none, or a 500 |
+| `POST /__stub/end-session` | The scope's tokens are refused from now on, as when Eneo ends the login: the module's session ends at its next token refresh |
+| `POST /__stub/session?ends_in=S&token_seconds=T` | For the scope's logins made after this call: the session ends S seconds after the login (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module refreshes at half). Defaults 28800 and 900; `reset` as a value restores them |
+| `POST /__stub/login-as?user=erik\|sara` | Who the scope's logins made after this call are (default Erik Lund), to show a renewal that signs in someone else |
+| `POST /__stub/flows?mode=normal\|empty\|error` | What the flow list answers the scope's tokens: two flows, none, or a 500 |
 
 ## Run the module against it
 

@@ -141,8 +141,8 @@ Stable for the UI package and for any other frontend:
 | `GET /api/branding`, `GET /api/branding/logo/{light\|dark}` | The deployment's organisation |
 | `GET /api/branding/theme.css` | Its validated accent family; public CSS with a content ETag |
 | the module's own routes (`routers=`) | Whatever the module declares; they win over the two rows below |
-| `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy |
-| anything else | The static app; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
+| `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy; a JSON answer of 1 KiB or more gzipped for a browser that accepts it |
+| anything else (`GET`, `HEAD`) | The static app: its files under `/assets` kept for a year, the page and the rest asked for again (an ETag, 304), a precompressed `.br` or `.gz` to a browser that accepts it; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
 
 A request without a session gets 401 with `X-Auth-Required: session`. A write from another origin gets 403. A write through the proxy that does not name the session's user in `X-Expected-User` gets 409 `user_changed`. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
 
@@ -196,8 +196,9 @@ The UI package's session client depends on four things in this surface:
   not the memory it costs: httpx2 joins the chunks it read into one `bytes`, and holds both while it does, and the
   transport adds its own buffers. Measured against a real server, one 24 MiB answer raised the module's peak by 55 to
   59 MiB (2.3 to 2.5 times the payload), and six 8 MiB answers at once by 73 to 89 MiB (1.5 to 1.9 times each, as
-  the joins do not all coincide). A module plans for about 2.5 times `MAX_RESPONSE_BYTES` per answer in flight, times
-  the answers it expects at once, and sets `MAX_RESPONSE_BYTES` for its largest real answer; one that serves large
+  the joins do not all coincide). A JSON answer gzipped for the browser adds its compressed copy (speech-to-text's
+  880 KB list of a run's steps is 87 KB gzipped). A module plans for about 2.5 times `MAX_RESPONSE_BYTES` per answer
+  in flight, times the answers it expects at once, and sets `MAX_RESPONSE_BYTES` for its largest real answer; one that serves large
   downloads uses `stream_signed`, not the proxy.
 - A session lookup does not scan the store, and expired sessions are swept at most every 30 s (a lookup refuses an
   expired id by itself, so nothing depends on the sweep).

@@ -37,11 +37,28 @@ jobs:
       - run: pip install --no-deps -r backend/requirements.txt
       - run: python -m unittest discover -s backend/tests -t backend
       - run: python -m unittest discover -s stub-eneo
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Before the kit's first release the lock finds @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md).
+      - run: npm ci
+        working-directory: web
+      # The rules the module's code keeps, and its own unit tests (web/tests/unit/), none of which reaches the network.
+      - run: npm test
+        working-directory: web
   web:
-    # The browser tests in four parts, each on a runner of its own, so that the other engines do not lengthen the part
-    # every change waits for. The projects are named here (web/tests/e2e/playwright.config.ts has each one), so what a
-    # pull request runs is what this file says; together the four are every project of the config.
-    name: web ${{ matrix.part }}
+    # The browser tests in five parts, each on runners of its own, so that the other engines do not lengthen the part
+    # every change waits for. A long part is split into shards (Playwright's --shard), each on a runner of its own at the
+    # config's two workers: main, the longest, in two. The projects are named here
+    # (web/tests/e2e/playwright.config.ts has each one), so what a pull request runs is what this file says; together the
+    # five are every project of the config.
+    name: web ${{ matrix.part }} ${{ matrix.shard }} (of ${{ matrix.shards }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -49,19 +66,39 @@ jobs:
         include:
           # The module in three browsers, and the accessibility gate in Chromium.
           - part: main
+            shard: 1
+            shards: 2
+            browsers: chromium webkit firefox
+            projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
+          - part: main
+            shard: 2
+            shards: 2
             browsers: chromium webkit firefox
             projects: --project=chromium --project=webkit --project=firefox --project=phone-320-light --project=phone-390-light --project=phone-390-dark --project=laptop-1440-light --project=laptop-1440-dark --project=zoom-200 --project=forced-colors --project=reduced-motion
           # Both tablets, with their own keyboard walks and presses, and a phone on its side.
           - part: devices
+            shard: 1
+            shards: 1
             browsers: chromium
             projects: --project=tablet-portrait --project=tablet-landscape --project=landscape-844
           # The gate in the other engines: what an engine can change, and the checks' own tests on each one's laptop.
           - part: webkit
+            shard: 1
+            shards: 1
             browsers: webkit
             projects: --project=phone-390-webkit --project=tablet-landscape-webkit --project=laptop-1440-webkit
           - part: firefox
+            shard: 1
+            shards: 1
             browsers: firefox
             projects: --project=laptop-1440-firefox
+          # What the backend sends with the built UI, its routes, the page's weight and a release that took away the files
+          # an open page names, in each engine (web/tests/prod).
+          - part: prod
+            shard: 1
+            shards: 1
+            browsers: chromium webkit firefox
+            projects: --project=prod-chromium --project=prod-webkit --project=prod-firefox
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -84,15 +121,15 @@ jobs:
       # stands in for a computer's.
       - if: matrix.part == 'firefox'
         run: sudo apt-get install -y --no-install-recommends pulseaudio && pulseaudio --start --exit-idle-time=-1
-      # Builds the app, then runs it as the backend serves it, over the stub Eneo, in the part's projects.
-      - run: npm run test:e2e -- ${{ matrix.projects }}
+      # Builds the app, then runs it as the backend serves it, over the stub Eneo, in the shard's share of the part.
+      - run: npm run test:e2e -- ${{ matrix.projects }} --shard=${{ matrix.shard }}/${{ matrix.shards }}
         working-directory: web
       # A failed run keeps Playwright's report and the trace of each failed test. `npm run ci:failure`, in web/, finds
-      # them by the job's name with `-results` after it (`web-main-results`), and reads them.
+      # them by the job's name up to its parenthesis with `-results` after it (`web-main-1-results`), and reads them.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
-          name: web-${{ matrix.part }}-results
+          name: web-${{ matrix.part }}-${{ matrix.shard }}-results
           path: web/test-results
   audit:
     # What the image installs, against the known advisories: the backend's lock, and the web app's production
@@ -196,7 +233,7 @@ jobs:
           compression-level: 0
   # Only after every job above passed on this commit, and only for main: the tested image, as the commit's.
   publish:
-    needs: [backend, web, audit, compose, image]
+    needs: [backend, unit, web, audit, compose, image]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
