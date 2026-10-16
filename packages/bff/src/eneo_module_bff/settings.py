@@ -228,7 +228,24 @@ def _organization(
     return Organization(name=name, logo="custom", dark_logo=dark is not None), logo, dark
 
 
-def _required_url(name: str) -> str:
+# The hosts that mean this machine, matched on the parsed host and nothing else: not a prefix, not what stands before
+# an "@", and no other spelling of the same address.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_LOOPBACK_SPELLING = "localhost, 127.0.0.1 or [::1]"
+# The secrets template/.env.example publishes, so that the template runs as it is on this machine. A published value is
+# no secret anywhere else: an exact list, not a guess at what looks like a placeholder.
+_PUBLISHED_SECRETS = {
+    "SESSION_SECRET": "change-me-to-at-least-32-random-characters",
+    "ENEO_API_KEY": "stub-service-key",
+}
+
+
+def _is_loopback(url: str) -> bool:
+    return urlsplit(url).hostname in _LOOPBACK_HOSTS
+
+
+def _required_url(name: str, *, public: bool = False) -> str:
+    """The URL in ``name``. A ``public`` one is where a browser is sent: https, unless it is on this machine."""
     value = os.environ[name].rstrip("/")
     parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -236,6 +253,8 @@ def _required_url(name: str) -> str:
     # urlsplit reads a bare ? or # as an empty query or fragment, which is still one.
     if parsed.query or parsed.fragment or "?" in value or "#" in value:
         raise RuntimeError(f"{name} must not contain a query string or fragment")
+    if public and parsed.scheme == "http" and not _is_loopback(value):
+        raise RuntimeError(f"{name} must be an https URL: http is accepted only for {_LOOPBACK_SPELLING} (local development)")
     return value
 
 
@@ -307,6 +326,23 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         os.environ.get("ORGANIZATION_ACCENT_DARK", "").strip(),
     )
 
+    # The module's own URL on the service network is reached over http. The two a browser is sent to are not, and what
+    # is accepted for development on this machine is refused anywhere else.
+    module_public_url = _required_url("MODULE_PUBLIC_URL", public=True)
+    eneo_public_url = _required_url("ENEO_PUBLIC_URL", public=True)
+    cookie_secure = _parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE")
+    if not _is_loopback(module_public_url):
+        if not cookie_secure:
+            raise RuntimeError(
+                f"COOKIE_SECURE=false is accepted only when MODULE_PUBLIC_URL is {_LOOPBACK_SPELLING} (local development)"
+            )
+        for name, published in _PUBLISHED_SECRETS.items():
+            if os.environ[name] == published:
+                raise RuntimeError(
+                    f"{name} is the value template/.env.example publishes: set one of your own (it is accepted only "
+                    f"when MODULE_PUBLIC_URL is {_LOOPBACK_SPELLING})"
+                )
+
     heavy_limit = _positive_int("MAX_CONCURRENT_HEAVY_IO", 64)
     upload_limit = _positive_int("MAX_CONCURRENT_UPLOADS", 1)
     if heavy_limit > MAX_HEAVY_IO_LIMIT:
@@ -316,13 +352,13 @@ def load_settings(*, default_organization: Organization | None = None, home_path
 
     return Settings(
         eneo_backend_url=_required_url("ENEO_BACKEND_URL"),
-        eneo_public_url=_required_url("ENEO_PUBLIC_URL"),
-        module_public_url=_required_url("MODULE_PUBLIC_URL"),
+        eneo_public_url=eneo_public_url,
+        module_public_url=module_public_url,
         module_key=module_key,
         eneo_api_key=os.environ["ENEO_API_KEY"],
         eneo_api_key_header_name=api_key_header_name,
         session_secret=session_secret,
-        cookie_secure=_parse_bool(os.environ.get("COOKIE_SECURE"), default=True, name="COOKIE_SECURE"),
+        cookie_secure=cookie_secure,
         upload_proxy_timeout_seconds=_positive_float("UPLOAD_PROXY_TIMEOUT_SECONDS", 1800.0),
         upload_receive_timeout_seconds=_positive_float("UPLOAD_RECEIVE_TIMEOUT_SECONDS", 1800.0),
         upload_receive_idle_timeout_seconds=_positive_float("UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS", 30.0),

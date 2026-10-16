@@ -121,7 +121,7 @@ For the stub Eneo the values work as they are. Change them for a real Eneo:
 | `SESSION_SECRET` | At least 32 random characters: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `COOKIE_SECURE` | `false` only over plain http. Production is https and `true` |
 
-Every variable, its default and its check: [configuration](configuration.md).
+Off this machine (a `MODULE_PUBLIC_URL` that is not `localhost`, `127.0.0.1` or `[::1]`) the module refuses to start with an http public URL, `COOKIE_SECURE=false`, or the `SESSION_SECRET` or `ENEO_API_KEY` of `.env.example`. Every variable, its default and its check: [configuration](configuration.md).
 
 ## 4. Run it against the stub
 

@@ -11,13 +11,13 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | Variable | Default | Check at start-up | Meaning |
 |---|---|---|---|
 | `ENEO_BACKEND_URL` | required | absolute http(s) URL, no query or fragment, trailing `/` removed | Eneo's address from the module's network. The token exchange, session check, refresh, proxy, uploads and signed-URL requests go here. |
-| `ENEO_PUBLIC_URL` | required | same | Eneo's address from the browser. The login redirect goes here. |
-| `MODULE_PUBLIC_URL` | required | same | This module's address from the browser. The callback is `{MODULE_PUBLIC_URL}/api/auth/callback`. The `Origin` of every write is compared with its origin (scheme, host, default port dropped, so `https://Mod.Example.SE:443` equals `https://mod.example.se`). |
+| `ENEO_PUBLIC_URL` | required | same, and https unless its host is `localhost`, `127.0.0.1` or `[::1]` | Eneo's address from the browser. The login redirect goes here. |
+| `MODULE_PUBLIC_URL` | required | same, and https unless its host is `localhost`, `127.0.0.1` or `[::1]` | This module's address from the browser. The callback is `{MODULE_PUBLIC_URL}/api/auth/callback`. The `Origin` of every write is compared with its origin (scheme, host, default port dropped, so `https://Mod.Example.SE:443` equals `https://mod.example.se`). |
 | `MODULE_KEY` | required | lowercase kebab-case | The module's name as registered in Eneo. |
-| `ENEO_API_KEY` | required | not empty | The module's service key. |
-| `SESSION_SECRET` | required | at least 32 characters | Signs the login-state cookie. The session cookie is a random id and does not use it. |
+| `ENEO_API_KEY` | required | not empty; not `stub-service-key`, the value `template/.env.example` publishes, unless the module is on this machine | The module's service key. |
+| `SESSION_SECRET` | required | at least 32 characters; not the value `template/.env.example` publishes, unless the module is on this machine | Signs the login-state cookie. The session cookie is a random id and does not use it. |
 | `ENEO_API_KEY_HEADER_NAME` | `X-API-Key` | a valid HTTP header name that is not a credential or framing header (`Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, ...) | The header that carries the service key to Eneo. The module sets `Authorization` from the session after it, so a key sent under that name would never arrive: it is refused at start, and by `Settings` itself when a module builds it. |
-| `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off` | `false` only for local development over http. |
+| `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off`; `false` only when the module is on this machine | `false` only for local development over http. |
 | `SESSION_MAX_AGE_MINUTES` | `480` | integer above zero | The most a login lasts. The session also ends at Eneo's own ceiling, whichever comes first. |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | number above zero | The timeout of each read and of each write of one upload to Eneo, not a total for the upload. A request's `X-Upload-Timeout-Seconds` header can lower it, never below 60 s. |
 | `UPLOAD_RECEIVE_TIMEOUT_SECONDS` | `1800` | finite number above zero | Total time to receive and parse the browser's upload body. A deadline returns 408 and closes partial files. |
@@ -34,6 +34,8 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `ORGANIZATION_LOGO_DARK` | none | as `ORGANIZATION_LOGO` | The logo for dark mode, at `/api/branding/logo/dark`. Used only when `ORGANIZATION_LOGO` is usable. |
 | `ORGANIZATION_ACCENT` | the UI theme's accent | `#RRGGBB`, surrounding whitespace trimmed; at least 4.5:1 for text on the accent, accent text on page/popover surfaces, and secondary text on selected-row tints | The accent family served by `/api/branding/theme.css`. Independent of the organisation's name, logo and visibility. An invalid form or insufficient contrast refuses start-up with the variable, measured ratio and corrective advice. |
 | `ORGANIZATION_ACCENT_DARK` | derived from the light accent | same form and contrast checks; requires `ORGANIZATION_ACCENT` | Optional dark accent. When omitted, the backend preserves hue and saturation and chooses the lowest lightness that meets the dark theme's checks; if none works, supply this value. |
+
+The module is on this machine when the host of `MODULE_PUBLIC_URL` is `localhost`, `127.0.0.1` or `[::1]` (that exact host, no other spelling). There the template's `.env.example` starts as it is; anywhere else `load_settings()` refuses an http public URL, `COOKIE_SECURE=false` and the secrets that file publishes. A `Settings` a module builds itself is not checked for these.
 
 With no name or logo variable set, the organisation is the `default_organization` the module passed to `load_settings` (none by default: the product name alone). Accent variables do not change that choice.
 
