@@ -40,7 +40,7 @@ function writes(init: RequestInit): boolean {
 }
 
 /** The backend's own 409: the session under the page is someone else's, signed in from another tab. */
-async function isUserChanged(res: Response): Promise<boolean> {
+export async function isUserChanged(res: Response): Promise<boolean> {
   if (res.status !== 409) return false;
   const body = (await res.clone().json().catch(() => null)) as { detail?: unknown } | null;
   return body?.detail === "user_changed";

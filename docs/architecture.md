@@ -252,7 +252,7 @@ flowchart TB
 | Layer | Where | Owned by |
 |---|---|---|
 | Stylesheets: `layers.css`, Astryx's `reset.css` and `astryx.css`, `theme.css`, `base.css` | imported in `template/web/src/main.tsx`, in this order | the module imports, the kit and Astryx supply |
-| Providers, shell, brand, theme, colour mode, what a navigation gives (`RouteEffects`), the stand-in pages, waiting and online states, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
+| Providers, shell, brand, theme, colour mode, what a navigation gives (`RouteEffects`), the stand-in pages, waiting and online states, the session client (`RequireSession`, `SignInScreen`, `SignedInAgain`, `fetchWithSession`, `uploadWithProgress`) | `packages/ui/src/`, `packages/ui/src/session/` | the UI package |
 | Router and its routes (`App.tsx`), pages, `Frame`, `AccountMenu`, `config.ts`, `getJson`, the first-paint script (`public/color-mode.js`) | `template/web/src/`, `template/web/public/` | the module |
 | Components | `@astryxdesign/core`, pinned to an exact version | Astryx |
 | Design-system fixes | `packages/ui/src/theme/eneo.theme.ts`, then `npm run theme:build` | the UI package, once, for every module |

@@ -21,7 +21,7 @@ if (missing.length > 0) {
   process.exit(1);
 }
 const session = await import(new URL("../dist/session/index.js", import.meta.url).href);
-const expectedSession = ["RequestTimeoutError", "RequireSession", "SESSION_CHANNEL", "SessionExpiredError", "SignInScreen", "SignedInAgain", "createFetchWithSession", "createSessionState", "errorAdvice", "fetchWithSession", "isSessionEndedAnswer", "refusalOf", "sessionState", "sessionUser", "useSessionUser", "useSignedOut", "useSignedOutSlot", "userDisplayName", "userInitial"];
+const expectedSession = ["RequestTimeoutError", "RequireSession", "SESSION_CHANNEL", "SessionExpiredError", "SignInScreen", "SignedInAgain", "createFetchWithSession", "createSessionState", "createUploadWithProgress", "errorAdvice", "fetchWithSession", "isSessionEndedAnswer", "refusalOf", "sessionState", "sessionUser", "uploadWithProgress", "useSessionUser", "useSignedOut", "useSignedOutSlot", "userDisplayName", "userInitial"];
 const missingSession = expectedSession.filter((name) => !(name in session));
 if (missingSession.length > 0) {
   console.error(`dist/session/index.js does not export ${missingSession.join(", ")}`);
