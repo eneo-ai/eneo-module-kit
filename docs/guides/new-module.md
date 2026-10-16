@@ -12,7 +12,7 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 |---|---|
 | `backend/main.py` | `build_app(...)`: the kit's `create_app` with this module's `PROXY_RULES` (one: `GET flows/`) and its router. The image runs it with `serve('main:build_app', factory=True)`. |
 | `backend/routes.py` | The module's own routes on `router`: one, `GET /api/example`, behind `require_session`. |
-| `backend/tests/` | Run without Eneo. `test_app.py`: the page, the deep link, 404s, the route, the proxy and its allowlist. `test_routes.py` with `guards.py`: fails when a route lacks `require_session` (or a write lacks `require_same_origin`). |
+| `backend/tests/` | Run without Eneo. `test_app.py`: the page, the deep link, 404s, the route, the proxy and its allowlist. `test_routes.py` with `guards.py`: fails when a route lacks `require_session` (or a write lacks `require_same_origin` or `require_expected_user`). |
 | `backend/requirements.lock` | Everything the BFF depends on, with hashes: a generated, hash-pinned `uv pip compile` of the BFF's requirements. Install it first. The kit's CI fails when it drifts from the BFF's requirements. |
 | `backend/requirements.txt` | The BFF itself, pinned to a commit of the kit until its first release (`<full sha>` is a placeholder). |
 | `stub-eneo/server.py` | Eneo's side of the contract, stdlib only, for development and tests. Never shipped in the image. See [local development](local-development.md). |
@@ -123,7 +123,7 @@ For the stub Eneo the values work as they are. Change them for a real Eneo:
 | `SESSION_SECRET` | At least 32 random characters: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `COOKIE_SECURE` | `false` only over plain http. Production is https and `true` |
 
-Every variable, its default and its check: [configuration](configuration.md).
+The module refuses to start with a public URL over http whose host is not `localhost`, `127.0.0.1` or `[::1]`, and, unless `MODULE_PUBLIC_URL` is one of them, with `COOKIE_SECURE=false` or the `SESSION_SECRET` or `ENEO_API_KEY` of `.env.example`. Every variable, its default and its check: [configuration](configuration.md).
 
 ## 4. Run it against the stub
 
@@ -202,7 +202,7 @@ Production runs `docker-compose.yml` alone, with the published image: [release a
 
 | To add | Do |
 |---|---|
-| A route of the module | In `backend/routes.py`, on `router`, with `Depends(require_session)` (and `require_same_origin` for a write). `backend/tests/test_routes.py` fails without them. |
+| A route of the module | In `backend/routes.py`, on `router`, with `Depends(require_session)` (and `require_same_origin` and `require_expected_user` for a write). `backend/tests/test_routes.py` fails without them. |
 | A call to Eneo | One `rule(...)` in `PROXY_RULES` in `backend/main.py` per Eneo route, with the methods it needs, and a test. No catch-all. For an upload or a file, see [build a module](build-a-module.md). |
 | A page | A route in `web/src/App.tsx`, inside `RequireSession` when it needs a session, rendering `<Frame>`; calls to the backend go through `fetchWithSession` (the template's `getJson`), and a dialog of the page is closed while `useSignedOut()` is true ([build a module](build-a-module.md#10-sessions-and-dialogs)). Build it from Astryx components: `npm run astryx -- build "<idea>"` and `npm run astryx -- component <Name>` in `web/`, never a guessed prop. Its states go in `web/tests/e2e/screens.ts`, so the gate measures them; a state that is the page as it opens also goes in `BY_ADDRESS` of `web/tests/e2e/still.spec.ts` ([quality](quality.md#what-is-on-screen-stands-still)), a control that is not pressed as the others are in a list of `web/tests/e2e/controls.spec.ts`, with its reason ([quality](quality.md#every-control-does-something)), and each state its curated ARIA snapshots ([quality](quality.md#what-a-screen-reader-is-given)). |
 | A design-system fix | Once, in the kit's theme ([UI package](ui-package.md#fix-a-shortfall-once)), not in a page. |

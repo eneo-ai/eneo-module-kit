@@ -459,6 +459,22 @@ test("a status read begun before a request found the login ended does not uncove
   assert.ok(dialog()?.hasAttribute("open"));
 });
 
+test("a write that finds someone else's session (409 user_changed) covers the page and says at once whom to sign in as", async (t) => {
+  const log = scripted(t, [() => json(signedIn()), () => json(signedIn(erik))], () => json({ detail: "user_changed" }, 409));
+  const { createFetchWithSession } = await import("../src/session/request.js");
+  const { act, state } = await gate();
+  await act(async () => settle());
+
+  await act(async () => {
+    await createFetchWithSession(state)("/api/eneo/runs/", { method: "POST" }).catch(() => undefined);
+    await settle();
+  });
+
+  assert.equal(state.signedOut, true);
+  assert.match(dialog()?.textContent ?? "", /Du är inloggad som Erik Lund\. Logga in som Anna Berg för att fortsätta\./);
+  assert.equal(log.filter((url) => url === "/api/auth/status").length, 2, "the status is read again at once, not when the page is next seen");
+});
+
 test("a renewal between two short sessions resets the dialog: the warning of the new end, not the words of the ended one", async (t) => {
   let answer: () => Response = () => json(signedIn(anna, 30));
   backend(t, () => answer());

@@ -46,7 +46,8 @@ patch `node_modules`, installed Python packages or copy their internals into the
 
 Use the existing fixture and nearest test for the behavior being changed. Backend route
 changes run `python -m unittest discover -s backend/tests -t backend` from the module root;
-these checks also detect missing session and write guards.
+these checks also detect a route without `require_session`, and a write without
+`require_same_origin` or `require_expected_user`.
 
 For UI work, add relevant loading, empty, error and signed-out states to
 `web/tests/e2e/screens.ts`. From `web/`, run `npm run lint` and a focused browser test,

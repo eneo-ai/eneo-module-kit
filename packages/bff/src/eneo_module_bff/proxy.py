@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 
-from .deps import require_same_origin, require_session, upstream_auth_headers
+from .deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 from .upstream import UnboundedAnswer
 
@@ -28,7 +28,10 @@ FORWARDED_REQUEST_HEADERS = frozenset(
 
 # Headers we should not forward from upstream response back to client. Eneo's cookies are not the browser's:
 # several would be merged into one line, and one named like the module's session would replace it. Its Location
-# names Eneo's own host, which the browser cannot reach and which says how the network is laid out.
+# names Eneo's own host, which the browser cannot reach and which says how the network is laid out. What sets the
+# policy of the module's origin is the module's, not Eneo's: its security headers (web.py adds them where an answer
+# lacks them), what a browser may store (nothing under /api), HTTPS for its host, what to wipe from it, and
+# which other origins may read it (none: a gateway's CORS headers in front of Eneo must not open the module).
 _UNFORWARDED_RESPONSE_HEADERS = {
     "content-encoding",
     "transfer-encoding",
@@ -37,6 +40,20 @@ _UNFORWARDED_RESPONSE_HEADERS = {
     "content-length",
     "set-cookie",
     "location",
+    "content-security-policy",
+    "content-security-policy-report-only",
+    "x-frame-options",
+    "permissions-policy",
+    "referrer-policy",
+    "cache-control",
+    "strict-transport-security",
+    "clear-site-data",
+    "x-content-type-options",
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+    "access-control-allow-methods",
+    "access-control-allow-headers",
+    "access-control-expose-headers",
 }
 
 # The module never follows a redirect, and no route of a module is expected to redirect, so one from Eneo is an
@@ -153,7 +170,8 @@ def forwarded_headers(headers: Headers, allowed: Collection[str], *, skip: str =
 def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[str] = ()) -> APIRouter:
     """``GET|POST|PATCH /api/eneo/{path}``, for the routes in ``rules`` and nothing else.
 
-    Of the browser's request headers only ``FORWARDED_REQUEST_HEADERS`` and ``forward_request_headers`` reach Eneo.
+    Of the browser's request headers only ``FORWARDED_REQUEST_HEADERS`` and ``forward_request_headers`` reach Eneo. A
+    write must come from the module's origin and name the session's user (``require_expected_user``).
     """
     rules = tuple(rules)
     added = {name.lower() for name in forward_request_headers}
@@ -168,6 +186,7 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         dependencies=[
             Depends(require_session),
             Depends(require_same_origin),
+            Depends(require_expected_user),
         ],
     )
     async def eneo_proxy(path: str, request: Request) -> Response:
@@ -196,12 +215,9 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         except UnboundedAnswer:
             logger.error("Eneo's answer is past the bound: method=%s url=%s", request.method, url)
             return upstream_too_large()
-        except httpx2.RequestError:
-            logger.exception(
-                "Upstream request failed: method=%s url=%s",
-                request.method,
-                url,
-            )
+        except httpx2.RequestError as error:
+            # The kind of error, never its text: httpx2's quotes a header it could not send, the token or the service key.
+            logger.error("Upstream request failed: method=%s url=%s (%s)", request.method, url, type(error).__name__)
             return JSONResponse(
                 status_code=502,
                 content={
@@ -224,9 +240,6 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
             for k, v in upstream.headers.items()
             if k.lower() not in _UNFORWARDED_RESPONSE_HEADERS
         }
-        # A response is one user's: no cache keeps it unless Eneo said how it may be kept.
-        if not any(name.lower() == "cache-control" for name in resp_headers):
-            resp_headers["Cache-Control"] = "private, no-store"
 
         return Response(
             content=upstream.content,

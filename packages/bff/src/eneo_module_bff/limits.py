@@ -133,6 +133,10 @@ class BodyLimitMiddleware:
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > scope.get(BODY_LIMIT, self.max_body_bytes):
+                    # A streaming answer reads the body only to hear the client go, while its first step, which starts
+                    # the answer, waits its turn; the body can pass the cap before that turn, as buffered bytes arrive
+                    # without a wait. That step runs anyway, even once a 413 is raised, so it goes first.
+                    await anyio.sleep(0)
                     if answering:
                         # A response is already on its way (a stream that never asked for the body, whose server
                         # side only listens here for the client to go): the client is as good as gone, and a 413

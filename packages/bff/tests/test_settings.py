@@ -258,7 +258,7 @@ class SettingsTests(unittest.TestCase):
             ("https://module.example.test", "https://module.example.test"),
             ("https://Mod.Example.SE", "https://mod.example.se"),
             ("HTTPS://MOD.example.se:443/", "https://mod.example.se"),
-            ("http://mod.example.se:80", "http://mod.example.se"),
+            ("http://localhost:80", "http://localhost"),
             ("https://mod.example.se:8443/prefix", "https://mod.example.se:8443"),
             ("http://[::1]:3001", "http://[::1]:3001"),
             ("http://LOCALHOST:3001", "http://localhost:3001"),
@@ -287,6 +287,63 @@ class SettingsTests(unittest.TestCase):
         with patch.dict(os.environ, environment, clear=True):
             with self.assertRaisesRegex(RuntimeError, "must be a boolean"):
                 load_settings()
+
+
+# What this machine is called; everything else, however close, is another machine.
+THIS_MACHINE = ("http://localhost:3001", "http://LOCALHOST:3001", "http://127.0.0.1:3001", "http://[::1]:3001")
+ANOTHER_MACHINE = (
+    "http://module.example.test",
+    "http://localhost.example.test",
+    "http://127.0.0.1.nip.io",
+    "http://localhost@module.example.test",
+    "http://10.0.0.5:3001",
+)
+TEMPLATE_ENV = Path(__file__).resolve().parents[3] / "template" / ".env.example"
+
+
+def template_environment() -> dict[str, str]:
+    """The template's .env.example, as docker compose reads it."""
+    lines = (line.strip() for line in TEMPLATE_ENV.read_text().splitlines())
+    return dict(line.split("=", 1) for line in lines if line and not line.startswith("#"))
+
+
+class OffThisMachineTests(unittest.TestCase):
+    """What would leak or be forged in production is accepted only where the module runs on this machine."""
+
+    def test_a_public_url_off_this_machine_is_https(self) -> None:
+        for name in ("MODULE_PUBLIC_URL", "ENEO_PUBLIC_URL"):
+            for url in ANOTHER_MACHINE:
+                with self.subTest(name=name, url=url), patch.dict(os.environ, valid_environment() | {name: url}, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, f"^{name} must be an https URL"):
+                        load_settings()
+            for url in THIS_MACHINE:
+                with self.subTest(name=name, url=url), patch.dict(os.environ, valid_environment() | {name: url}, clear=True):
+                    self.assertEqual(getattr(load_settings(), name.lower()), url)
+        # The module reaches Eneo on the service network, where http is how it is reached.
+        with patch.dict(os.environ, valid_environment() | {"ENEO_BACKEND_URL": "http://backend:8000"}, clear=True):
+            self.assertEqual(load_settings().eneo_backend_url, "http://backend:8000")
+
+    def test_an_insecure_session_cookie_is_accepted_only_for_a_module_on_this_machine(self) -> None:
+        insecure = valid_environment() | {"COOKIE_SECURE": "false"}
+        with patch.dict(os.environ, insecure, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "^COOKIE_SECURE=false is accepted only when MODULE_PUBLIC_URL is"):
+                load_settings()
+        for url in THIS_MACHINE:
+            with self.subTest(url=url), patch.dict(os.environ, insecure | {"MODULE_PUBLIC_URL": url}, clear=True):
+                self.assertFalse(load_settings().cookie_secure)
+
+    def test_the_templates_env_example_starts_as_it_is_and_its_secrets_nowhere_else(self) -> None:
+        published = template_environment()
+        with patch.dict(os.environ, published, clear=True):
+            self.assertEqual(load_settings().module_public_url, "http://localhost:3001")
+
+        deployed = published | {"MODULE_PUBLIC_URL": "https://module.example.test", "ENEO_PUBLIC_URL": "https://eneo.example.test", "COOKIE_SECURE": "true"}
+        for name in ("SESSION_SECRET", "ENEO_API_KEY"):
+            with self.subTest(name=name), patch.dict(os.environ, deployed | {other: "s" * 40 for other in ("SESSION_SECRET", "ENEO_API_KEY") if other != name}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, f"^{name} is the value template/.env.example publishes"):
+                    load_settings()
+        with patch.dict(os.environ, deployed | {"SESSION_SECRET": "s" * 40, "ENEO_API_KEY": "own-key"}, clear=True):
+            self.assertEqual(load_settings().eneo_api_key, "own-key")
 
 
 class OrganizationTests(unittest.TestCase):
