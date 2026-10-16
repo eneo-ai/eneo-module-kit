@@ -33,7 +33,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | An organisation logo cannot run script | Served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `nosniff` | `branding.py` |
 | No API description and no redirect on the module's origin | No `/docs`, `/redoc` or `/openapi.json`; the slash twin of a route is a 404, not a 307 whose `Location` says http:// behind a proxy that ends TLS | `app.py` |
 | One replica, no ticket in the logs | One worker, uvicorn's access log off, no `Server` banner | `serve.py` |
-| No token in the kit's logs | Login and refresh log the kind of an error, never its text: a validation error quotes the answer it refused, and httpx2's error quotes a header it could not send. `httpx2` and `httpcore2` log at WARNING: their INFO lines hold full URLs, a signed URL among them | `auth.py`, `app.py` |
+| No credential in the kit's logs | A failed call to Eneo (login, refresh, proxy, upload, signed file) logs the kind of its error, never its text: a validation error quotes the answer it refused, and httpx2's error quotes a header it could not send or the URL it asked. `httpx2` and `httpcore2` log at WARNING: their INFO lines hold full URLs, a signed URL among them | `auth.py`, `proxy.py`, `transport.py`, `app.py` |
 
 Headers on every answer (`web.py`), an unhandled error's 500 too; `create_app(security_headers={...})` replaces one by name, for example `Permissions-Policy: camera=(), geolocation=(), microphone=(self)`:
 

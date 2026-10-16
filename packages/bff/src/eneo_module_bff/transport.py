@@ -185,8 +185,10 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
     except UnboundedAnswer:
         logger.error("Eneo's answer to an upload is past the bound: url=%s", url)
         return upstream_too_large()
-    except httpx2.TimeoutException:
-        logger.exception("Upload timed out: url=%s", url)
+    except httpx2.TimeoutException as error:
+        # The kind of error, never its text, here and below: httpx2's quotes a header it could not send (the token, the
+        # service key) or the URL it asked (a signed URL is a credential).
+        logger.error("Upload timed out: url=%s (%s)", url, type(error).__name__)
         return JSONResponse(
             status_code=504,
             content={
@@ -194,8 +196,8 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
                 "detail": "Eneo did not complete the upload before the timeout.",
             },
         )
-    except httpx2.RequestError:
-        logger.exception("Upload failed: url=%s", url)
+    except httpx2.RequestError as error:
+        logger.error("Upload failed: url=%s (%s)", url, type(error).__name__)
         return JSONResponse(
             status_code=502,
             content={
@@ -339,8 +341,8 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
     except UnboundedAnswer:
         logger.error("Signed URL answer is past the bound: path=%s", mint_path)
         raise _InvalidMintAnswer from None
-    except httpx2.RequestError:
-        logger.exception("Signed URL request failed: path=%s", mint_path)
+    except httpx2.RequestError as error:
+        logger.error("Signed URL request failed: path=%s (%s)", mint_path, type(error).__name__)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
     if upstream.status_code >= 400:
         try:
@@ -450,8 +452,8 @@ async def _stream_file(
     upstream_request = http_client.build_request("GET", url, headers=fwd_headers, extensions=STREAMED)
     try:
         upstream = await http_client.send(upstream_request, stream=True)
-    except httpx2.RequestError:
-        logger.exception("File stream request failed: path=%s", mint_path)
+    except httpx2.RequestError as error:
+        logger.error("File stream request failed: path=%s (%s)", mint_path, type(error).__name__)
         return JSONResponse(
             status_code=502,
             content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},
@@ -470,9 +472,11 @@ async def _stream_file(
             sessions.forget_signed_url(session_id, mint_path)
             try:
                 body = await _read_small(upstream)
-            except httpx2.RequestError:
+            except httpx2.RequestError as error:
                 # Cut off or silent while its body was read: no more an answer than one that never came.
-                logger.exception("File stream answer could not be read: path=%s status=%s", mint_path, upstream.status_code)
+                logger.error(
+                    "File stream answer could not be read: path=%s status=%s (%s)", mint_path, upstream.status_code, type(error).__name__
+                )
                 return JSONResponse(
                     status_code=502,
                     content={"error": "upstream_unreachable", "detail": "Eneo could not be reached."},

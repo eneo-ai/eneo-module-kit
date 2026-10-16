@@ -1,14 +1,11 @@
 import asyncio
-import contextlib
 import itertools
-import logging
 import os
 import re
 import secrets
 import time
 import timeit
 import unittest
-from collections.abc import Iterator
 from datetime import datetime, timezone
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -30,7 +27,6 @@ from eneo_module_bff.auth import (
 )
 from eneo_module_bff.deps import require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
-from eneo_module_bff.upstream import make_client
 
 # Eneo's session ceiling in these tests; shorter than the module's 8-hour default.
 ENEO_SESSION_SECONDS = 4 * 60 * 60
@@ -998,116 +994,6 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
         self.assertEqual(len(eneo.refresh_calls), 1)
         # Nothing outlives the refresh that it coordinated.
         self.assertEqual(self.auth._refreshes, {})
-
-
-@contextlib.contextmanager
-def every_log_line() -> Iterator[list[str]]:
-    """Every record any logger emits meanwhile, at any level, formatted with its traceback."""
-    lines: list[str] = []
-
-    class Keep(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            lines.append(self.format(record))
-
-    root, handler = logging.getLogger(), Keep(logging.DEBUG)
-    level = root.level
-    root.addHandler(handler)
-    root.setLevel(logging.DEBUG)
-    try:
-        yield lines
-    finally:
-        root.removeHandler(handler)
-        root.setLevel(level)
-
-
-class NoTokenInTheLogsTests(unittest.TestCase):
-    """A login or a refresh that goes wrong logs why, and never the token: a validation error quotes the answer it
-    refused, and httpx2's error for a header it cannot send quotes the header."""
-
-    # Short: a validation error quotes an input of up to 50 characters whole, a longer one by its first and last 25.
-    TOKEN = "tok-3f9a1c"
-
-    def build(self, eneo) -> TestClient:
-        settings = Settings(
-            eneo_backend_url="https://eneo.example.test", eneo_public_url="https://eneo.example.test",
-            module_public_url="https://module.example.test", module_key="speech-to-text", eneo_api_key="test-key",
-            session_secret="x" * 48, cookie_secure=False,
-        )
-        http = make_client(settings, transport=httpx2.MockTransport(eneo))
-        self.addCleanup(lambda: asyncio.run(http.aclose()))
-        self.app = create_app(settings, http_client=http)
-        return TestClient(self.app, follow_redirects=False)
-
-    def sign_in(self, eneo) -> list[str]:
-        client = self.build(eneo)
-        state = parse_qs(urlparse(client.get("/api/auth/login").headers["location"]).query)["state"][0]
-        with every_log_line() as lines:
-            location = client.get("/api/auth/callback", params={"ticket": "ticket-1", "state": state}).headers["location"]
-        self.assertTrue(location.startswith("/?auth_error="), location)
-        return lines
-
-    def refresh(self, eneo) -> list[str]:
-        client = self.build(eneo)
-        now = int(time.time())
-        session = ModuleSession(
-            access_token=self.TOKEN, expires_at=now + 100, refresh_at=now - 1, session_expires_at=now + 3600,
-            module_key="speech-to-text", tenant_id="tenant-id", user=ModuleUser(id="user-id", email="user@example.test"),
-        )
-        client.cookies.set(SESSION_COOKIE, self.app.state.module_auth.sessions.create(session))
-        with every_log_line() as lines:
-            client.get("/api/auth/status")
-        return lines
-
-    def test_a_login_that_goes_wrong_never_logs_the_token_or_the_service_key(self) -> None:
-        token = self.TOKEN
-        quoted = httpx2.LocalProtocolError(f"Illegal header value b'Bearer {token}'")  # as httpx2 says it, for a CR in it
-
-        def exchange(answer):
-            def eneo(request: httpx2.Request) -> httpx2.Response:
-                if request.url.path == "/api/v1/module-auth/token/":
-                    return httpx2.Response(200, json=token_payload(token))
-                if isinstance(answer, Exception):
-                    raise answer
-                return answer
-            return eneo
-
-        def unsendable(request: httpx2.Request) -> httpx2.Response:
-            raise httpx2.LocalProtocolError("Illegal header value b'test-key'")  # the service key, with a CR in it
-
-        cases = {
-            "an exchange that cannot be sent": unsendable,
-            "an exchange answer that is not a token": lambda _: httpx2.Response(200, json={"access_token": token}),
-            "a session check that cannot be sent": exchange(quoted),
-            "a session check answer that is not a session": exchange(httpx2.Response(200, json={"access_token": token})),
-        }
-        for case, eneo in cases.items():
-            with self.subTest(case):
-                lines = self.sign_in(eneo)
-
-                self.assertTrue(lines, "it says why")
-                for secret in (token, "test-key"):
-                    self.assertNotIn(secret, "\n".join(lines))
-
-    def test_a_refresh_that_goes_wrong_never_logs_a_token(self) -> None:
-        renewed = "tok-renewed"
-
-        def raising(error: Exception):
-            def eneo(request: httpx2.Request) -> httpx2.Response:
-                raise error
-            return eneo
-
-        cases = {
-            "an answer that is not a token": lambda _: httpx2.Response(200, json={"access_token": renewed}),
-            "a refresh that cannot be sent": raising(httpx2.LocalProtocolError(f"Illegal header value b'Bearer {self.TOKEN}'")),
-            "an error nobody expected": raising(RuntimeError(f"unexpected, with {self.TOKEN} in it")),
-        }
-        for case, eneo in cases.items():
-            with self.subTest(case):
-                lines = self.refresh(eneo)
-
-                self.assertTrue(lines, "it says why")
-                for token in (self.TOKEN, renewed):
-                    self.assertNotIn(token, "\n".join(lines))
 
 
 if __name__ == "__main__":

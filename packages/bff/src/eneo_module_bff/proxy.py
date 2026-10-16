@@ -208,12 +208,9 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
         except UnboundedAnswer:
             logger.error("Eneo's answer is past the bound: method=%s url=%s", request.method, url)
             return upstream_too_large()
-        except httpx2.RequestError:
-            logger.exception(
-                "Upstream request failed: method=%s url=%s",
-                request.method,
-                url,
-            )
+        except httpx2.RequestError as error:
+            # The kind of error, never its text: httpx2's quotes a header it could not send, the token or the service key.
+            logger.error("Upstream request failed: method=%s url=%s (%s)", request.method, url, type(error).__name__)
             return JSONResponse(
                 status_code=502,
                 content={
