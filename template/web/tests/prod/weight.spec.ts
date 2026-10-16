@@ -8,8 +8,11 @@ import { expect, test } from "../e2e/fixtures";
 
 /** Each page: what it shows when it is whole (a page that failed is never measured), whether it needs a session, its budget. */
 const PAGES = {
-  "/": { heading: "Eneo-modul", signedIn: false, jsKB: 175, cssKB: 30 },
-  "/flows": { heading: "Välj ett flöde", signedIn: true, jsKB: 175, cssKB: 30 },
+  "/": { heading: "Eneo-modul", signedIn: false, jsKB: 165, cssKB: 30 },
+  // React Router's data router, which the leave question's blocker, the error page and the pages fetched when first
+  // entered need, is about 15 KB of it more than <BrowserRouter>; the page's waits, notices, drafts and leave question
+  // most of the rest.
+  "/flows": { heading: "Välj ett flöde", signedIn: true, jsKB: 200, cssKB: 30 },
 };
 type Address = keyof typeof PAGES;
 
