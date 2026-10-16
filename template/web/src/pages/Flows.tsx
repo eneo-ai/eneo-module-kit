@@ -22,11 +22,28 @@ interface Flow {
   description: string | null;
 }
 
-type Load = { state: "loading" } | { state: "failed"; advice: ErrorAdvice } | { state: "done"; flows: Flow[] };
+type Load = { state: "loading" } | { state: "failed"; advice: ErrorAdvice } | { state: "done"; flows: Flow[]; truncated: boolean };
+
+/** One page of Eneo's list: at most this many flows, and `has_more` says whether another page follows. */
+const PAGE_SIZE = 200;
+// ponytail: 1 000 flows is far more than a person runs; the page says where it stops, raise the cap if that ever shows.
+const PAGE_CAP = 5;
+
+/** Every published flow the user can run, page by page until Eneo has no more, or the cap (`truncated`). */
+async function discoverFlows(): Promise<{ flows: Flow[]; truncated: boolean }> {
+  const flows: Flow[] = [];
+  for (let page = 0; page < PAGE_CAP; page += 1) {
+    const query = new URLSearchParams({ published_only: "true", limit: String(PAGE_SIZE), offset: String(flows.length) });
+    const body = await getJson<{ items: Flow[]; has_more: boolean }>(`/api/eneo/flows/?${query}`);
+    flows.push(...body.items);
+    if (!body.has_more) return { flows, truncated: false };
+  }
+  return { flows, truncated: true };
+}
 
 /**
  * The module's one page: the flows the user can run in Eneo, through the backend's proxy (/api/eneo/flows/, the one
- * route its allowlist names), and a greeting from the module's own route (/api/example).
+ * route its allowlist names), read page by page, and a greeting from the module's own route (/api/example).
  */
 export function Flows() {
   const user = useSessionUser();
@@ -47,8 +64,8 @@ export function Flows() {
 
   useEffect(() => {
     let current = true;
-    getJson<{ items: Flow[] }>("/api/eneo/flows/")
-      .then((body) => current && setLoad({ state: "done", flows: body.items }))
+    discoverFlows()
+      .then(({ flows, truncated }) => current && setLoad({ state: "done", flows, truncated }))
       // What went wrong, in words, and whether trying again can help (the kit's errorAdvice).
       .catch((error) => current && setLoad({ state: "failed", advice: errorAdvice(error) }));
     return () => {
@@ -89,16 +106,23 @@ export function Flows() {
         ) : load.state === "done" && load.flows.length === 0 ? (
           <EmptyState headingLevel={2} title="Det finns inga publicerade flöden som du kan använda än." description="När ett flöde publiceras i Eneo visas det här." />
         ) : load.state === "done" ? (
-          <List hasDividers aria-label="Flöden">
-            {load.flows.map((flow) => (
-              // Nodes, not strings: a string is cut to one line with an ellipsis, and a name is never cut.
-              <ListItem
-                key={flow.id}
-                label={<Text weight="semibold">{flow.name}</Text>}
-                description={flow.description ? <Text type="supporting">{flow.description}</Text> : undefined}
-              />
-            ))}
-          </List>
+          <>
+            <List hasDividers aria-label="Flöden">
+              {load.flows.map((flow) => (
+                // Nodes, not strings: a string is cut to one line with an ellipsis, and a name is never cut.
+                <ListItem
+                  key={flow.id}
+                  label={<Text weight="semibold">{flow.name}</Text>}
+                  description={flow.description ? <Text type="supporting">{flow.description}</Text> : undefined}
+                />
+              ))}
+            </List>
+            {load.truncated && (
+              <Text as="p" type="supporting">
+                Visar de första {(PAGE_SIZE * PAGE_CAP).toLocaleString("sv-SE")} flödena.
+              </Text>
+            )}
+          </>
         ) : (
           <>
             <VisuallyHidden as="p" role="status">

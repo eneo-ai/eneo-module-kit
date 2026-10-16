@@ -305,6 +305,41 @@ test.describe("when the connection goes", () => {
   });
 });
 
+test.describe("a list longer than one page", () => {
+  /** Eneo's list, answered here: `pages` flows on each page asked for, and `has_more` until the last. */
+  async function pagedList(page: Page, pages: number[], hasMoreAfterLast = false) {
+    const asked: Record<string, string>[] = [];
+    await page.route(/\/api\/eneo\/flows\//, async (route) => {
+      const query = Object.fromEntries(new URL(route.request().url()).searchParams);
+      asked.push(query);
+      const index = asked.length - 1;
+      const offset = Number(query.offset);
+      const items = Array.from({ length: pages[index] ?? 0 }, (_, n) => ({ id: `flow-${offset + n}`, name: `Flöde ${offset + n + 1}`, description: null }));
+      await route.fulfill({ json: { items, has_more: index < pages.length - 1 || hasMoreAfterLast, count: items.length } });
+    });
+    return asked;
+  }
+
+  test("the flow list reads each page that Eneo says follows, from where the last one ended", async ({ page }) => {
+    const asked = await pagedList(page, [3, 1]);
+    await signIn(page);
+    await expect(page.getByRole("list", { name: "Flöden" }).getByRole("listitem")).toHaveCount(4);
+    expect(asked).toEqual([
+      { published_only: "true", limit: "200", offset: "0" },
+      { published_only: "true", limit: "200", offset: "3" },
+    ]);
+    await expect(page.getByText(/Visar de första/)).toHaveCount(0);
+  });
+
+  test("a list that goes on past five pages is read that far, and the page says where it stops", async ({ page }) => {
+    const asked = await pagedList(page, [1, 1, 1, 1, 1], true);
+    await signIn(page);
+    await expect(page.getByRole("list", { name: "Flöden" }).getByRole("listitem")).toHaveCount(5);
+    expect(asked.map((query) => query.offset)).toEqual(["0", "1", "2", "3", "4"]);
+    await expect(page.getByText("Visar de första 1 000 flödena.")).toBeVisible();
+  });
+});
+
 test.describe("when Eneo is slow to list the flows", () => {
   test("after 15 seconds the page says that it takes longer than usual, and Försök igen asks again", async ({ page }) => {
     await page.clock.install();
