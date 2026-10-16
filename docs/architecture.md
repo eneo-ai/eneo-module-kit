@@ -399,6 +399,7 @@ The UI package, the template and the image:
 | Providers, shell, which links are the router's | `packages/ui/src/ModuleProviders.tsx`, `ModuleShell.tsx` | `providers.test.ts`, `links.test.ts`, `shell.test.ts` |
 | Brand and branding | `packages/ui/src/branding.tsx` | `branding.test.ts` |
 | Which version runs, copying | `packages/ui/src/VersionInfo.tsx`, `CopyButton.tsx` | `version-info.test.ts`, `copy-button.test.ts` |
+| Online status and its notice | `packages/ui/src/online-status.ts`, `OfflineBanner.tsx` | `online-status.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
 | The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
 | A module's backend | `template/backend/main.py`, `routes.py` | `template/backend/tests/` |

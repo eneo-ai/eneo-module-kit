@@ -101,9 +101,12 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `BRANDING_DEADLINE_MS` | `2000`. |
 | `Brand({ productName, href?, onClickCapture? })` | The header lockup: the organisation's mark, a divider and the product's name; without an organisation the name alone. With `href` it is a link, named for both. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
+| `OfflineBanner({ productName, message?, status? })` | The notice that the connection is gone, for the shell's `banner`: [below](#online-status). |
+| `useConnection(status?)` | `"online"`, `"offline"` (the device has no network) or `"unreachable"` (it has, and a request did not reach the module), and a new render when it changes. |
+| `onlineStatus`, `createOnlineStatus(target?, now?)` | The page's one status, which the session client's requests report to, and a way to build one over a stand-in window (tests). A module's own transport reports with `onlineStatus.sending()`, `reportReachable(sent)` and `reportNetworkFailure()`. |
 | `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
 | `CopyButton({ text, label, name?, variant? })` | Copies `text` as plain text. A check replaces the copy icon and a screen reader hears "Kopierat" once; the words stay, so the button keeps its width. A copy that fails says "Kunde inte kopiera" until the next press. `name` is the accessible name when it says more than `label`, and starts with it. |
-| `Branding`, `BuildIdentity`, `ColorMode` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
+| `Branding`, `BuildIdentity`, `ColorMode`, `Connection`, `OnlineStatus` | Types: the answer of `/api/branding`, which build runs (`release`, `revision`, `build_date`, `source`, each `null` when not known), and `"light" \| "dark" \| "system"`. |
 
 ## Colour mode
 
@@ -144,6 +147,12 @@ Without `linkComponent` every link is a plain anchor and a click on one to a pag
 - `VersionInfo` shows the release, the commit's first seven characters and when the image was built (in the reader's time), each "Okänd" when the BFF does not know it; a button that copies the support details (the product's name, each value whole, the page's address); and, when the repository is known, the release's and the commit's pages on GitHub, in a new tab.
 - The module has no version of its own: the UI and the BFF ship as one image, and `/api/healthz` says what the image was built from and the release the deployment names ([configuration](configuration.md#which-build-runs)). A local build says nothing of itself.
 - It reads the answer when it is shown, with a deadline of 10 s; a failed read says so and offers "Försök igen". Put it where a person opens it, not on every page: the template's account menu has "Version", which opens it in a dialog (`template/web/src/AccountMenu.tsx`).
+
+## Online status
+
+- Two causes, told apart: the browser's `offline` event says the device has no network (`offline`); a request that did not reach the module while the browser says it has one says the module does not answer (`unreachable`). A request that reaches the module, an error status included, or the browser's `online` event, clears it. An answer to a request that left after the browser said "offline" outweighs it (Safari can go on saying so after a device wakes); one that was already on its way does not.
+- The session client's requests report it: `fetchWithSession` and the status reads of `RequireSession`. The page's own abort says nothing.
+- `OfflineBanner` says "Ingen anslutning." or "<productName> svarar inte just nu.", and after it the page's `message` (what waits, and when it goes on). It is Astryx's warning banner, an alert mounted when the connection goes, so a screen reader says it once; online it is nothing and takes no room. The template's `Frame` puts it in the shell's `banner`, above the bar.
 
 ## The shell
 
@@ -199,4 +208,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), online status and its banner (`online-status`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

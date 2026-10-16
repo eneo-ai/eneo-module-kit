@@ -68,6 +68,16 @@ export const STATES: State[] = [
     },
   },
   {
+    // The device has lost its network while the page was open: the notice above the bar, and the page as it was.
+    name: "offline",
+    go: async (page) => {
+      await stubFlows(page, "normal");
+      await signIn(page);
+      await page.context().setOffline(true);
+      await expect(page.getByRole("alert").filter({ hasText: "Ingen anslutning." })).toBeVisible();
+    },
+  },
+  {
     // Five minutes before the login ends: the warning is open over the page.
     name: "session-warning",
     go: async (page) => {

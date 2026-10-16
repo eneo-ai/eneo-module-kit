@@ -24,6 +24,7 @@ const SNAPSHOTS: { state: string; region: (page: Page) => Locator }[] = [
   { state: "version", region: (page) => page.getByRole("dialog") },
   { state: "flows-empty", region: (page) => page.getByRole("main") },
   { state: "flows-error", region: (page) => page.getByRole("main") },
+  { state: "offline", region: (page) => page.getByRole("banner") },
   { state: "session-warning", region: (page) => page.getByRole("alertdialog") },
   { state: "signed-out", region: (page) => page.getByRole("alertdialog") },
 ];

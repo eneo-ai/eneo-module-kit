@@ -4,6 +4,7 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { Brand } from "../branding.js";
 import { ModuleShell } from "../ModuleShell.js";
+import { fetchReporting, onlineStatus } from "../online-status.js";
 import { keepSessionAlive } from "./keepalive.js";
 import { messages } from "./messages.js";
 import { SessionDialog } from "./SessionDialog.js";
@@ -48,8 +49,9 @@ export function useSignedOutSlot(): HTMLElement | null {
   return useContext(SessionContext)?.slot ?? null;
 }
 
+/** The session's status; whether the module answered is told to the page's online status, as for every request. */
 async function readStatus(): Promise<SessionStatus> {
-  const res = await fetch("/api/auth/status", { credentials: "include", cache: "no-store" });
+  const res = await fetchReporting(onlineStatus, "/api/auth/status", { credentials: "include", cache: "no-store" });
   if (!res.ok) throw new Error(`status ${res.status}`);
   return (await res.json()) as SessionStatus;
 }

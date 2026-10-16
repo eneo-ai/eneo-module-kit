@@ -50,6 +50,7 @@ with a `target` other than `_self` or with `download` stays a plain anchor, so t
 | `VersionInfo` | Which build runs, from `GET /api/healthz`, read when shown: the release, the commit and the build time ("Okänd" when not known), a button that copies them as support details, and the release's and commit's pages when the repository is known. |
 | `CopyButton` | Copies a text; a check and "Kopierat" to a screen reader confirm it, and a failure says so in words. |
 | `eneoTheme` | The built theme object, for `<Theme>` outside `ModuleProviders`. |
+| `OfflineBanner`, `useConnection()`, `onlineStatus`, `createOnlineStatus()` | Whether the page reaches the module: the browser's online events and the session client's requests decide it, telling a device without a network (`offline`) from a module that does not answer (`unreachable`). `OfflineBanner({ productName, message? })` says so above the shell's bar (`banner`): "Ingen anslutning." or "<productName> svarar inte just nu.", then the page's `message`. |
 
 Stylesheets: `layers.css`, `theme.css` (generated from `src/theme/eneo.theme.ts` by `npm run theme:build`, committed in
 `src/theme/built/`, and checked for freshness in CI) and `base.css` (what the theme cannot say: the shell's bar, the

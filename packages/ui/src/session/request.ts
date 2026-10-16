@@ -1,3 +1,4 @@
+import { fetchReporting, onlineStatus, type OnlineStatus } from "../online-status.js";
 import { messages } from "./messages.js";
 import { sessionState, type SessionState } from "./state.js";
 
@@ -46,8 +47,8 @@ async function isUserChanged(res: Response): Promise<boolean> {
 }
 
 /** `fetch`, ended when no answer has begun within REQUEST_TIMEOUT_MS: a wait that would never end is a timeout to say. The
- * page's own signal still aborts it. */
-async function fetchWithin(path: string, init: RequestInit): Promise<Response> {
+ * page's own signal still aborts it. Whether the answer came is told to `online`. */
+async function fetchWithin(online: OnlineStatus, path: string, init: RequestInit): Promise<Response> {
   const limit = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -58,7 +59,7 @@ async function fetchWithin(path: string, init: RequestInit): Promise<Response> {
   if (init.signal?.aborted) cancel();
   else init.signal?.addEventListener("abort", cancel, { once: true });
   try {
-    return await fetch(path, { ...init, signal: limit.signal });
+    return await fetchReporting(online, path, { ...init, signal: limit.signal });
   } catch (error) {
     throw timedOut ? new RequestTimeoutError() : error;
   } finally {
@@ -75,9 +76,10 @@ async function fetchWithin(path: string, init: RequestInit): Promise<Response> {
  * A write names the page's user (`X-Expected-User`): a browser has one cookie for every tab, and the backend answers 409
  * `user_changed` when the session is someone else's. That ends the login too, and the write is never sent as them.
  * A request no answer has begun for within REQUEST_TIMEOUT_MS fails with `RequestTimeoutError`.
+ * Whether the module answered is told to `online` (`OfflineBanner` says what it hears).
  * Any other answer is returned as it came: parsing it is the module's.
  */
-export function createFetchWithSession(state: SessionState) {
+export function createFetchWithSession(state: SessionState, online: OnlineStatus = onlineStatus) {
   return async function fetchWithSession(path: string, init: RequestInit = {}): Promise<Response> {
     const send = async (again: boolean): Promise<Response> => {
       // Signed out, or someone else signed in here: nothing leaves the page until its own user is back.
@@ -89,7 +91,7 @@ export function createFetchWithSession(state: SessionState) {
       const headers = new Headers(init.headers);
       const user = state.expectedUser;
       if (user && writes(init)) headers.set("X-Expected-User", user);
-      const res = await fetchWithin(path, { ...init, headers, credentials: "include" });
+      const res = await fetchWithin(online, path, { ...init, headers, credentials: "include" });
       if (isSessionEndedAnswer(res.status, res.headers.get("X-Auth-Required")) && !path.startsWith("/api/auth/")) {
         // A refusal that comes after a renewal belongs to the login before it: it covers nothing, and a request that is
         // safe to send twice goes once under the login now (which waits, if that one has ended too).

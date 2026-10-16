@@ -210,6 +210,32 @@ test.describe("without JavaScript", () => {
   });
 });
 
+test.describe("when the connection goes", () => {
+  test("without a network the page says so above the bar, keeps what it shows, and the notice goes when the network is back", async ({ page }) => {
+    await signIn(page);
+    const notice = page.getByRole("alert").filter({ hasText: "Ingen anslutning." });
+    await page.context().setOffline(true);
+    await expect(notice).toBeVisible();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await page.context().setOffline(false);
+    await expect(notice).toHaveCount(0);
+  });
+
+  test("a network that does not reach the module: the page says that the module does not answer, and the next answer clears it", async ({ page }) => {
+    // The browser reports the requests the test cut off.
+    declare(page, [{ requestFailed: /GET .*\/api\/eneo\/flows\/.*: net::ERR_FAILED/ }, { console: /net::ERR_FAILED \[.*\/api\/eneo\/flows\// }]);
+    await signIn(page);
+    await page.route(/\/api\/eneo\/flows\//, (route) => route.abort());
+    await page.reload();
+    const notice = page.getByRole("alert").filter({ hasText: "Eneo-modul svarar inte just nu." });
+    await expect(notice).toBeVisible();
+    await page.unroute(/\/api\/eneo\/flows\//);
+    await page.getByRole("button", { name: "Försök igen" }).click();
+    await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
+    await expect(notice).toHaveCount(0);
+  });
+});
+
 test.describe("when Eneo cannot list the flows", () => {
   test("the page says so and offers to try again", async ({ page }) => {
     // The browser reports the 500 the stub was told to answer.

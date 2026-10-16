@@ -4,4 +4,6 @@ export { ModuleShell } from "./ModuleShell.js";
 export { Brand, BrandingProvider, BRANDING_DEADLINE_MS, type Branding } from "./branding.js";
 export { CopyButton } from "./CopyButton.js";
 export { VersionInfo, type BuildIdentity } from "./VersionInfo.js";
+export { createOnlineStatus, onlineStatus, useConnection, type Connection, type OnlineStatus } from "./online-status.js";
+export { OfflineBanner } from "./OfflineBanner.js";
 export { eneoTheme } from "./theme/built/eneo.js";
