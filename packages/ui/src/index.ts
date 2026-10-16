@@ -11,4 +11,5 @@ export { SlowWait } from "./SlowWait.js";
 export { lazyLoader, LoadFailure, useLoaded, type Loader } from "./lazy.js";
 export { ErrorPage, NotFoundPage, RouteEffects, useRouteReady } from "./routes.js";
 export { createDrafts, type Drafts, type DraftStorage } from "./drafts.js";
+export { useLeaveQuestion } from "./leave-question.js";
 export { eneoTheme } from "./theme/built/eneo.js";

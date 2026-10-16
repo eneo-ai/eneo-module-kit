@@ -53,6 +53,7 @@ with a `target` other than `_self` or with `download` stays a plain anchor, so t
 | `lazyLoader()`, `useLoaded()`, `LoadFailure` | Code fetched when a page first needs it, once and kept; a failed fetch is kept too (a browser will not fetch it again), and `LoadFailure` offers the person's own reload, "Ladda om sidan". |
 | `RouteEffects`, `useRouteReady()` | What a navigation gives the person, router-free: the route's title at once; once the page says it has its content, its title said, the focus on its heading and the scroll (the top for a link, where the person left it for Back). |
 | `NotFoundPage`, `ErrorPage` | The pages that stand in for one that cannot be shown: "Sidan finns inte." (route it at `*`), and the router's error boundary, "Sidan kunde inte visas." with "Ladda om sidan" (a page whose code is gone after a release, or that threw). |
+| `useLeaveQuestion(active, warning)` | Leaving a page that holds work asks first: the browser's own question for a reload or a closed tab, and "Lämna sidan?" in the page (`question`) before an action that ends the work or a navigation the app's router held (`leaveFirst`, `holds`). Router-free. |
 | `createDrafts(prefix)` | What someone has typed but not sent, kept per person in the tab's `sessionStorage` (`read`, `write`, `clear`), only for the same person (`keepOnly(user.id)` from `onIdentity`), and whether something could not be kept (`unstored()`), for a leave question. |
 | `OfflineBanner`, `useConnection()`, `onlineStatus`, `createOnlineStatus()` | Whether the page reaches the module: the browser's online events and the session client's requests decide it, telling a device without a network (`offline`) from a module that does not answer (`unreachable`). `OfflineBanner({ productName, message? })` says so above the shell's bar (`banner`): "Ingen anslutning." or "<productName> svarar inte just nu.", then the page's `message`. |
 
@@ -115,8 +116,8 @@ above the dialog, so it is back as it was after the new login. A native dialog e
 backdrop hides one that is left open, but in WebKit a dialog left open stays reachable by Tab. Render page dialogs in place,
 inside the children of `RequireSession`: one portalled to `body` is outside the cover and stays in the accessibility tree.
 
-Not in the package: the leave question (a native `AlertDialog` opened after the sign-in dialog stacks above it, so the
-module's own works unchanged), anything about recordings or drafts, a second login mode. The Swedish words are in
+Not in the package: anything about recordings, a second login mode. The leave question (`useLeaveQuestion`, in the main
+export) is a native `AlertDialog` opened after the sign-in dialog, so it stacks above it while signed out. The Swedish words are in
 `src/session/messages.ts`; the module's own sentence is `signedOutNote`.
 
 ## Node

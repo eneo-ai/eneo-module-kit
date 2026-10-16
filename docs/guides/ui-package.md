@@ -140,6 +140,7 @@ The template wraps that once in `web/src/Frame.tsx`, so a page renders `<Frame>`
 | `lazyLoader(get)`, `useLoaded(loader)`, `LoadFailure({ children, keeps?, reload? })` | Code a page fetches when it first needs it (`lazyLoader(() => import("./Editor"))`): fetched once and kept, shared by pages that ask meanwhile. `useLoaded` gives `{ value, failed }`. A failed fetch is kept too: a browser keeps it per address, so there is no retry, and `LoadFailure` says what could not be fetched (and `keeps`, what a reload gives back) beside one action, "Ladda om sidan". Nothing reloads by itself. |
 | `RouteEffects({ path, entry, type, title?, children })`, `useRouteReady(ready)` | What a navigation gives the person, around the router's page: [below](#pages-and-navigation). |
 | `NotFoundPage({ productName, homeHref? })`, `ErrorPage({ productName, error, homeHref? })` | The pages that stand in for one that cannot be shown: [below](#pages-and-navigation). |
+| `useLeaveQuestion(active, warning)` | Leaving a page that holds work asks first: `{ question, leaveFirst, holds }`, [below](#leaving-a-page). |
 | `createDrafts(prefix, storage?)` | What someone has typed but not sent, kept per person in this tab: [below](#drafts). |
 | `onlineStatus`, `createOnlineStatus(target?, now?)` | The page's one status, which the session client's requests report to, and a way to build one over a stand-in window (tests). A module's own transport reports with `onlineStatus.sending()`, `reportReachable(sent)` and `reportNetworkFailure()`. |
 | `VersionInfo({ productName })` | Which build of the module runs, from `GET /api/healthz`, read when it is shown: [below](#which-version-runs). |
@@ -195,6 +196,16 @@ The package imports no router: the module's router gives `RouteEffects` the path
 - Only a new path is a navigation: a page that writes `?run=` into the address changes its own state. The first load, and the redirect the first page sends the person on by before any page has its content, do none of it.
 - `SignInScreen`, `SignedInAgain` and the stand-in pages are ready at once. `RequireSession`'s waiting view is not.
 - `NotFoundPage` says "Sidan finns inte." at the address as it was typed, with "Till startsidan" (`homeHref`, default `/`); route it at `*`. `ErrorPage` is the router's error boundary: "Sidan kunde inte visas.", that the module may have been updated since the page was opened, "Ladda om sidan" and "Till startsidan"; the error goes to the console. It covers a page whose code cannot be fetched (a tab that was open across a release asks for files that are gone) and a page that threw. Nothing reloads by itself: a person may be in the middle of something, and a reload is theirs to choose. Both set their own title (`Sidan finns inte · <product>`), in the column of the sign-in screen.
+
+## Leaving a page
+
+`useLeaveQuestion(active, warning)` is for a page that holds work that leaving would lose (`active`). It imports no router; the template's `web/src/leave.ts` (`useLeaveGuard`) gives it React Router's blocker.
+
+- While `active`, the browser's own question (`beforeunload`) covers what no navigation of the app reaches: a reload, a closed tab, another site.
+- `leaveFirst(goOn, stay?)` asks in the page's own dialog, "Lämna sidan?" with `warning`, "Stanna kvar" (which has the focus) and "Lämna sidan": before an action that ends the work without a navigation (the template's account menu signs out through it), and for a navigation the router held (`leaveFirst(blocker.proceed, blocker.reset)`). Not `active`, it goes on at once.
+- `holds()` says, when the router asks, whether a navigation must be held: `useBlocker(({ currentLocation, nextLocation }) => leaving.holds() && currentLocation.pathname !== nextLocation.pathname)`, so a page that writes `?run=` into its address is not held.
+- An answered "Lämna sidan" lets its own way off through: neither the browser nor the router asks again while it goes on, and the hold is back if it did not leave (a sign-out that failed).
+- Render `question` once on the page. It is a native modal dialog, not closed while the login has ended: asked while signed out, it stands above the sign-in dialog.
 
 ## Drafts
 
@@ -262,4 +273,4 @@ npm run -w packages/ui build      # tsc to dist/, the stylesheets beside it, and
 npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/theme/built    # what CI's `ui` job also runs
 ```
 
-Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), drafts (`drafts`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), what a failed request says (`errors`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).
+Tests are in `packages/ui/tests/`, one file per concern: colour mode, providers, which links are the router's (`links`), navigation and the stand-in pages under React Router's data router (`route-effects`), online status and its banner (`online-status`), drafts (`drafts`), the leave question with React Router's blocker (`leave-question`), waiting (`waiting`: `LoadingShell`, `SlowWait`), code fetched when needed (`lazy`), shell, branding, theme, the session client (`session-gate`, `session-state`, `session-keepalive`, `session-user`), what a failed request says (`errors`), the README's link example, and the package itself (no router import, no CSS import from code, exact pins, every export is built).

@@ -169,7 +169,7 @@ test("Back goes to where the person left the page, and focus that is on an eleme
   await ready();
   await act(async () => frames(3));
   assert.deepEqual(scroll.calls, [0, 600], "the entry's own offset for Back");
-  assert.equal(document.activeElement, button, "focus that is on an element stays there");
+  assert.equal(document.activeElement === button, true, "focus that is on an element stays there");
 });
 
 test("a page that cannot be found says so, with the way to the start, in the frame; its title is its own", async () => {

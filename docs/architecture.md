@@ -403,7 +403,7 @@ The UI package, the template and the image:
 | Which version runs, copying | `packages/ui/src/VersionInfo.tsx`, `CopyButton.tsx` | `version-info.test.ts`, `copy-button.test.ts` |
 | Navigation and the stand-in pages | `packages/ui/src/routes.tsx` | `route-effects.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
 | Waiting, and code fetched when needed | `packages/ui/src/LoadingShell.tsx`, `SlowWait.tsx`, `lazy.tsx` | `waiting.test.ts`, `lazy.test.ts` |
-| Drafts | `packages/ui/src/drafts.ts` | `drafts.test.ts` |
+| Drafts, the leave question | `packages/ui/src/drafts.ts`, `leave-question.tsx` | `drafts.test.ts`, `leave-question.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
 | Online status and its notice | `packages/ui/src/online-status.ts`, `OfflineBanner.tsx` | `online-status.test.ts`; in a browser `template/web/tests/e2e/flow.spec.ts` |
 | The session client | `packages/ui/src/session/` | `session-gate.test.ts`, `session-state.test.ts`, `session-keepalive.test.ts`, `session-user.test.ts`, `errors.test.ts`; in a browser `template/web/tests/e2e/session-cover.spec.ts` |
 | Theme and stylesheets | `packages/ui/src/theme/eneo.theme.ts`, `layers.css`, `base.css` | `theme.test.ts`, `package.test.ts` |
