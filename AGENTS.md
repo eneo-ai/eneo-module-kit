@@ -37,7 +37,7 @@ npm run -w packages/ui theme:build && git diff --exit-code -- packages/ui/src/th
 .venv/bin/python -m unittest discover -s template/backend/tests -t template/backend
 .venv/bin/python -m unittest discover -s template/stub-eneo
 npx playwright install --with-deps chromium webkit firefox                                 # once
-npm run -w template/web test:e2e                      # builds, starts the stub and the backend, browsers and the gate
+npm run -w template/web test:e2e                      # builds, starts the stub and the backend, browsers, the gate, the production checks
 ```
 
 The browser tests start servers on `E2E_APP_PORT` (default 3011) and `E2E_STUB_PORT` (default 8011): set both when other agents run the gate too. `.venv/bin/python` at the repository root is the interpreter they use (`PYTHON` overrides it). Narrow a run with `-- --project=chromium`.

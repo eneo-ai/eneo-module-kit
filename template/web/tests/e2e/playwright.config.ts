@@ -120,6 +120,11 @@ export default defineConfig({
     { name: "tablet-landscape-webkit", testMatch: specs("a11y", "keyboard", "controls"), use: { ...touch(1024, 768), isMobile: false, ...webkit, colorScheme: "light" } },
     { name: "laptop-1440-webkit", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...webkit, colorScheme: "light" } },
     { name: "laptop-1440-firefox", testMatch: specs(...portable, "harness"), use: { ...desktop(1440, 900), ...firefox, colorScheme: "light" } },
+    // The production checks (tests/prod, `npm run test:prod`): what the backend sends with the built UI, its routes, the
+    // page's weight and a release that took away the files an open page names, in each engine.
+    { name: "prod-chromium", testDir: "../prod", use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
+    { name: "prod-webkit", testDir: "../prod", grepInvert: /@chromium/, use: { ...devices["Desktop Safari"], ...webkit, colorScheme: "light" } },
+    { name: "prod-firefox", testDir: "../prod", grepInvert: /@chromium/, use: { ...devices["Desktop Firefox"], ...firefox, colorScheme: "light" } },
   ],
   webServer: external ? undefined : servers,
 });

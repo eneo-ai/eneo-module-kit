@@ -100,9 +100,10 @@ jobs:
         working-directory: template/web
 
   template-web:
-    # The browser tests in four parts, as a module's own CI runs them (template/.github/workflows/ci.yml): the module in
-    # three browsers and the gate in Chromium (main), the tablets and a phone on its side (devices), and the gate in WebKit
-    # and in Firefox. Together the four are every project of template/web/tests/e2e/playwright.config.ts.
+    # The browser tests in five parts, as a module's own CI runs them (template/.github/workflows/ci.yml): the module in
+    # three browsers and the gate in Chromium (main), the tablets and a phone on its side (devices), the gate in WebKit
+    # and in Firefox, and the production checks in each engine (prod). Together the five are every project of
+    # template/web/tests/e2e/playwright.config.ts.
     name: template web ${{ matrix.part }} (this commit's UI and BFF)
     runs-on: ubuntu-latest
     strategy:
@@ -121,6 +122,9 @@ jobs:
           - part: firefox
             browsers: firefox
             projects: --project=laptop-1440-firefox
+          - part: prod
+            browsers: chromium webkit firefox
+            projects: --project=prod-chromium --project=prod-webkit --project=prod-firefox
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

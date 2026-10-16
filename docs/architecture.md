@@ -363,7 +363,7 @@ flowchart TB
   commit["A commit or pull request"] --> bff["bff: the suite at the lowest and the newest versions, pip-audit"]
   commit --> ui["ui: lint, tests, build, the committed theme is not stale"]
   commit --> tb["template-backend: the template's tests on this commit's BFF"]
-  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers and the gate, in four parts"]
+  commit --> tw["template-web: build on this commit's UI, serve with this commit's BFF; three browsers, the gate and the production checks, in five parts"]
   commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
   commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
   commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]
