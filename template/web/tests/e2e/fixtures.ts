@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
 
 // GATE_CPU=8 makes the main thread of each test's page that many times slower (Chromium's own throttle), so a race that
@@ -166,8 +167,36 @@ export class Sentinel {
   }
 }
 
-/** `test` with the sentinel on every page of its browser context, judged when the test ends, and GATE_CPU. */
-export const test = base.extend<{ sentinel: Sentinel; cpu: void }>({
+const STUB = Number(process.env.E2E_STUB_PORT ?? 8011);
+
+/** An address of the stub Eneo: on the app's host, which is where the browser reaches it to sign in, at its own port. */
+function stubAt(path: string) {
+  const url = new URL(path, base.info().project.use.baseURL);
+  url.port = String(STUB);
+  return url.href;
+}
+
+/**
+ * Gives `context` a scope of its own in the stub Eneo, once: a cookie that its requests send to the stub's controls and
+ * the browser sends to the stub's login (a cookie is the host's, whatever the port). What the test's controls set then
+ * holds for its own logins and calls, so that tests run at once in workers of their own (template/stub-eneo/server.py).
+ */
+async function scope(context: BrowserContext) {
+  const url = stubAt("/");
+  if ((await context.cookies(url)).some(({ name }) => name === "stub_scope")) return;
+  await context.addCookies([{ name: "stub_scope", value: randomUUID(), url, httpOnly: true, sameSite: "Lax" }]);
+}
+
+/** `test` with the sentinel on every page of its browser context, judged when the test ends, a scope of its own in the stub Eneo, and GATE_CPU. */
+export const test = base.extend<{ sentinel: Sentinel; stubScope: void; cpu: void }>({
+  // From the start, so that a control called after the sign-in still holds for that login.
+  stubScope: [
+    async ({ context }, use) => {
+      await scope(context);
+      await use();
+    },
+    { auto: true },
+  ],
   cpu: [
     async ({ page, browserName }, use, info) => {
       if (browserName !== "chromium") throw new Error("GATE_CPU slows Chromium only: run it with a Chromium project.");
@@ -192,13 +221,8 @@ export const test = base.extend<{ sentinel: Sentinel; cpu: void }>({
 
 export { expect };
 
-const STUB = Number(process.env.E2E_STUB_PORT ?? 8011);
-
-/** What the stub Eneo answers for the flow list: two flows, none, or a failure. */
-export async function stubFlows(page: Page, mode: "normal" | "empty" | "error") {
-  const response = await page.request.post(`http://127.0.0.1:${STUB}/__stub/flows?mode=${mode}`);
-  expect(response.ok()).toBe(true);
-}
+/** What the stub Eneo answers this test's flow list: two flows, none, or a failure. */
+export const stubFlows = (page: Page, mode: "normal" | "empty" | "error") => stubControl(page, `flows?mode=${mode}`);
 
 /** Signs in through the stub Eneo: the module's login, Eneo's, the callback, and back to the flows. */
 export async function signIn(page: Page) {
@@ -219,13 +243,17 @@ export const untilModal = (page: Page) =>
     })
     .toBe(true);
 
-/** A control route of the stub Eneo (template/stub-eneo/server.py). */
+/**
+ * A control route of the stub Eneo (template/stub-eneo/server.py), for the logins of the page's browser context. A context
+ * the test made itself gets its scope here, at its first control: call one before it signs in.
+ */
 export async function stubControl(page: Page, route: string) {
-  const response = await page.request.post(`http://127.0.0.1:${STUB}/__stub/${route}`);
+  await scope(page.context());
+  const response = await page.request.post(stubAt(`/__stub/${route}`));
   expect(response.ok(), `stub ${route}`).toBe(true);
 }
 
-/** The logins made from now on are the stub's defaults again: a long session, Erik Lund. */
+/** This test's logins made from now on are the stub's defaults again: a long session, Erik Lund. */
 export async function stubDefaults(page: Page) {
   await stubControl(page, "session?ends_in=reset&token_seconds=reset");
   await stubControl(page, "login-as?user=erik");
