@@ -75,7 +75,7 @@ The kit adds no guard to your routes. Declare them yourself:
 |---|---|
 | Reads | `Depends(require_session)` |
 | Writes (`POST`, `PUT`, `PATCH`, `DELETE`) | `Depends(require_session)`, `Depends(require_same_origin)` and `Depends(require_expected_user)` |
-| WebSocket | both, in `dependencies=` or as parameters. A handshake acts for the user, so it is checked like a write. |
+| WebSocket | `require_session` and `require_same_origin`, in `dependencies=` or as parameters. A handshake acts for the user, so it is checked like a write. Not `require_expected_user`: a browser cannot set a header on a handshake. |
 
 ```python
 from eneo_module_bff import require_expected_user, require_same_origin, require_session
@@ -89,7 +89,7 @@ async def add_note() -> dict[str, bool]:
 
 To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run.
 
-Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route it cannot check (a mount, a nested include) instead of passing it.
+Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route without `require_session`, a write or WebSocket without `require_same_origin`, a write without `require_expected_user`, and a route it cannot check (a mount, a nested include) instead of passing it.
 
 ## 5. Name the Eneo routes you expose
 

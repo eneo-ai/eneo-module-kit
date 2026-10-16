@@ -36,7 +36,7 @@ INTEGRATIONS:
 - `@eneo-ai/module-kit`: Read astryx docs eneo-module; start a page from eneo-module-page or eneo-signin and inspect every component prop.
 - `@eneo-ai/module-kit`: Use ModuleProviders once; ModuleShell owns navigation, the skip link and the one main region. Cap content with Layout.
 - `@eneo-ai/module-kit`: Private routes use RequireSession and fetchWithSession; close module-owned native dialogs while useSignedOut() is true.
-- `@eneo-ai/module-kit`: Backend routes require require_session; writes and WebSockets also require require_same_origin. The module owns its allowlist.
+- `@eneo-ai/module-kit`: Backend routes require require_session; writes and WebSockets also require require_same_origin, and writes require_expected_user. The module owns its allowlist.
 - `@eneo-ai/module-kit`: Use Astryx components and Eneo theme tokens; no Next.js, Tailwind, authored StyleX or ejected components.
 - `@eneo-ai/module-kit`: User-facing text is Swedish; fonts and scripts stay on the module origin. Keep 44 px touch targets and visible focus.
 - `@eneo-ai/module-kit`: Add every page state to web/tests/e2e/screens.ts and run web build and test:e2e before finishing.

@@ -10,7 +10,7 @@ from tests.guards import unguarded_routes
 
 class EveryRouteIsGuardedTests(unittest.TestCase):
     """The test a module author who forgets a guard fails: add a route to ``router`` without ``require_session``
-    (and, for a write, ``require_same_origin``) and this reports it."""
+    (and, for a write, ``require_same_origin`` and ``require_expected_user``) and this reports it."""
 
     def test_every_route_of_the_module_needs_a_session_and_a_write_needs_the_same_origin(self) -> None:
         self.assertEqual(unguarded_routes(router), [])
@@ -26,7 +26,11 @@ class EveryRouteIsGuardedTests(unittest.TestCase):
 
         self.assertEqual(
             unguarded_routes(careless),
-            ["GET /api/open: no require_session", "POST /api/write: no require_same_origin"],
+            [
+                "GET /api/open: no require_session",
+                "POST /api/write: no require_same_origin",
+                "POST /api/write: no require_expected_user",
+            ],
         )
 
 

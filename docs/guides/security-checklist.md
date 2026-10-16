@@ -49,8 +49,7 @@ Headers on every answer (`web.py`), an unhandled error's 500 too; `create_app(se
 
 Tick each before a module goes live.
 
-- [ ] Every route of the module has `Depends(require_session)`. Every write (`POST`, `PUT`, `PATCH`, `DELETE`) and every WebSocket also has `Depends(require_same_origin)`.
-- [ ] Every write of the module's own routes has `Depends(require_expected_user)` too, as the proxy has, so a page under someone else's session cannot write as them. `unguarded_routes` does not check it.
+- [ ] Every route of the module has `Depends(require_session)`. Every write (`POST`, `PUT`, `PATCH`, `DELETE`) and every WebSocket also has `Depends(require_same_origin)`, and every write has `Depends(require_expected_user)`, as the proxy has, so a page under someone else's session cannot write as them.
 - [ ] A test fails when a guard is forgotten: `unguarded_routes` (copy from `packages/bff/tests/test_deps.py`) returns `[]` for the module's routers.
 - [ ] A route that is public on purpose is rare and written down. It still gets the body cap and nothing else: it must never return session, token or Eneo data.
 - [ ] A deployment accent is loaded through the kit's validated configuration and same-origin stylesheet. Do not interpolate unchecked colour input into CSS. See [K10](../decisions/k10-branding-without-templating.md).

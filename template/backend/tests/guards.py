@@ -4,7 +4,7 @@ forgotten on the routes of a router."""
 from fastapi import APIRouter
 from fastapi.routing import APIRoute, APIWebSocketRoute
 
-from eneo_module_bff import require_same_origin, require_session
+from eneo_module_bff import require_expected_user, require_same_origin, require_session
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -20,8 +20,9 @@ def dependency_calls(dependant) -> set:
 
 def unguarded_routes(*routers: APIRouter) -> list[str]:
     """Every route needs ``require_session``. A route that writes, and every WebSocket route (a handshake acts for the
-    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route this cannot
-    check (a mount, a raw route, a nested include) is reported, never passed over.
+    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route that writes
+    also needs ``require_expected_user``; a WebSocket route does not (a browser cannot name its user on a handshake).
+    A route this cannot check (a mount, a raw route, a nested include) is reported, never passed over.
 
     It walks the module's routers, not ``app.routes``: FastAPI keeps an included router as one object there.
     """
@@ -29,9 +30,9 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
     for router in routers:
         for route in router.routes:
             if isinstance(route, APIWebSocketRoute):
-                label, writes = f"WebSocket {route.path}", True
+                label, writes, socket = f"WebSocket {route.path}", True, True
             elif isinstance(route, APIRoute):
-                label, writes = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS)
+                label, writes, socket = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS), False
             else:
                 problems.append(f"{getattr(route, 'path', '?')}: a {type(route).__name__} cannot be checked")
                 continue
@@ -40,4 +41,6 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
                 problems.append(f"{label}: no require_session")
             if writes and require_same_origin not in calls:
                 problems.append(f"{label}: no require_same_origin")
+            if writes and not socket and require_expected_user not in calls:
+                problems.append(f"{label}: no require_expected_user")
     return problems

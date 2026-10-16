@@ -79,8 +79,9 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
     """What a module author may have forgotten on the routes of ``routers``.
 
     Every route needs ``require_session``. A route that writes, and every WebSocket route (a handshake acts for the
-    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route this
-    cannot check (a mount, a raw route, a nested include) is reported, never passed over.
+    user too, and ``APIWebSocketRoute`` has no ``.methods``), also needs ``require_same_origin``. A route that writes
+    also needs ``require_expected_user``; a WebSocket route does not (a browser cannot name its user on a handshake).
+    A route this cannot check (a mount, a raw route, a nested include) is reported, never passed over.
 
     It walks the module's routers, not ``app.routes``: FastAPI keeps an included router as one object there.
     The template's test (Phase 3) reuses it.
@@ -89,9 +90,9 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
     for router in routers:
         for route in router.routes:
             if isinstance(route, APIWebSocketRoute):
-                label, writes = f"WebSocket {route.path}", True
+                label, writes, socket = f"WebSocket {route.path}", True, True
             elif isinstance(route, APIRoute):
-                label, writes = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS)
+                label, writes, socket = f"{', '.join(sorted(route.methods - {'HEAD'}))} {route.path}", bool(route.methods & WRITE_METHODS), False
             else:
                 problems.append(f"{getattr(route, 'path', '?')}: a {type(route).__name__} cannot be checked")
                 continue
@@ -100,6 +101,8 @@ def unguarded_routes(*routers: APIRouter) -> list[str]:
                 problems.append(f"{label}: no require_session")
             if writes and require_same_origin not in calls:
                 problems.append(f"{label}: no require_same_origin")
+            if writes and not socket and require_expected_user not in calls:
+                problems.append(f"{label}: no require_expected_user")
     return problems
 
 
@@ -120,9 +123,14 @@ class RouteWalkerTests(unittest.TestCase):
         @router.get("/api/by-its-own-dependency", dependencies=[Depends(module_dependency)])
         async def by_its_own_dependency() -> None: ...
 
-        @router.post("/api/write", dependencies=[Depends(require_session), Depends(require_same_origin)])
+        @router.post("/api/write", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
         async def write() -> None: ...
 
+        # require_expected_user runs require_session itself.
+        @router.patch("/api/write-by-the-user", dependencies=[Depends(require_same_origin), Depends(require_expected_user)])
+        async def write_by_the_user() -> None: ...
+
+        # A browser cannot name its user on a handshake: a socket needs no require_expected_user.
         @router.websocket("/api/socket", dependencies=[Depends(require_same_origin)])
         async def socket(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
 
@@ -134,8 +142,11 @@ class RouteWalkerTests(unittest.TestCase):
         @router.get("/api/open")
         async def open_route() -> None: ...
 
-        @router.delete("/api/write-without-origin", dependencies=[Depends(require_session)])
+        @router.delete("/api/write-without-origin", dependencies=[Depends(require_session), Depends(require_expected_user)])
         async def write_without_origin() -> None: ...
+
+        @router.put("/api/write-without-user", dependencies=[Depends(require_session), Depends(require_same_origin)])
+        async def write_without_user() -> None: ...
 
         @router.websocket("/api/socket-without-origin")
         async def socket_without_origin(websocket: WebSocket, _: ModuleSession = Depends(require_session)) -> None: ...
@@ -148,6 +159,7 @@ class RouteWalkerTests(unittest.TestCase):
             [
                 "GET /api/open: no require_session",
                 "DELETE /api/write-without-origin: no require_same_origin",
+                "PUT /api/write-without-user: no require_expected_user",
                 "WebSocket /api/socket-without-origin: no require_same_origin",
                 "WebSocket /socket-without-session: no require_session",
             ],
