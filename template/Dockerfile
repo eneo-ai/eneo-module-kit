@@ -12,8 +12,9 @@
 #   docker build --build-context kit=kit-context -t template template
 FROM scratch AS kit
 
-# ---- the UI, built to static files, from web/package-lock.json (npm ci). Before the kit's first release the lock finds
+# ---- the UI, built to static files, from web/package-lock.json (npm ci). As the template ships, the lock finds
 # @eneo-ai/module-kit in web/vendor/ (see web/vendor/README.md): given a `kit` context, the packed UI package is put there.
+# A lock that names the kit's release tarball by its address needs neither.
 FROM node:22.23.3-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS web
 WORKDIR /app/web
 COPY web/ ./
@@ -28,7 +29,7 @@ RUN --mount=from=kit,target=/kit \
     npm run build
 
 # ---- the backend's packages: what the kit's BFF depends on, locked with hashes (backend/requirements.lock), then the BFF
-# itself (git is only here: it is pinned to a commit of the kit until its first release)
+# itself (git is only here: as the template ships, it is pinned to a commit of the kit)
 FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS python-packages
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.lock backend/requirements.txt /

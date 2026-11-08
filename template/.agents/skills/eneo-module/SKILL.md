@@ -14,9 +14,9 @@ the rules and linked guides remain the technical reference.
 
 Start from the copied template, including its dotfiles. Read the kit's
 [new-module guide](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md)
-for package installation and local startup. Check whether the package versions are released:
-before the first release, use the documented tarball and BFF package path rather than
-retrying a registry install or rewriting the lock by hand.
+for package installation and local startup. The packages are not on npm or PyPI yet: install
+them as its "Where the packages come from" says (the kit's GitHub release, or a kit checkout as
+the template ships) rather than retrying a registry install or rewriting the lock by hand.
 
 Set the product name in `web/src/config.ts`, the browser title and the `<noscript>` text in `web/index.html`, the icons in `web/public/`,
 the drafts' prefix in `web/src/drafts.ts`, and the API title in `backend/main.py`. Copy `.env.example` to `.env` only if no `.env`

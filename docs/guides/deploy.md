@@ -4,7 +4,7 @@ Purpose: take a module made from the template from a commit to a running deploym
 Read this when: you release, deploy or upgrade a module, put a proxy in front of one, update a pinned action or image, or someone asks which version runs.
 Related: [new module](new-module.md) (CI and the image), [configuration](configuration.md), [security checklist](security-checklist.md), [K18](../decisions/k18-a-release-promotes-the-tested-image.md), `template/.github/workflows/`, `template/docker-compose.yml`, `template/docker-compose.traefik.yml`.
 
-A module is one image and one process on port 3001, speaking plain HTTP: TLS ends in front of it. The template ships the whole path below (built). Until the kit's first release a module's CI cannot install `@eneo-ai/module-kit` (the packed tarball in `web/vendor/` is not committed), so the path runs for a module from that release on ([new module](new-module.md#before-the-first-release)).
+A module is one image and one process on port 3001, speaking plain HTTP: TLS ends in front of it. The template ships the whole path below (built). As the template ships, a module's CI cannot install `@eneo-ai/module-kit` (its lock looks for the packed tarball in `web/vendor/`, which is not committed), so the path runs for a module that installs the packages from the kit's release ([new module](new-module.md#where-the-packages-come-from)).
 
 ## From a commit to a release
 

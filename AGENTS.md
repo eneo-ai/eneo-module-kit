@@ -1,6 +1,6 @@
 # Agent instructions: eneo-module-kit
 
-The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package includes its Astryx integration, and the first release is pending. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
+The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package includes its Astryx integration. Version 0.1.0 is released as GitHub release assets; publishing to npm and PyPI is pending. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
 
 ## Directory map
 

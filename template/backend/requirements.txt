@@ -4,13 +4,18 @@
 #   pip install --no-deps -r requirements.txt
 #
 # Docker, CI and the devcontainer install this file after the lock, so it stays: it is where the BFF's version is pinned.
-# Until the kit's first release the BFF is pinned to a commit of the kit: replace <full sha> with the one you start from.
-# After the release the line below is `eneo-module-bff==x.y.z`.
+# As the template ships, the BFF is pinned to a commit of the kit: replace <full sha> with the one you start from. To
+# install the wheel of the kit's GitHub release instead, the line below is its address with its hash, as the kit's guide
+# says:
+#   https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md#where-the-packages-come-from
+# The BFF is not on PyPI yet; once it is, the line is `eneo-module-bff==x.y.z`.
 #
-# requirements.lock is generated, not edited. Before the release, from the root of the kit repository (the command is also
-# in the lock's header; --exclude-newer fixes the index's state, so the same command gives the same file):
+# requirements.lock is generated, not edited. While the BFF comes from the kit, from the root of the kit repository (the
+# command is also in the lock's header; --exclude-newer fixes the index's state, so the same command gives the same
+# file):
 #   uv pip compile packages/bff/pyproject.toml --python-version 3.12 --universal --generate-hashes \
 #     --exclude-newer <date> -o template/backend/requirements.lock
-# After the release, in the module: list `eneo-module-bff==x.y.z` and the module's own packages in requirements.in and run
+# Once the BFF is on PyPI, in the module: list `eneo-module-bff==x.y.z` and the module's own packages in requirements.in
+# and run
 #   uv pip compile requirements.in --python-version 3.12 --universal --generate-hashes -o requirements.lock
 eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff

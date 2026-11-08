@@ -1,5 +1,6 @@
-// Before the kit's first release: regenerates package-lock.json against the packed UI package, so `npm ci` has a lock to
-// install from (see vendor/README.md). After the release the package is in the registry, and `npm install` does this.
+// While the template installs the packed UI package of a kit checkout: regenerates package-lock.json against it, so
+// `npm ci` has a lock to install from (see vendor/README.md). A module that installs the kit's release tarball by its
+// address needs neither this nor vendor/: `npm install` keeps its lock.
 //
 //   node scripts/relock.mjs /path/to/eneo-ai-module-kit-0.1.0.tgz
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

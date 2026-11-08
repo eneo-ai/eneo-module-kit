@@ -8,13 +8,22 @@ Related: [configuration](configuration.md), [local development](local-developmen
 
 ## 1. Install the package
 
-`eneo-module-bff` is not on a package index yet (version 0.1.0 is unreleased). From a checkout of this repository:
+Version 0.1.0 of `eneo-module-bff` is released as an asset of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0), beside its sdist and `SHA256SUMS`; it is not on PyPI yet. Pin the wheel by its address and its hash, the wheel's line in `SHA256SUMS`:
 
-```bash
-pip install -e /path/to/eneo-module-kit/packages/bff
+```text
+# requirements.txt
+eneo-module-bff @ https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo_module_bff-0.1.0-py3-none-any.whl \
+    --hash=sha256:<the wheel's sum in SHA256SUMS>
 ```
 
-Python 3.12 or newer. Its dependencies are ranges with security floors, not pins (`packages/bff/pyproject.toml`): pin and lock them in your module's own requirements. Until the first release a module is expected to pin the package to a commit of this repository (see [design.md](../design.md) section 7).
+```bash
+pip install --require-hashes --no-deps -r requirements.lock   # its dependencies, locked with their hashes
+pip install --no-deps -r requirements.txt
+```
+
+Or, from a checkout of this repository: `pip install -e /path/to/eneo-module-kit/packages/bff`.
+
+Python 3.12 or newer. Its dependencies are ranges with security floors, not pins (`packages/bff/pyproject.toml`): pin and lock them in your module's own requirements (the template's `backend/requirements.lock` is that lock).
 
 ## 2. Write `main.py`
 

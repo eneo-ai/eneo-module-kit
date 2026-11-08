@@ -4,7 +4,7 @@ Purpose: describe changes in the two packages a module installs.
 Read this when: choosing or upgrading a package version.
 Related: [README](README.md), [new module](docs/guides/new-module.md), [UI package](packages/ui/README.md), [BFF package](packages/bff/README.md).
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-11-08
 
 - `eneo-module-bff`: the Eneo SSO handoff, server-side sessions and renewal, a deny-by-default proxy, guarded transport helpers, bounded uploads and signed-file streams, shared heavy-I/O admission, branding and static UI serving.
 - Deployment accent settings validate contrast against the Eneo theme and derive a dark-mode colour when omitted. The template loads their same-origin stylesheet from the BFF before themed content appears; no custom theme or inline script is needed.
@@ -21,4 +21,4 @@ Related: [README](README.md), [new module](docs/guides/new-module.md), [UI packa
 - The template's browser tests run in two workers: each test has a scope of its own in the stub Eneo, so one that ends its login ends no other's. CI runs them in shards. Its build writes a `.br` and a `.gz` beside each asset; `npm test` runs its unit tests and guards (no network call outside `src/session.ts`, none in a unit test); `npm run test:prod` checks what the backend sends with the built UI: headers, caching, compression, routes, page weight, a release that took away an open page's files.
 - The template's CI builds its image once, runs it as the compose file does and publishes it as `sha-<commit>` after every job passed; a tag `vX.Y.Z` gives that image its version without rebuilding it and creates the GitHub Release. Its production compose file runs the image read-only, without capabilities, chosen by `MODULE_VERSION`, and a Traefik overlay adds HTTPS, HSTS and a read timeout for uploads. The account menu's Version opens the build's details in a dialog.
 
-Both packages use AGPL-3.0-only. Their 0.x APIs remain provisional until a second module has used them. Registry publication and release tags are pending; use the packed UI package and built BFF wheel for local acceptance.
+Both packages use AGPL-3.0-only. Their 0.x APIs remain provisional until a second module has used them. 0.1.0 is released as assets of the GitHub release `v0.1.0`, built by CI from the tagged commit: the UI package's tarball, the BFF's wheel and sdist, and `SHA256SUMS`. Publishing to npm and PyPI is pending. Install them by their address: [the BFF](https://github.com/eneo-ai/eneo-module-kit/blob/v0.1.0/docs/guides/build-a-module.md#1-install-the-package), with the wheel's hash, and [the UI package](https://github.com/eneo-ai/eneo-module-kit/blob/v0.1.0/docs/guides/ui-package.md#install).

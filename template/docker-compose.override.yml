@@ -1,7 +1,8 @@
 # Merged by `docker compose up`, for development: the image is built from this folder, port 3001 is published, and a stub
 # Eneo runs beside the module (.env.example's values work with it as they are). Dokploy and a plain host run
-# docker-compose.yml alone, so this file is not used there. Before the kit's first release the image is built with the
-# kit's packages and tagged eneo-module:local instead (README.md).
+# docker-compose.yml alone, so this file is not used there. As the template ships, the image is built with the packages
+# of a kit checkout and tagged eneo-module:local instead (README.md); with both packages from the kit's GitHub release,
+# `docker compose up --build` builds it.
 services:
   module:
     # A name of its own: a pulled release is never mistaken for a local build.

@@ -69,7 +69,7 @@ jobs:
         with:
           python-version: "3.12"
       # What the template installs: its locked third-party packages, with hashes, and the BFF, which it pins to a commit
-      # until its first release; here the workspace copy stands in for that pin.
+      # until it moves to the release's pins; here the workspace copy stands in for that pin.
       - run: pip install --require-hashes --no-deps -r template/backend/requirements.lock
       - run: pip install --no-deps -e packages/bff
       - run: python -m unittest discover -s template/backend/tests -t template/backend
