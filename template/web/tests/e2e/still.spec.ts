@@ -7,11 +7,11 @@
  * first draw, or it moves what a finger is on its way to and what an eye is reading.
  *
  * The clock does not decide the result. The answers come in the page's own order, each is whole before it is handed
- * over, the page is measured when its document has stopped changing, and nothing is pressed: a fast machine and a slow
- * one take the same steps. A page reached by a press is not here, because the press and the answers would race; what
- * a press sets in motion gets a test of its own that holds one answer. What is animating is measured when it rests.
- * Code the page fetches when it first needs it (a lazily imported part) is waited for before the next answer is handed
- * over, so its arrival belongs to the step that asked for it.
+ * over, the page is measured once the answer has reached it and its document has stopped changing, and nothing is
+ * pressed: a fast machine and a slow one take the same steps. A page reached by a press is not here, because the press
+ * and the answers would race; what a press sets in motion gets a test of its own that holds one answer. What is
+ * animating is measured when it rests. Code the page fetches when it first needs it (a lazily imported part) is waited
+ * for before the next answer is handed over, so its arrival belongs to the step that asked for it.
  *
  * A state is first reached as the gate reaches it (screens.ts), which leaves the stub Eneo and the login as the page
  * needs them; signing in is a press on the sign-in page, a document of its own. Then the page's address is opened
@@ -20,7 +20,7 @@
  * Adapted from speech-to-text's gate (`eneo-ai/eneo-mod-speech-to-text` at commit `194ae4c`): known debt, to become a
  * package export when a second module needs it.
  */
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Request, Response } from "@playwright/test";
 import { expect, stubFlows, test } from "./fixtures";
 import { STATES } from "./screens";
 
@@ -173,7 +173,12 @@ for (const [name, shown] of Object.entries(BY_ADDRESS)) {
     const address = page.url();
 
     // The answers, in the order the page asked for them.
-    const asked: { path: string; fetched: Promise<void>; hand: () => void }[] = [];
+    // `delivered`: the answer has reached the page (its response has: fetch resolves then, and the route sends the body
+    // whole with it), or the request failed, or the page dropped it before it was sent (its route is then handled).
+    // Handing an answer over only lets the route send it, which takes its own time, so what the answer changes is
+    // measured once it has reached the page, not before. Not when the request finishes: a body the page never reads (of
+    // a 500 it only counts) may never finish.
+    const asked: { path: string; fetched: Promise<void>; hand: () => void; delivered: Promise<void> }[] = [];
     await page.route(/\/api\//, async (route) => {
       const request = route.request();
       // What the page reads itself. A style sheet and a picture are the browser's own reads.
@@ -181,9 +186,15 @@ for (const [name, shown] of Object.entries(BY_ADDRESS)) {
       let hand!: () => void;
       const handed = new Promise<void>((resolve) => (hand = resolve));
       const response = route.fetch().catch(() => null);
-      asked.push({ path: `${request.method()} ${new URL(request.url()).pathname}`, fetched: response.then(() => undefined), hand });
+      let deliver!: () => void;
+      const delivered = new Promise<void>((resolve) => (deliver = resolve));
+      const reached = (answered: Response) => void (answered.request() === request && deliver());
+      const failed = (failing: Request) => void (failing === request && deliver());
+      page.on("response", reached).on("requestfailed", failed);
+      void delivered.then(() => page.off("response", reached).off("requestfailed", failed));
+      asked.push({ path: `${request.method()} ${new URL(request.url()).pathname}`, fetched: response.then(() => undefined), hand, delivered });
       const [answer] = await Promise.all([response, handed]);
-      await (answer ? route.fulfill({ response: answer }) : route.fallback()).catch(() => undefined);
+      await (answer ? route.fulfill({ response: answer }) : route.fallback()).catch(deliver);
     });
 
     // Code on its way to the page: nothing is measured, and no answer handed over, until it has arrived and the
@@ -243,6 +254,7 @@ for (const [name, shown] of Object.entries(BY_ADDRESS)) {
         compare(await look(), "by itself, between two answers");
         answer.hand();
         answers.push(answer.path);
+        await answer.delivered;
         compare(await look(), `when ${answer.path} answered`);
       } else if (!arrived) await page.waitForTimeout(20);
       else {

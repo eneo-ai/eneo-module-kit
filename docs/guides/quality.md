@@ -204,7 +204,7 @@ Error: what moved on screen when no one pressed anything
 |---|---|
 | What is measured | Every control (links, buttons, fields, the interactive roles), every picture (`img`, `svg`, `video`, `canvas`) and every element that holds words of its own, whatever its tag. A move is 4 px or more |
 | What is not | Words kept for a screen reader only (a box of one pixel) |
-| Why the machine's speed does not decide | Each answer is fetched whole before it is handed over, in the page's own order, and a measurement waits until the document has stopped changing and no script is on its way. Nothing is pressed |
+| Why the machine's speed does not decide | Each answer is fetched whole before it is handed over, in the page's own order, and a measurement waits until the answer has reached the page, the document has stopped changing and no script is on its way. Nothing is pressed |
 | A new page | Its states go in `web/tests/e2e/screens.ts`; a state that is the page as it opens also goes in `BY_ADDRESS` of the spec, with what shows that the page is drawn |
 | A state reached by a press | Not in `BY_ADDRESS`: the spec fails it with `this state is reached by a press on its page`, because a press and the answers race. Give it a test of its own that holds one answer with `page.route` |
 | A move that is left for now | One line in `KNOWN` of the spec: the page, the layout, the answer and the reason. It must still happen: when the page stands still, the line fails the test until it is taken out |
