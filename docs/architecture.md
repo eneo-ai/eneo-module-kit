@@ -10,12 +10,12 @@ Every claim about code names the file, never a line. If a diagram and the code d
 
 | Part | Path | Status |
 |---|---|---|
-| BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, not released. |
-| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, not released. Includes the Astryx reference templates, topic and agent guidance. |
+| BFF package `eneo-module-bff` | `packages/bff/` | Built and tested. Version 0.1.0, released as a GitHub release asset; not on PyPI yet. |
+| UI package `@eneo-ai/module-kit` | `packages/ui/` | Built and tested: theme, colour mode, providers, page shell, brand, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out). Version 0.1.0, released as a GitHub release asset; not on npm yet. Includes the Astryx reference templates, topic and agent guidance. |
 | Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose files, module CI that publishes the tested image and releases it by tag, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
-The first release of both packages is planned. Until then neither is published, and a module installs them from a checkout of this repository ([new module](guides/new-module.md#before-the-first-release)).
+Version 0.1.0 of both packages is released as assets of the GitHub release `v0.1.0`, which `.github/workflows/release.yml` builds from the tagged commit; publishing to npm and PyPI is pending. The template still installs the packages of a commit of this repository ([new module](guides/new-module.md#where-the-packages-come-from)).
 
 ## Parts and package structure
 
@@ -314,7 +314,7 @@ flowchart LR
     web["Stage web: node 22, npm ci from web/package-lock.json, npm run build, giving web/dist with a .br and a .gz beside each script and stylesheet"]
     pkgs["Stage python-packages: pip install with hashes from requirements.lock, then the BFF"]
   end
-  kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"until the release"| web
+  kit["Build context kit: packed UI package, put in web/vendor/, and a copy of the BFF"] -.->|"in the kit's CI, or from a checkout"| web
   kit -.-> pkgs
   web --> run["Runtime: python 3.12 slim, user uid 10001, no Node"]
   pkgs --> run
@@ -368,10 +368,12 @@ flowchart TB
   commit --> tu["template-unit: the template's unit tests and the rules its code keeps"]
   commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
   commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
-  commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]
+  commit --> wf["workflows: actionlint on the kit's two workflows and the two a module ships"]
 ```
 
 Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
+
+A tag `vX.Y.Z` runs `.github/workflows/release.yml`, in two jobs. `build`, with a token that can only read, fails unless the tag is the version of both packages, builds the UI package's tarball (`npm pack`) and the BFF's wheel and sdist (`uv build`, in a build environment locked with hashes: `packages/bff/build-constraints.txt`) from the tagged commit, runs the UI package's suite and the BFF's on that wheel, and writes `SHA256SUMS` and the notes, the CHANGELOG's section for the version. `release` is the only job whose token can write (`contents: write`): it checks nothing out and runs no code of a dependency, and creates the GitHub release for the tag from the assets and notes `build` handed over. Nothing goes to npm or PyPI yet.
 
 ## Where each fact lives
 

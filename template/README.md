@@ -6,7 +6,8 @@ and `@eneo-ai/module-kit` gives the theme, colour mode, shell and brand. One pro
 
 A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
 
-- **Try it before the first release** (the packages are not published yet, so a plain `docker build` fails). From the root of
+- **Try it from a kit checkout.** As it ships, the template installs the packages of a checkout of the kit (its BFF pin is a
+  placeholder, and its lock looks for the UI package in `web/vendor/`), so a plain `docker build` fails. From the root of
   the kit repository, build the image with the packages of that checkout, then start it with the stub Eneo:
   ```bash
   npm ci && npm run -w packages/ui build && mkdir kit-context
@@ -14,7 +15,8 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   docker build --build-context kit=kit-context -t eneo-module:local template
   cd template && cp .env.example .env && docker compose up      # then open http://localhost:3001
   ```
-  After the release, in a module's own folder: `cp .env.example .env && docker compose up --build`. `docker compose up` merges
+  A module that installs both packages from the kit's GitHub release instead ([where the packages come from](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md#where-the-packages-come-from))
+  runs `cp .env.example .env && docker compose up --build` in its own folder. `docker compose up` merges
   `docker-compose.override.yml` (the local build, port 3001, the stub Eneo); production runs `docker-compose.yml` alone.
 - **Start a module:** copy this folder, rename it, set `PRODUCT_NAME` in `web/src/config.ts`, `<title>` and `<noscript>` in `web/index.html`, the icons in `web/public/`, the drafts' prefix in `web/src/drafts.ts`, and
   the image's name in `docker-compose.yml` to `ghcr.io/<owner>/<repository>` of the module's repository (CI checks it).
@@ -26,8 +28,9 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
 - **Test:** `python -m unittest discover -s backend/tests -t backend`; in `web/`: `npm test` (unit tests and the code's rules),
   `npm run test:e2e` (browsers, the accessibility gate and the production checks; builds first), or `npm run test:prod` for the
   production checks alone. If you set `PYTHON` for them, give an absolute path to a python that has `eneo-module-bff`.
-- **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. Before the
-  release `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README).
+- **Locks:** `web/package-lock.json` and `backend/requirements.lock` pin everything, and `npm ci` and the image use them. As the
+  template ships, `npm ci` in `web/` needs the packed UI package in `web/vendor/` (see its README); a module that installs the
+  release's tarball by its address does not ([where the packages come from](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md#where-the-packages-come-from)).
 - **Release and deploy:** CI (`.github/workflows/ci.yml`) builds the image once and, on main, publishes it as `sha-<commit>` after
   every job passed; `git tag vX.Y.Z && git push origin vX.Y.Z` on a commit CI passed gives that image its version without
   rebuilding it (`release.yml`). `docker-compose.yml` runs it, chosen by `MODULE_VERSION`, read-only;

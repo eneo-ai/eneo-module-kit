@@ -5,7 +5,7 @@
  * fails every other one, and a declared one that does not happen.
  */
 import { expect, type Page } from "@playwright/test";
-import { declare, signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
+import { declare, goOffline, signIn, stubControl, stubDefaults, stubFlows } from "./fixtures";
 
 export interface State {
   name: string;
@@ -107,7 +107,7 @@ export const STATES: State[] = [
     go: async (page) => {
       await stubFlows(page, "normal");
       await signIn(page);
-      await page.context().setOffline(true);
+      await goOffline(page);
       await expect(page.getByRole("alert").filter({ hasText: "Ingen anslutning." })).toBeVisible();
     },
   },

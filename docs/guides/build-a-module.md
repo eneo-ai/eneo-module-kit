@@ -8,13 +8,22 @@ Related: [configuration](configuration.md), [local development](local-developmen
 
 ## 1. Install the package
 
-`eneo-module-bff` is not on a package index yet (version 0.1.0 is unreleased). From a checkout of this repository:
+Version 0.1.0 of `eneo-module-bff` is released as an asset of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0), beside its sdist and `SHA256SUMS`; it is not on PyPI yet. Pin the wheel by its address and its hash, the wheel's line in `SHA256SUMS`:
 
-```bash
-pip install -e /path/to/eneo-module-kit/packages/bff
+```text
+# requirements.txt
+eneo-module-bff @ https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo_module_bff-0.1.0-py3-none-any.whl \
+    --hash=sha256:<the wheel's sum in SHA256SUMS>
 ```
 
-Python 3.12 or newer. Its dependencies are ranges with security floors, not pins (`packages/bff/pyproject.toml`): pin and lock them in your module's own requirements. Until the first release a module is expected to pin the package to a commit of this repository (see [design.md](../design.md) section 7).
+```bash
+pip install --require-hashes --no-deps -r requirements.lock   # its dependencies, locked with their hashes
+pip install --no-deps -r requirements.txt
+```
+
+Or, from a checkout of this repository: `pip install -e /path/to/eneo-module-kit/packages/bff`.
+
+Python 3.12 or newer. Its dependencies are ranges with security floors, not pins (`packages/bff/pyproject.toml`): pin and lock them in your module's own requirements (the template's `backend/requirements.lock` is that lock).
 
 ## 2. Write `main.py`
 
@@ -108,6 +117,7 @@ proxy_rules = [
 - The pattern is matched with `fullmatch`, and a trailing slash counts: `flows/` and `flows` are different paths.
 - A path with a `.` or `..` segment (written or percent-encoded), `?`, `#`, a control character or a backslash is refused before any rule is tried. What a rule matched is sent to Eneo encoded as that one path (a literal `%` in an id is sent as `%25`), so an id can never become a separator upstream.
 - A forwarded header whose value is not ASCII is a 400, and a URL longer than the HTTP client writes (65,536 characters once the path is encoded for Eneo) is a 414, on the proxy, uploads and file streams: Eneo hears nothing of either.
+- Never allow a route that mints a signed URL (or answers with any other bearer credential): the body of a proxied answer reaches the browser as Eneo wrote it. A signed file URL belongs to `stream_signed` (section 7), which mints it, keeps it in the session and streams the file, so the URL never leaves the module.
 - The proxy forwards `GET`, `POST` and `PATCH`, the query string, and a body of at most `MAX_BODY_BYTES`. A different method is not routed. A write must name the session's user in `X-Expected-User` (409 `user_changed` otherwise), which never reaches Eneo.
 - Of the browser's request headers only `Accept`, `Accept-Language`, `Content-Type`, `Idempotency-Key`, `If-Match` and `If-None-Match` reach Eneo. Add more with `create_app(forward_request_headers=["X-Thing"])`. A credential or framing header (`Authorization`, `Cookie`, `Origin`, `Referer`, `X-API-Key`, `Proxy-Authorization`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Upgrade`) is a `ValueError` when the app is built. The service key and the module-user token are always set by the module, whatever the browser sent.
 - Eneo's `Set-Cookie` and `Location` never reach the browser, nor its `Content-Security-Policy` (and its report-only form), `X-Frame-Options`, `Permissions-Policy`, `Referrer-Policy`, `Cache-Control`, `Strict-Transport-Security`, `Clear-Site-Data`, `X-Content-Type-Options` and the CORS headers (`Access-Control-Allow-*`, `Access-Control-Expose-Headers`): a proxied answer carries the module's security headers and `Cache-Control: no-store`. An answer from Eneo with 301, 302, 303, 307 or 308 is a 502 `upstream_redirect`: the module follows none.

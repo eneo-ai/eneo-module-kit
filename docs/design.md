@@ -4,7 +4,7 @@ Purpose: the long-form design record: the module contract with Eneo, the decisio
 Read this when: you need the full reasoning or the contract text. For one decision, start from [decisions](decisions/README.md).
 Related: [decisions](decisions/README.md) (one short page each, K1 to K14), [architecture](architecture.md), [docs index](README.md), [README](../README.md).
 
-Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The UI package includes its Astryx integration; the first release is pending. Where this page and the code disagree, the code wins.
+Design record, 2026-10-01. Status: the BFF (`packages/bff`), the UI package (`packages/ui`) and the template (`template/`) described here are built. The UI package includes its Astryx integration; version 0.1.0 is released as GitHub release assets, and publishing to npm and PyPI is pending. Where this page and the code disagree, the code wins.
 
 The kit is extracted from the first module, `eneo-ai/eneo-mod-speech-to-text` ("speech-to-text" below). The wider
 design, including why speech-to-text moves to Astryx and to a one-process runtime, is in that repository under
@@ -215,8 +215,8 @@ The UI package's session client depends on four things in this surface:
 
 | Setting | Decision or remaining check |
 |---|---|
-| Package distribution | Public: npm `@eneo-ai/module-kit` and PyPI `eneo-module-bff`. Until the first release the template pins the BFF to a commit. |
-| Does `eneo-ai` own the `@eneo-ai` scope on npm? | To be checked before the first release. |
+| Package distribution | Public: npm `@eneo-ai/module-kit` and PyPI `eneo-module-bff`. Until both are set up, a release's packages are assets of its GitHub release (0.1.0: the UI package's tarball, the BFF's wheel and sdist, `SHA256SUMS`), built by `.github/workflows/release.yml` from the tagged commit. The template pins the BFF to a commit and the UI package to a packed tarball until it moves to the release's pins. |
+| Does `eneo-ai` own the `@eneo-ai` scope on npm, and the `eneo-module-bff` project on PyPI? | Not yet: neither exists. Set up before the first registry publish. |
 | Licence | AGPL-3.0-only, the same licence as Eneo; see [LICENSE](../LICENSE). A module copied from the template uses the same licence. |
 | Router for the template? | `react-router`, library mode. The UI package does not depend on it. |
 

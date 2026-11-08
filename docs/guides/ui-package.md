@@ -4,11 +4,17 @@ Purpose: say how a module installs `@eneo-ai/module-kit`, wires it up, and what 
 Read this when: you build a module's pages, change the colour mode, the page shell or the brand lockup, or touch the theme.
 Related: [new module](new-module.md), [architecture](../architecture.md#the-ui-app-and-its-layers), [decisions K9](../decisions/k09-colour-mode-in-the-ui-package.md), [K10](../decisions/k10-branding-without-templating.md), [K11](../decisions/k11-astryx-pinned.md), [package README](../../packages/ui/README.md), [BFF README](../../packages/bff/README.md).
 
-`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, not released) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those, the Astryx integration, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out).
+`@eneo-ai/module-kit` (`packages/ui`, version 0.1.0, released as a GitHub release asset; not on npm yet) is the UI half of a module, for a static Vite + React app: the Eneo theme for [Astryx](https://astryx.atmeta.com), the colour mode, the providers a page needs, the page shell and the brand lockup. It imports nothing from a router or a meta-framework (a test pins this). Built: those, the Astryx integration, and the session client (`@eneo-ai/module-kit/session`: the gate, the sign-in screen, the warning before the login ends, the cover while signed out).
 
 ## Install
 
-The package is not on npm yet. Pack it from a checkout of this repository:
+Version 0.1.0 is released as an asset of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0); it is not on npm yet. Install the release's tarball by its address, in the module's `web/` folder: `package.json` then names the address, and the lock keeps it with the tarball's hash.
+
+```bash
+npm install https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo-ai-module-kit-0.1.0.tgz
+```
+
+Or pack it from a checkout of this repository:
 
 ```bash
 # in the kit checkout
@@ -17,8 +23,8 @@ npm run -w packages/ui build
 npm pack -w packages/ui --pack-destination /path/to/dir      # writes eneo-ai-module-kit-0.1.0.tgz
 ```
 
-- **A module made from the template** puts the tarball in `web/vendor/` and runs `npm ci`: the template's `web/package-lock.json` already says the package is found there, and every other package is locked with its hash. After a change of a dependency, `node scripts/relock.mjs <tarball>` regenerates the lock. Not `npm install <tarball>`: it rewrites `package.json` and the lock to a `file:` path. [New module](new-module.md#2-install-the-packages) has the steps.
-- **Any other app** installs the tarball: `npm install /path/to/dir/eneo-ai-module-kit-0.1.0.tgz`.
+- **A module made from the template**, until the template moves to the release's tarball, puts the packed tarball in `web/vendor/` and runs `npm ci`: the template's `web/package-lock.json` already says the package is found there, and every other package is locked with its hash. After a change of a dependency, `node scripts/relock.mjs <tarball>` regenerates the lock. Not `npm install <tarball>`: it rewrites `package.json` and the lock to a `file:` path. [New module](new-module.md#2-install-the-packages) has the steps.
+- **Any other app** installs a tarball: the release's, as above, or a packed one, `npm install /path/to/dir/eneo-ai-module-kit-0.1.0.tgz`.
 
 Install the tarball, not the folder (`npm install file:../eneo-module-kit/packages/ui`). A folder install is a symlink, and the package then finds `react` in the kit's `node_modules`, the module finds its own: two copies of React, and hooks fail. (Checked: the two paths resolve to different files.) Inside this repository the template's `web/` is an npm workspace, which hoists one copy, so the template needs no tarball there. The template's Dockerfile puts the tarball in `web/vendor/` itself: see [new module](new-module.md#6-build-the-image).
 

@@ -1,11 +1,13 @@
 /**
  * The sentinel (fixtures.ts) fails a test for a policy violation, a redirect, and a console error or failed request that
  * was not declared, and for a declared one that did not happen. These tests cause each of them and look at what the
- * sentinel saw, then clear it: a sentinel that stopped seeing would make every other test pass for nothing. They run in
- * Chromium (the `chromium` project); the other engines' words for a failure are proved by the specs that run there.
+ * sentinel saw, then clear it: a sentinel that stopped seeing would make every other test pass for nothing. The last one
+ * proves that `goOffline`, which reads the sentinel's open requests, cuts none short. They run in Chromium (the
+ * `chromium` project); the other engines' words for a failure are proved by the specs that run there.
  * Adapted from speech-to-text's (`eneo-ai/eneo-mod-speech-to-text` at commit `b8c3804`).
  */
 import { expect, test } from "./fixtures";
+import { STATES } from "./screens";
 
 test("a policy violation is seen: an inline style and an inline script", async ({ page, sentinel }) => {
   await page.goto("/");
@@ -54,4 +56,19 @@ test("a console error and a failed request fail unless declared, a declared one 
   sentinel.expect({ console: /never happens/ });
   expect(sentinel.verify().missing).toEqual(["/never happens/"]);
   sentinel.reset();
+});
+
+test("the offline state takes the network once the page has stopped asking: the branding still on its way and the logos it names arrive", async ({ page }) => {
+  test.skip(!!process.env.E2E_EXTERNAL_URL, "the organisation and its logos are the config's own backend's");
+  // On the flow page the branding answers a second after it is asked, long after the page is drawn, and the logos are
+  // asked for after it. The sign-in page's read, which its navigation drops, is not held (goOffline in fixtures.ts).
+  await page.route(/\/api\/branding$/, async (route) => {
+    if (new URL(route.request().frame().url()).pathname === "/flows") await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await route.continue();
+  });
+  await STATES.find(({ name }) => name === "offline")!.go(page);
+  const logos = page.locator("img[data-brand-logo]");
+  await expect(logos).toHaveCount(2);
+  // A logo the network cut short cannot be decoded; the sentinel also fails the test on a failed request.
+  for (const logo of await logos.all()) await logo.evaluate((image: HTMLImageElement) => image.decode());
 });

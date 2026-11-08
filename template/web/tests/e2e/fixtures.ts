@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test as base, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test as base, type BrowserContext, type Page, type Request } from "@playwright/test";
 
 // GATE_CPU=8 makes the main thread of each test's page that many times slower (Chromium's own throttle), so a race that
 // only a slow CI runner loses is lost here too, without loading the machine:
@@ -89,6 +89,8 @@ export class Sentinel {
   private readonly console: string[] = [];
   private readonly failed: string[] = [];
   private readonly declared: { expectation: Expectation; seen: boolean }[] = [];
+  /** The requests of the browser context that have not ended yet (`goOffline` waits for none). */
+  private readonly open = new Set<Request>();
   /** How many of Playwright's screenshot styles WebKit refused (`SCREENSHOT_STYLE`). */
   private screenshotStyles = 0;
 
@@ -110,7 +112,10 @@ export class Sentinel {
       if (message.type() === "error") this.console.push(`${message.text()} [${message.location().url}]`);
     });
     context.on("weberror", (error) => void this.console.push(`uncaught: ${error.error().message}`));
+    context.on("request", (request) => void this.open.add(request));
+    context.on("requestfinished", (request) => void this.open.delete(request));
     context.on("requestfailed", (request) => {
+      this.open.delete(request);
       const reason = request.failure()?.errorText ?? "failed";
       if (CANCELLED.has(reason)) return;
       this.failed.push(`${request.method()} ${request.url()}: ${FAILED.get(reason) ?? reason}`);
@@ -123,6 +128,11 @@ export class Sentinel {
       if (!REDIRECTS.has(response.status()) || HANDSHAKE.has(new URL(response.url()).pathname)) return;
       this.redirects.push(`${response.status()} ${response.request().method()} ${response.url()} to ${response.headers()["location"] ?? "nowhere"}`);
     });
+  }
+
+  /** How many requests of the browser context are on their way. */
+  get reading() {
+    return this.open.size;
   }
 
   /** What was not declared, marking every declaration a text matches as seen. */
@@ -220,6 +230,45 @@ export const test = base.extend<{ sentinel: Sentinel; stubScope: void; cpu: void
 });
 
 export { expect };
+
+/** Waits until the page has stopped changing for a moment (late data, an animation). */
+export async function quiet(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let timer = setTimeout(done, 200);
+        const observer = new MutationObserver(() => {
+          clearTimeout(timer);
+          timer = setTimeout(done, 200);
+        });
+        const stop = setTimeout(done, 2_500);
+        function done() {
+          observer.disconnect();
+          clearTimeout(timer);
+          clearTimeout(stop);
+          resolve();
+        }
+        observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+      }),
+  );
+}
+
+/**
+ * The device loses its network, once the page has stopped asking: no request of its browser context is on its way, still
+ * none after the document has rested, so that what an answer asks for in turn (the logos the branding names) has come
+ * too. A request the network cuts short is the test's doing, not the page's: this way there is none, and a request that
+ * fails afterwards is one the page made without a network, which the sentinel judges as any other. (A request a route
+ * holds while the page drops it, on leaving the page, never ends for Playwright: route only what the page keeps asking.)
+ */
+export async function goOffline(page: Page) {
+  const sentinel = watching.get(page.context());
+  if (!sentinel) throw new Error("goOffline reads the sentinel's requests: the page's browser context has none");
+  do {
+    await expect.poll(() => sentinel.reading, { message: "the page's requests have ended" }).toBe(0);
+    await quiet(page);
+  } while (sentinel.reading > 0);
+  await page.context().setOffline(true);
+}
 
 /** What the stub Eneo answers this test's flow list: two flows, none, or a failure. */
 export const stubFlows = (page: Page, mode: "normal" | "empty" | "error") => stubControl(page, `flows?mode=${mode}`);
