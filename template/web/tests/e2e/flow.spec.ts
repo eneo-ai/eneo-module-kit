@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test";
-import { declare, expect, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
+import { declare, expect, goOffline, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
 import { FLOWS_CODE, withoutFlowsCode } from "./screens";
 
 test.beforeEach(async ({ page }) => {
@@ -277,7 +277,7 @@ test.describe("when the connection goes", () => {
   test("without a network the page says so above the bar, keeps what it shows, and the notice goes when the network is back", async ({ page }) => {
     await signIn(page);
     const notice = page.getByRole("alert").filter({ hasText: "Ingen anslutning." });
-    await page.context().setOffline(true);
+    await goOffline(page);
     await expect(notice).toBeVisible();
     await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
     await page.context().setOffline(false);

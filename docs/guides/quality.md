@@ -123,6 +123,8 @@ declare(page, [{ console: /status of 500.*\/api\/eneo\/flows\// }]);
 declare(page, [{ console: /net::ERR_FAILED.*\/api\/auth\/logout/ }, { requestFailed: /POST .*\/api\/auth\/logout: net::ERR_FAILED/ }]);
 ```
 
+A test or state that takes the network away (the `offline` state) does it with `goOffline` of `fixtures.ts`, once no request of the page is on its way and the document has rested. A request that the lost network cut short would be the test's doing, not the page's; this way there is none, and a request that fails afterwards is one the page made offline, which the sentinel judges as any other.
+
 The engines say a failure in their own words. The sentinel writes each in Chromium's, so a failure is declared once for all three, and a declared one that does not happen is missed in every engine:
 
 | Engine | Writes to the console for a resource that did not load | Calls an aborted request | The sentinel |
@@ -131,7 +133,7 @@ The engines say a failure in their own words. The sentinel writes each in Chromi
 | WebKit | The status line only | `Blocked by Web Inspector` | Writes the failure line, and records the abort as `net::ERR_FAILED` |
 | Firefox | Neither | `NS_ERROR_FAILURE` | Writes both lines, and records the abort as `net::ERR_FAILED` |
 
-`web/tests/e2e/sentinel.spec.ts` causes each thing the sentinel fails a test for and looks at what it saw, in Chromium; the engines' words are proved by the specs that declare a failure in WebKit and Firefox (`flow.spec.ts`).
+`web/tests/e2e/sentinel.spec.ts` causes each thing the sentinel fails a test for and looks at what it saw, in Chromium, and shows that `goOffline` cuts none of the page's requests short; the engines' words are proved by the specs that declare a failure in WebKit and Firefox (`flow.spec.ts`).
 
 ## Every control does something
 

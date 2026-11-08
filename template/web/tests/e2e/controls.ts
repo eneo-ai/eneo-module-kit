@@ -10,7 +10,7 @@
  * package export when a second module needs it.
  */
 import type { Browser, Locator, Page, TestInfo } from "@playwright/test";
-import { Sentinel, type Expectation } from "./fixtures";
+import { quiet, Sentinel, type Expectation } from "./fixtures";
 import type { State } from "./screens";
 
 /** What a spec declares about its controls, each keyed `<state> | <role> "<name>"` with its reason. Never a pattern. */
@@ -208,28 +208,6 @@ async function copyOf(browser: Browser, state: State, use: Use): Promise<Copy> {
   });
   caused.length = 0;
   return { page, sentinel, caused, close: () => context.close() };
-}
-
-/** Waits until the page has stopped changing for a moment (late data, an animation). */
-async function quiet(page: Page) {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        let timer = setTimeout(done, 200);
-        const observer = new MutationObserver(() => {
-          clearTimeout(timer);
-          timer = setTimeout(done, 200);
-        });
-        const stop = setTimeout(done, 2_500);
-        function done() {
-          observer.disconnect();
-          clearTimeout(timer);
-          clearTimeout(stop);
-          resolve();
-        }
-        observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
-      }),
-  );
 }
 
 /** The words a dialog's own close control starts with. */
