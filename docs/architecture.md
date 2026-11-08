@@ -368,10 +368,12 @@ flowchart TB
   commit --> tu["template-unit: the template's unit tests and the rules its code keeps"]
   commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
   commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
-  commit --> wf["workflows: actionlint on the kit's workflow and the two a module ships"]
+  commit --> wf["workflows: actionlint on the kit's two workflows and the two a module ships"]
 ```
 
 Source: `.github/workflows/ci.yml`. What each job proves, and the module's own CI: [new module](guides/new-module.md#what-ci-proves).
+
+A tag `vX.Y.Z` runs `.github/workflows/release.yml`, in two jobs. `build`, with a token that can only read, fails unless the tag is the version of both packages, builds the UI package's tarball (`npm pack`) and the BFF's wheel and sdist (`uv build`, in a build environment locked with hashes: `packages/bff/build-constraints.txt`) from the tagged commit, runs the UI package's suite and the BFF's on that wheel, and writes `SHA256SUMS` and the notes, the CHANGELOG's section for the version. `release` is the only job whose token can write (`contents: write`): it checks nothing out and runs no code of a dependency, and creates the GitHub release for the tag from the assets and notes `build` handed over. Nothing goes to npm or PyPI yet.
 
 ## Where each fact lives
 

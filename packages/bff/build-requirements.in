@@ -1,0 +1,4 @@
+# What building the BFF needs: the [build-system] requires of pyproject.toml, repeated here, and what hatchling asks for in
+# an editable install. build-constraints.txt locks them with their hashes; the command is in its header.
+hatchling>=1.27.0
+editables

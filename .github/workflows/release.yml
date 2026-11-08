@@ -1,0 +1,88 @@
+name: release
+
+# A tag vX.Y.Z releases both packages as assets of a GitHub release, built here from the tagged commit: the UI package's
+# tarball (npm pack), the BFF's wheel and sdist (uv build), and SHA256SUMS over the three. The notes are the CHANGELOG's
+# section for the version. Nothing goes to npm or PyPI: publishing there waits until the registries' access is set up.
+# Actions are pinned as in ci.yml.
+#
+# Two jobs, so that no code of a dependency runs where the token can write: `build` installs, tests and builds with a
+# token that can only read, and hands the assets and the notes over as an artifact; `release` checks nothing out,
+# installs and runs nothing of it, and creates the release from what it was handed.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: The tag is the version of both packages
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          ui="$(node -p "require('./packages/ui/package.json').version")"
+          bff="$(python -c "import tomllib; print(tomllib.load(open('packages/bff/pyproject.toml', 'rb'))['project']['version'])")"
+          if [ "$ui" != "$version" ] || [ "$bff" != "$version" ]; then
+            echo "::error::$GITHUB_REF_NAME is not the packages' version: packages/ui/package.json says $ui, packages/bff/pyproject.toml $bff."
+            exit 1
+          fi
+      - name: The notes, the CHANGELOG's section for the version
+        run: |
+          mkdir -p release/assets
+          # The lines under "## <version> " up to the next section.
+          awk -v heading="## ${GITHUB_REF_NAME#v} " 'index($0, heading) == 1 { found = 1; next } found && /^## / { exit } found' CHANGELOG.md > release/notes.md
+          if ! grep -q '[^[:space:]]' release/notes.md; then
+            echo "::error::CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test -w packages/ui
+      # npm pack runs the package's prepack: its lint and its build.
+      - run: npm pack -w packages/ui --pack-destination release/assets
+      # The BFF is built in an environment locked with hashes (packages/bff/build-constraints.txt), and its suite runs on
+      # the wheel it gives, over the locked packages a module starts from (template/backend/requirements.lock).
+      - run: pip install uv==0.13.0
+      - run: uv build packages/bff --out-dir release/assets --build-constraints packages/bff/build-constraints.txt --require-hashes
+      - run: pip install --require-hashes --no-deps -r template/backend/requirements.lock
+      - run: pip install --no-deps release/assets/eneo_module_bff-*.whl
+      - run: python -m unittest discover -s packages/bff/tests -t packages/bff
+      - name: SHA256SUMS
+        working-directory: release/assets
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release and its assets
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release
+          path: release
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/assets/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --notes-file release/notes.md --verify-tag
