@@ -7,7 +7,7 @@
  */
 import { writeFileSync } from "node:fs";
 import type { Locator, Page } from "@playwright/test";
-import { clippedFocus, engine, focusStop, orderProblems, settle, stopProblems, tabKey, tabWalk } from "./checks";
+import { clippedFocus, focusStop, orderProblems, settle, stopProblems, tabKey, tabWalk } from "./checks";
 import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 import { STATES } from "./screens";
 
@@ -96,9 +96,8 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   const problems: string[] = [];
   for (const key of [undefined, ...keys]) {
     if (key) await page.keyboard.press(key);
-    // The announced title is a static initial focus target, where Chromium and WebKit put the focus; Firefox gives it to
-    // the dialog's first control, which then shows its ring as any control does.
-    if (!key && initialHeading && engine(page) !== "firefox") {
+    // The announced title is a static initial focus target: Astryx puts the focus there in every engine.
+    if (!key && initialHeading) {
       await expect(initialHeading).toBeFocused();
       await expect(initialHeading).toHaveAttribute("tabindex", "-1");
     } else if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, popup)));
