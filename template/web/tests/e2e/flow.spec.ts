@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { declare, expect, goOffline, signIn, stubControl, stubFlows, test, type Expectation } from "./fixtures";
-import { FLOWS_CODE, withoutFlowsCode } from "./screens";
+import { PAGE_SCRIPT, withoutFlowsCode } from "./screens";
 
 test.beforeEach(async ({ page }) => {
   await stubFlows(page, "normal");
@@ -89,11 +89,12 @@ for (const failure of FAILED_LOGOUTS) {
       await page.getByRole("button", { name: "Öppna konto för Erik Lund" }).click();
       await page.getByRole("menuitem", { name: "Logga ut" }).click();
 
-      // Seen and announced: the toast is an alert, in a region the design system names in Swedish.
+      // Seen, in a region the design system names in Swedish, and said at once: the toast's region speaks an error through
+      // the design system's assertive live region (the card itself is no live region).
       const message = "Det gick inte att logga ut. Försök igen.";
       const toasts = page.getByRole("region", { name: "Aviseringar" });
       await expect(toasts.getByText(message)).toBeVisible();
-      await expect(toasts.getByRole("alert")).toContainText(message);
+      await expect(page.locator('[data-astryx-live-region="assertive"]')).toContainText(message);
       await expect(page.getByRole("menuitem", { name: "Logga ut" })).toBeEnabled();
       await expect(page).toHaveURL(/\/flows$/);
       expect(await (await page.request.get("/api/auth/status")).json(), "still signed in").toMatchObject({ authenticated: true });
@@ -161,10 +162,12 @@ test.describe("pages and addresses", () => {
   });
 
   test("a page whose code cannot be fetched is a page too: its own title, said once, the focus in its heading, and Ladda om sidan brings it back", async ({ page }) => {
-    await signIn(page);
     await page.addInitScript(listen);
-    await page.goto("/finns-inte");
     await withoutFlowsCode(page);
+    // Signed in without the browser loading a page first, so the tab's first script is the one older than the release.
+    expect((await page.request.get("/api/auth/login?next=%2Ffinns-inte")).ok()).toBe(true);
+    await page.goto("/finns-inte");
+    await expect(page.getByRole("heading", { level: 1, name: "Sidan finns inte." })).toBeVisible();
     await page.getByRole("link", { name: "Till startsidan" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Sidan kunde inte visas." })).toBeVisible();
     await expect(page).toHaveURL(/\/flows$/);
@@ -173,7 +176,7 @@ test.describe("pages and addresses", () => {
     await expect.poll(() => focused(page)).toMatchObject({ heading: true, inMain: true, text: "Sidan kunde inte visas." });
 
     // Nothing reloads by itself; the person's reload gets the files as they are now.
-    await page.unroute(FLOWS_CODE);
+    await page.unroute(PAGE_SCRIPT);
     await page.getByRole("button", { name: "Ladda om sidan" }).click();
     await expect(page.getByRole("list", { name: "Flöden" })).toBeVisible();
   });
@@ -264,7 +267,9 @@ test.describe("colour mode", () => {
 test.describe("without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
 
-  test("the page says in Swedish that it needs JavaScript", async ({ page }) => {
+  test("the page says in Swedish that it needs JavaScript", async ({ page, browserName }) => {
+    // Chromium reports the module scripts the page preloads as refused while scripts are off.
+    if (browserName === "chromium") declare(page, [{ requestFailed: /^GET .*\/assets\/[\w.-]+\.js: csp$/ }]);
     await page.goto("/");
     // Playwright's text matchers pass over <noscript>; the element itself is what is shown when scripts are off.
     const notice = page.locator("noscript");

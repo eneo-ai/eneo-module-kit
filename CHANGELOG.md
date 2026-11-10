@@ -4,6 +4,10 @@ Purpose: describe changes in the two packages a module installs.
 Read this when: choosing or upgrading a package version.
 Related: [README](README.md), [new module](docs/guides/new-module.md), [UI package](packages/ui/README.md), [BFF package](packages/bff/README.md).
 
+## Unreleased
+
+- `@eneo-ai/module-kit` needs `@astryxdesign/core` 0.7.12, and the template pins Astryx's core and CLI at 0.7.12. Astryx no longer makes a warning or an error banner an alert by itself: the offline notice, the sign-in and session problems, a version that cannot be read and the template's flow list that cannot be shown say `role="alert"` themselves, which Astryx puts on the title and description. The providers give Swedish words for design-system strings that Astryx's Swedish catalog lacks: a scrolling region's name, a clear button, a failed copy and a date that does not exist. `LoadingShell`'s spinner, which Astryx would now read out, is silent: the page is said once it has its content, and the word "Laddar" stays for a screen reader to find. `base.css` carries Astryx's layer position rules, which Astryx 0.7.12 would write into a `<style>` that the strict `style-src 'self'` refuses, and `ModuleProviders` renders the element Astryx looks for first, so a menu or popover opens with no policy violation.
+
 ## 0.1.0 — 2026-11-08
 
 - `eneo-module-bff`: the Eneo SSO handoff, server-side sessions and renewal, a deny-by-default proxy, guarded transport helpers, bounded uploads and signed-file streams, shared heavy-I/O admission, branding and static UI serving.

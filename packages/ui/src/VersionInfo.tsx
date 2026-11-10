@@ -69,6 +69,7 @@ export function VersionInfo({ productName }: { productName: string }) {
   if (failed) {
     return (
       <Banner
+        role="alert"
         status="error"
         title="Versionen kunde inte visas."
         collapsible={false}

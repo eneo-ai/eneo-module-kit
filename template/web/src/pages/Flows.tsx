@@ -115,6 +115,7 @@ export function Flows() {
         </VStack>
         {load.state === "failed" ? (
           <Banner
+            role="alert"
             status="error"
             title="Flödena kunde inte visas."
             description={load.advice.message}

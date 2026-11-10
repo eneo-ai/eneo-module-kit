@@ -21,5 +21,5 @@ export function OfflineBanner({
   const connection = useConnection(status);
   if (connection === "online") return null;
   const cause = connection === "offline" ? "Ingen anslutning." : `${productName} svarar inte just nu.`;
-  return <Banner status="warning" container="section" title={message ? `${cause} ${message}` : cause} />;
+  return <Banner role="alert" status="warning" container="section" title={message ? `${cause} ${message}` : cause} />;
 }

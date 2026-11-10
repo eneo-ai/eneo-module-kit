@@ -16,14 +16,26 @@ test("the page while it waits: the bar, a heading that names the module, and a s
   assert.ok(container.querySelector('nav[aria-label="Testmodul"]'), "the bar");
   assert.deepEqual([...container.querySelectorAll("h1")].map((heading) => heading.textContent), ["Testmodul"]);
   assert.equal(container.querySelectorAll('main, [role="main"]').length, 1);
-  assert.ok(container.querySelector('[aria-label="Laddar"]'), "a spinner named in Swedish");
+  assert.match(container.querySelector('main, [role="main"]')?.textContent ?? "", /Laddar/, "words that say it, in Swedish");
+});
+
+test("the wait is not read out: what is said is the page, once it has its content", async () => {
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  const { LoadingShell } = await import("../src/LoadingShell.js");
+  const shell = () => createElement(ModuleProviders, { children: createElement(LoadingShell, { productName: "Testmodul" }) });
+  const { act, rerender } = await mount(shell());
+  // The shell renders again while it waits, as when the organisation's name arrives in the bar.
+  await act(async () => rerender(shell()));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  assert.equal(document.querySelector('[data-astryx-live-region="polite"]')?.textContent ?? "", "");
 });
 
 test("the spinner shows only once the wait has lasted a moment: an answer within it leaves no blink of a spinner", async () => {
   const { ModuleProviders } = await import("../src/ModuleProviders.js");
   const { LoadingShell } = await import("../src/LoadingShell.js");
   const { container } = await mount(createElement(ModuleProviders, { children: createElement(LoadingShell, { productName: "Testmodul" }) }));
-  assert.ok(container.querySelector('.eneo-wait [aria-label="Laddar"]'), "the spinner is inside what base.css holds back");
+  assert.ok(container.querySelector(".eneo-wait .astryx-spinner"), "the spinner is inside what base.css holds back");
+  assert.match(container.querySelector(".eneo-wait")?.textContent ?? "", /Laddar/, "and so are its words");
   const base = readFileSync("src/base.css", "utf8");
   assert.match(base, /\.eneo-wait \{[^}]*animation: eneo-wait-hidden 0s \d+ms backwards/);
   assert.match(base, /@keyframes eneo-wait-hidden \{\s*from \{\s*visibility: hidden;/);
@@ -41,7 +53,7 @@ test("the session's gate waits in the same shell", async (t) => {
   const { container } = await mount(
     createElement(ModuleProviders, { children: createElement(RequireSession, { productName: "Testmodul", state: createSessionState(), children: "Sidan" }) }),
   );
-  assert.ok(container.querySelector('.eneo-wait [aria-label="Laddar"]'));
+  assert.match(container.querySelector(".eneo-wait")?.textContent ?? "", /Laddar/);
   assert.doesNotMatch(container.textContent ?? "", /Sidan/);
 });
 

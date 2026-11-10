@@ -2,6 +2,5 @@
   - heading "Välj ett flöde" [level=1]
   - paragraph: Hej Erik Lund
   - button "Anteckning"
-  - alert:
-    - text: Flödena kunde inte visas. Tjänsten svarade med ett fel. Försök igen om en stund.
-    - button "Försök igen"
+  - alert: Flödena kunde inte visas. Tjänsten svarade med ett fel. Försök igen om en stund.
+  - button "Försök igen"
