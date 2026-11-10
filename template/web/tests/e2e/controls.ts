@@ -117,9 +117,12 @@ function watch() {
     const box = element.getBoundingClientRect();
     return getComputedStyle(element).visibility !== "hidden" && box.width > 0 && box.height > 0;
   };
+  // An open popover that holds nothing is no overlay: Astryx keeps its toast viewport's host open with no toast in it.
+  const opened = (element: Element) =>
+    element.matches("dialog") ? element.matches(":modal, :popover-open") : element.matches("[popover]") ? element.matches(":popover-open") && element.childElementCount > 0 : shown(element);
   const overlays = () =>
     [...document.querySelectorAll('dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [popover]')]
-      .filter((element) => !element.matches('[role="tooltip"]') && (element.matches("dialog") || element.matches("[popover]") ? element.matches(":modal, :popover-open") : shown(element)))
+      .filter((element) => !element.matches('[role="tooltip"]') && opened(element))
       .map(key)
       .sort();
   const snapshot = () => ({

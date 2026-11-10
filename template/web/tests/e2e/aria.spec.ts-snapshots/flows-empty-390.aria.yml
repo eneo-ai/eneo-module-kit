@@ -2,6 +2,5 @@
   - heading "Välj ett flöde" [level=1]
   - paragraph: Hej Erik Lund
   - button "Anteckning"
-  - status:
-    - heading "Det finns inga publicerade flöden som du kan använda än." [level=2]
-    - text: När ett flöde publiceras i Eneo visas det här.
+  - heading "Det finns inga publicerade flöden som du kan använda än." [level=2]
+  - text: När ett flöde publiceras i Eneo visas det här.

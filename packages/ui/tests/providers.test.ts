@@ -65,3 +65,27 @@ test("a toast is hosted inside the providers, so its words are Swedish, not in a
   assert.ok(document.querySelector('[aria-label="Aviseringar"]'), "the viewport is named in Swedish");
   assert.match(document.body.textContent ?? "", /Det gick inte att logga ut/);
 });
+
+test("a layer opened inside the providers writes no <style> of its own, which the strict policy refuses: base.css has its rules", async () => {
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  const { Popover } = await import("@astryxdesign/core/Popover");
+  const popover = createElement(Popover, { isOpen: true, onOpenChange() {}, content: "Mer", children: createElement("button", { type: "button" }, "Visa") });
+  await mount(createElement(ModuleProviders, { children: popover }));
+  assert.equal(document.querySelectorAll("style").length, 0, [...document.querySelectorAll("style")].map((style) => style.id || style.outerHTML.slice(0, 80)).join(", "));
+});
+
+test("the design system's words a page can show are Swedish, also those its Swedish catalog lacks", async () => {
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  const { useTranslator } = await import("@astryxdesign/core/i18n");
+  const { default: english } = (await import("@astryxdesign/core/locales/en.json", { with: { type: "json" } })) as { default: Record<string, { defaultMessage: string }> };
+  // A scrolling region's name (a dialog's or a page's), a search field's clear button, a failed copy of a code block, a typed 30 February.
+  const keys = ["@astryx.scrollRegion.label", "@astryx.inputClearButton.tooltip", "@astryx.codeBlock.copyFailed", "@astryx.dateInput.nonexistentDate"];
+  const said = new Map<string, string>();
+  function Probe() {
+    const translate = useTranslator();
+    for (const key of keys) said.set(key, translate(key, { calendar: "Gregorian Calendar" }));
+    return null;
+  }
+  await mount(createElement(ModuleProviders, { children: createElement(Probe) }));
+  for (const key of keys) assert.notEqual(said.get(key), english[key].defaultMessage.replace("{calendar}", "Gregorian Calendar"), key);
+});

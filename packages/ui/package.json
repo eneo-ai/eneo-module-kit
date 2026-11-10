@@ -41,14 +41,14 @@
     "test": "node scripts/test.mjs"
   },
   "peerDependencies": {
-    "@astryxdesign/core": "0.6.3",
+    "@astryxdesign/core": "0.7.12",
     "@stylexjs/stylex": "0.19.1",
     "react": ">=19.0.0",
     "react-dom": ">=19.0.0"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.6.3",
-    "@astryxdesign/core": "0.6.3",
+    "@astryxdesign/cli": "0.7.12",
+    "@astryxdesign/core": "0.7.12",
     "@stylexjs/stylex": "0.19.1",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.12.0",

@@ -167,7 +167,7 @@ export function SessionDialog({
               </Text>
               {signedOut && signedOutControls}
               {signedOut && <div ref={controlsRef} />}
-              {problem && <Banner status="error" title={problem} collapsible={false} />}
+              {problem && <Banner role="alert" status="error" title={problem} collapsible={false} />}
               <HStack gap={2} hAlign="end">
                 <Button label={ended ? messages.renewAfter : messages.renewBefore} variant="primary" size="lg" onClick={renewInWindow} />
               </HStack>

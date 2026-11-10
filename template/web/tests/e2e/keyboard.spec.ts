@@ -7,7 +7,7 @@
  */
 import { writeFileSync } from "node:fs";
 import type { Locator, Page } from "@playwright/test";
-import { clippedFocus, engine, focusStop, orderProblems, settle, stopProblems, tabKey, tabWalk } from "./checks";
+import { clippedFocus, focusStop, orderProblems, settle, stopProblems, tabKey, tabWalk } from "./checks";
 import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 import { STATES } from "./screens";
 
@@ -68,6 +68,23 @@ const focusMovesInto = (popup: Locator) =>
   expect.poll(() => popup.evaluate((element) => element.contains(document.activeElement)), { message: "focus moves into the popup" }).toBe(true);
 
 /**
+ * Keys can end on a control whose own tooltip is up (a dialog's close button): that tooltip takes the first Escape
+ * (WCAG 1.4.13), and the next one is the dialog's. Another control's tooltip leaves a moment after focus does, and would
+ * take the first Escape if it were still there. A tooltip that repeats its control's name is not in the control's
+ * description (Astryx leaves it out), so its words tell whose it is.
+ */
+async function escapeOwnTooltip(page: Page) {
+  const ownTooltip = await page.evaluate(() => {
+    const active = document.activeElement;
+    const described = (active?.getAttribute("aria-describedby") ?? "").split(/\s+/);
+    const name = (active?.getAttribute("aria-label") ?? "").trim();
+    return [...document.querySelectorAll('[role="tooltip"]:popover-open')].some((tooltip) => described.includes(tooltip.id) || (name !== "" && tooltip.textContent?.trim() === name));
+  });
+  if (ownTooltip) await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+}
+
+/**
  * Opens `popup` from its trigger with Enter, moves with `keys`, checks focus after each, and closes it with Escape, which
  * gives focus back to `returnsTo`: the trigger, or what opened the menu the trigger was in.
  */
@@ -79,22 +96,14 @@ async function holdsFocus(page: Page, trigger: Locator, popup: Locator, keys: st
   const problems: string[] = [];
   for (const key of [undefined, ...keys]) {
     if (key) await page.keyboard.press(key);
-    // The announced title is a static initial focus target, where Chromium and WebKit put the focus; Firefox gives it to
-    // the dialog's first control, which then shows its ring as any control does.
-    if (!key && initialHeading && engine(page) !== "firefox") {
+    // The announced title is a static initial focus target: Astryx puts the focus there in every engine.
+    if (!key && initialHeading) {
       await expect(initialHeading).toBeFocused();
       await expect(initialHeading).toHaveAttribute("tabindex", "-1");
     } else if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, popup)));
   }
   expect.soft(problems, "focus stays inside and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
-  // The keys can end on a control whose own tooltip is up (the close button, where Firefox's Tab ends): that tooltip
-  // takes the first Escape (WCAG 1.4.13), and the next one is the popup's. Another control's tooltip leaves a moment after
-  // focus does, and would take the first Escape if it were still there.
-  const ownTooltip = await page.evaluate(() =>
-    (document.activeElement?.getAttribute("aria-describedby") ?? "").split(/\s+/).some((id) => document.getElementById(id)?.matches('[role="tooltip"]:popover-open')),
-  );
-  if (ownTooltip) await page.keyboard.press("Escape");
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await escapeOwnTooltip(page);
   await untilModal(page);
   await page.keyboard.press("Escape");
   await expect(popup).toBeHidden();
@@ -156,7 +165,7 @@ test("the warning before the login ends takes focus, holds it, and gives it back
     if (!(await inBrowser(page))) problems.push(...(await focusProblems(page, warning)));
   }
   expect.soft(problems, "focus stays inside the warning and is visible (WCAG 2.1.2, 2.4.7)").toEqual([]);
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await escapeOwnTooltip(page);
   await untilModal(page);
   await page.keyboard.press("Escape");
   await expect(warning).toBeHidden();

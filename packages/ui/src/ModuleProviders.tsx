@@ -8,11 +8,23 @@ import { ColorModeProvider, useColorMode } from "./color-mode.js";
 import { eneoTheme } from "./theme/built/eneo.js";
 
 const MESSAGES = { "sv-SE": sv };
+// The element Astryx looks for before it writes its layers' position rules into a <style>, which the strict policy refuses:
+// base.css carries the rules (scripts/build.mjs).
+const LAYER_RULES = "astryx-layer-slide-rules";
+// The design system's words a page can show that its Swedish catalog does not have yet; without them they are English.
+const SWEDISH = {
+  "sv-SE": {
+    "@astryx.scrollRegion.label": "Innehåll",
+    "@astryx.inputClearButton.tooltip": "Rensa",
+    "@astryx.codeBlock.copyFailed": "Det gick inte att kopiera till urklipp.",
+    "@astryx.dateInput.nonexistentDate": "Det datumet finns inte.",
+  },
+};
 
 function Themed({ children }: { children: ReactNode }) {
   const { mode } = useColorMode();
   return (
-    <InternationalizationProvider locale="sv-SE" messages={MESSAGES}>
+    <InternationalizationProvider locale="sv-SE" messages={MESSAGES} overrides={SWEDISH}>
       <Theme theme={eneoTheme} mode={mode}>
         {/* The design system's toasts are hosted here, in the theme and in Swedish: without it `useToast` mounts a root of its own that speaks English. */}
         <LayerProvider>{children}</LayerProvider>
@@ -63,5 +75,10 @@ export function ModuleProviders({
   // One component per link component given, so the links are not mounted anew at every render.
   const link = useMemo(() => (linkComponent ? appLinks(linkComponent) : null), [linkComponent]);
   const themed = <Themed>{children}</Themed>;
-  return <ColorModeProvider>{link ? <LinkProvider component={link}>{themed}</LinkProvider> : themed}</ColorModeProvider>;
+  return (
+    <ColorModeProvider>
+      <template id={LAYER_RULES} />
+      {link ? <LinkProvider component={link}>{themed}</LinkProvider> : themed}
+    </ColorModeProvider>
+  );
 }

@@ -12,21 +12,29 @@ export interface State {
   go: (page: Page) => Promise<void>;
 }
 
-/** The flow page's code, as the build names it: the page fetches it when it is first entered. */
-export const FLOWS_CODE = /\/assets\/Flows-[^/]+\.js$/;
+/** The page's script, which names the code of each page it can show. */
+export const PAGE_SCRIPT = /\/assets\/index-[\w-]+\.js$/;
 
 /**
- * A tab older than the release that replaced the flow page's code: its request goes to a name no build has, and the
- * backend answers it as it answers such a file. Each engine reports that its own way, as for the page's script
- * (tests/prod/stale-chunk.spec.ts): Firefox also refuses the 404's JSON as a script of the wrong type, and WebKit on Linux
- * (CI) reports the request as cancelled.
+ * A tab older than the release that replaced the flow page's code: its script names a file no build has, and the backend
+ * answers that request as it answers such a file. The script is changed as it arrives, so call this before the page
+ * loads, and `page.unroute(PAGE_SCRIPT)` for the release's own. Not the file's own request sent elsewhere: a browser keeps
+ * what it got for a name, and WebKit gives a module it was asked to preload from its memory cache, past any route, so
+ * the release's file under that name would never be asked for again. Each engine reports the 404 its own way, as for
+ * the page's script (tests/prod/stale-chunk.spec.ts): Firefox also refuses the 404's JSON as a script of the wrong type,
+ * and WebKit on Linux (CI) reports the request as cancelled.
  */
 export async function withoutFlowsCode(page: Page) {
   const engine = page.context().browser()?.browserType().name();
   declare(page, [{ console: /status of 404.*\/assets\/Flows-/ }, { console: /A page could not be shown/ }]);
   if (engine === "firefox") declare(page, [{ requestFailed: /GET .*\/assets\/Flows-[\w-]+\.js: NS_ERROR_CORRUPTED_CONTENT/ }]);
   if (engine === "webkit" && process.platform === "linux") declare(page, [{ requestFailed: /GET .*\/assets\/Flows-[\w-]+\.js: Load request cancelled/ }]);
-  await page.route(FLOWS_CODE, (route) => route.continue({ url: new URL("/assets/Flows-0ldbui1d.js", route.request().url()).href }));
+  await page.route(PAGE_SCRIPT, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replaceAll(/Flows-[\w-]+\.js/g, "Flows-0ldbui1d.js");
+    // Not kept: the reload after the release gets the release's script.
+    await route.fulfill({ status: 200, body, contentType: "text/javascript", headers: { "cache-control": "no-store" } });
+  });
 }
 
 export const STATES: State[] = [

@@ -69,8 +69,8 @@ export function SignInScreen({
                 {description ?? messages.signInHint}
               </Text>
             </VStack>
-            {failed && <Banner status="error" title={messages.signInFailed} collapsible={false} />}
-            {unreachable && <Banner status="error" title={messages.unreachable} collapsible={false} />}
+            {failed && <Banner role="alert" status="error" title={messages.signInFailed} collapsible={false} />}
+            {unreachable && <Banner role="alert" status="error" title={messages.unreachable} collapsible={false} />}
             <HStack>
               {unreachable ? (
                 <Button label={messages.tryAgain} onClick={() => window.location.reload()} />
