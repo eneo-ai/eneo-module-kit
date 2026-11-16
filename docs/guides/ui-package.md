@@ -14,6 +14,8 @@ Version 0.1.0 is released as an asset of the GitHub release [`v0.1.0`](https://g
 npm install https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo-ai-module-kit-0.1.0.tgz
 ```
 
+The release's package needs Astryx 0.6.3, so it does not fit the template on main (0.7.12): a module made from the template takes the package from a checkout ([the quick path](new-module.md#the-quick-path)).
+
 Or pack it from a checkout of this repository:
 
 ```bash

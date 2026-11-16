@@ -232,8 +232,8 @@ jobs:
 
   quick-path:
     # The way the README starts a module, as written, on each system a developer may have: scripts/new-module.mjs makes
-    # a module in a folder whose name has a space, and the module's stub-eneo/dev.mjs starts it against the stub Eneo
-    # and signs in.
+    # a module in a folder whose name has a space, the module's stub-eneo/dev.mjs starts it against the stub Eneo and
+    # signs in, and the module's unit tests run.
     name: quick path (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -252,6 +252,8 @@ jobs:
       - run: node scripts/new-module.mjs "${{ runner.temp }}/eneo mod example"
       - run: node stub-eneo/dev.mjs --check
         working-directory: ${{ runner.temp }}/eneo mod example
+      - run: npm test
+        working-directory: ${{ runner.temp }}/eneo mod example/web
 
   workflows:
     # The kit's two workflows (release.yml runs only on a tag) and the two a module ships, which no run of this

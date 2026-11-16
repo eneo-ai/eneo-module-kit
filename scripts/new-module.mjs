@@ -37,7 +37,7 @@ function findPython() {
     const seen = spawnSync(command, [...args, "-c", "import sys; print(sys.version_info >= (3, 12))"], { encoding: "utf8" });
     if (seen.status === 0 && seen.stdout.trim() === "True") return [command, ...args];
   }
-  fail("Python 3.12 or newer was not found. Install it, or name it: PYTHON=/path/to/python.");
+  fail("Python 3.12 or newer was not found. Install it, or set the environment variable PYTHON to its path.");
 }
 
 const [major, minor] = process.versions.node.split(".").map(Number);

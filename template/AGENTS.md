@@ -14,6 +14,14 @@ and [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/gu
 These guides belong to the kit repository and are not copied into this module. For UI guidance available locally,
 run `npm run astryx -- docs eneo-module` from `web/`.
 
+## Start here: check that it runs
+
+Before building anything, run `node stub-eneo/dev.mjs --check` from the module's folder. It must end with
+`OK: signed in through the stub Eneo, the page is served, and /api/example answered {"greeting":"Hej Erik Lund"}`.
+If it says there is no Python or the UI is not built, the folder is not set up: do what `README.md` ("Run it") says,
+`node scripts/new-module.mjs <this folder>` from a checkout of the kit. Never install the kit's packages from the GitHub
+release `v0.1.0`, npm or PyPI, never `npm install --force` or `--legacy-peer-deps`, never edit a lock by hand.
+
 ## Where things are
 
 - `backend/main.py`: the app, and `PROXY_RULES`, the Eneo routes this module may call. `backend/routes.py`: the module's
@@ -23,7 +31,7 @@ run `npm run astryx -- docs eneo-module` from `web/`.
   `leave.ts` (asking before a page with work is left), `drafts.ts` (typed work kept per person in the tab),
   `config.ts` (the module's name), `pages/`.
 - `web/tests/e2e/`: browser tests against the built app, and the accessibility gate. `stub-eneo/`: Eneo's side of the
-  contract, for development and tests. It is never shipped.
+  contract, for development and tests, and `stub-eneo/dev.mjs`, which runs the module against it. It is never shipped.
 - `docker-compose.yml`: production, the published image chosen by `MODULE_VERSION`, read-only. `docker-compose.override.yml`:
   development, merged by `docker compose up`. `.github/workflows/`: `ci.yml` builds the image once and publishes the tested
   image on main; `release.yml` gives it a version for a tag `vX.Y.Z` and never builds. A release is a tag, never a rebuild.
@@ -55,6 +63,7 @@ run `npm run astryx -- docs eneo-module` from `web/`.
 
 ## Checks
 
+- Start: `node stub-eneo/dev.mjs --check` (from the module's folder) ends with the `OK:` line and exit code 0.
 - Backend: `python -m unittest discover -s backend/tests -t backend` (from the module's folder).
 - Web: `npm run lint`, `npm test` (the unit tests and the rules the code keeps: no network call outside `src/session.ts`),
   `npm run build`, and `npm run test:e2e` (builds first; starts the stub Eneo and the backend itself;

@@ -4,7 +4,28 @@ Purpose: take `template/` from a copy to a module that signs in through Eneo, ru
 Read this when: you are creating a module, or you want to know what the template gives you and what CI proves about it.
 Related: [build a module](build-a-module.md) (the backend in detail), [UI package](ui-package.md), [local development](local-development.md), [configuration](configuration.md), [security checklist](security-checklist.md), [architecture](../architecture.md#the-template-and-its-image), `template/README.md`, `template/AGENTS.md`.
 
-`template/` is the smallest working module: a sign-in page, one page behind the login that lists Eneo's flows, one route of its own, and everything around them. It imports the two packages and copies none of their code. Built and tested, on the kit's session client (`@eneo-ai/module-kit/session`: it keeps the login, warns before it ends and covers the page for a new login in place). The UI package also supplies Astryx reference templates and agent guidance. Version 0.1.0 of the packages is released as GitHub release assets; the template still installs a checkout's ([where the packages come from](#where-the-packages-come-from)).
+`template/` is the smallest working module: a sign-in page, one page behind the login that lists Eneo's flows, one route of its own, and everything around them. It imports the two packages and copies none of their code. Built and tested, on the kit's session client (`@eneo-ai/module-kit/session`: it keeps the login, warns before it ends and covers the page for a new login in place). The UI package also supplies Astryx reference templates and agent guidance. The template installs the packages of a checkout of this repository; the release `v0.1.0` does not fit it ([where the packages come from](#where-the-packages-come-from)).
+
+## The quick path
+
+From nothing to a module you are signed in to. You need Git, Node 22.22.2 or newer and Python 3.12 or newer. The commands are the same on macOS, Linux and Windows, and the kit's CI runs them on each (`quick-path` in `.github/workflows/ci.yml`).
+
+```bash
+git clone https://github.com/eneo-ai/eneo-module-kit.git
+cd eneo-module-kit
+node scripts/new-module.mjs ../eneo-mod-example
+cd ../eneo-mod-example
+node stub-eneo/dev.mjs --check
+node stub-eneo/dev.mjs
+```
+
+| Command | What it does | What you should see |
+|---|---|---|
+| `node scripts/new-module.mjs <folder>` | Steps 1 and 2 below and the build of step 4: packs this checkout's UI package, copies the template with its dotfiles, installs and builds `web/`, makes `.venv` with the locked packages and this checkout's BFF. The folder is outside this repository. A folder that already holds a module, such as a fresh clone of a module's repository, is installed in place | A minute or two of output, ending with `The module is in ...` |
+| `node stub-eneo/dev.mjs --check` | Starts the stub Eneo and the module, signs in as a browser does, calls the module's own route, and stops | The last line: `OK: signed in through the stub Eneo, the page is served, and /api/example answered {"greeting":"Hej Erik Lund"}` |
+| `node stub-eneo/dev.mjs` | Starts both and keeps them running: the module on 3001, the stub on 8411, both on this machine only. `--port` and `--stub-port` choose others | `The module runs on http://localhost:3001 against the stub Eneo on http://localhost:8411.` In the browser: **Logga in med Eneo**, then the page **Välj ett flöde** with `Hej Erik Lund` and two flows. Ctrl+C stops both |
+
+`dev.mjs` runs the module with the stub's values of `.env.example` and does not read `.env`. Then rename the module ([step 1](#1-copy-and-rename)), test it ([step 5](#5-test-it)) and build on it ([step 7](#7-add-to-it)). When a command fails: [when it does not work](#when-it-does-not-work).
 
 ## What you get
 
@@ -15,7 +36,7 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 | `backend/tests/` | Run without Eneo. `test_app.py`: the page, the deep link, 404s, the route, the proxy and its allowlist. `test_routes.py` with `guards.py`: fails when a route lacks `require_session` (or a write lacks `require_same_origin` or `require_expected_user`). |
 | `backend/requirements.lock` | Everything the BFF depends on, with hashes: a generated, hash-pinned `uv pip compile` of the BFF's requirements. Install it first. The kit's CI fails when it drifts from the BFF's requirements. |
 | `backend/requirements.txt` | The BFF itself, pinned to a commit of the kit (`<full sha>` is a placeholder) until the template moves to the release's pins. |
-| `stub-eneo/server.py` | Eneo's side of the contract, stdlib only, for development and tests. Never shipped in the image. See [local development](local-development.md). |
+| `stub-eneo/server.py`, `stub-eneo/dev.mjs` | Eneo's side of the contract, stdlib only, for development and tests, and the command that starts it together with the module ([the quick path](#the-quick-path)). Never shipped in the image. See [local development](local-development.md). |
 | `web/` | A Vite + React + react-router app on `@eneo-ai/module-kit`: `index.html` (the first-paint colour mode, `public/color-mode.js`), `main.tsx` (stylesheets, the router), `App.tsx` (the data router: the providers and the kit's `RouteEffects` in its root, each route's title, a page's code fetched when it is first entered, the gate for the pages that need a session, the kit's `ErrorPage` and `NotFoundPage`), `Frame.tsx` (the shell every page uses, with the kit's `OfflineBanner` above the bar), `config.ts` (`PRODUCT_NAME`, `documentTitle`), `drafts.ts` (the module's `createDrafts`: the note is kept in the tab for its writer), `leave.ts` (`useLeaveGuard`: the kit's leave question with React Router's blocker; the flow page asks before it is left while the browser could not keep the note, and signing out asks through it), `session.ts` (`signOut`, which says `false` when the backend refuses or gives no answer so that `AccountMenu` can say so in a toast, and `getJson` over `fetchWithSession`), `AccountMenu.tsx` (who is signed in, the colour mode, Version, which opens the kit's `VersionInfo` in a dialog, and signing out), `pages/Flows.tsx` (the flows, read page by page while Eneo says `has_more`, at most five pages of 200). The sign-in screen, the gate and the page a login window lands on (`/inloggad`) come from the kit; `App.tsx` routes them. |
 | `web/package-lock.json`, `web/vendor/`, `web/scripts/relock.mjs` | The web app's own lock, with hashes. It finds `@eneo-ai/module-kit` in `web/vendor/` (the packed tarball, not committed); `relock.mjs` regenerates the lock. Both go when a module installs the release's tarball. |
 | `web/tests/e2e/` | Playwright against the built app, and the accessibility gate. |
@@ -29,14 +50,16 @@ Related: [build a module](build-a-module.md) (the backend in detail), [UI packag
 
 ## Where the packages come from
 
+**For the template on `main`: from a checkout, which is what [the quick path](#the-quick-path) does.** The release `v0.1.0` does not fit it: the release's UI package needs `@astryxdesign/core` 0.6.3 and the template has 0.7.12, so `npm install` of the release's tarball in `web/` stops with `ERESOLVE`. The "from the release" column below is for a release that fits the template's Astryx version; none exists yet.
+
 Version 0.1.0 of both packages is released as assets of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0), built by the kit's CI from the tagged commit, with their SHA-256 sums in `SHA256SUMS`. Neither is on npm or PyPI yet. The template as it ships does not use the release: the kit's CI builds it against the packages of the same commit, not released ones ([K1](../decisions/k01-one-repository-three-parts.md)), so its pins stay a checkout's until a later change moves them to the release. `web/package-lock.json` finds `@eneo-ai/module-kit` `0.1.0` in `web/vendor/`, and `backend/requirements.txt` holds a placeholder, so a plain copy cannot install them, and a plain `docker build` fails. A module chooses, for each package:
 
-| Package | From the release | From a checkout of this repository, as the template ships |
+| Package | From a release that fits the template (not `v0.1.0`) | From a checkout of this repository, as the template ships |
 |---|---|---|
 | `@eneo-ai/module-kit` | In `web/`: delete `vendor/` and `scripts/relock.mjs`, then `npm install https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo-ai-module-kit-0.1.0.tgz`. The lock names the asset, with its hash | The packed tarball in `web/vendor/`, then `npm ci` ([step 2](#2-install-the-packages)). Not `npm install <tarball>`, which rewrites the manifest and the lock, and never a `file:` folder (two copies of React) |
 | `eneo-module-bff` | Its third-party packages from `backend/requirements.lock`, then the wheel: in `backend/requirements.txt`, in place of the commit pin, `eneo-module-bff @ https://github.com/eneo-ai/eneo-module-kit/releases/download/v0.1.0/eneo_module_bff-0.1.0-py3-none-any.whl --hash=sha256:<the wheel's line in SHA256SUMS>` | Its third-party packages from `backend/requirements.lock`, then the BFF itself: a commit pin in `backend/requirements.txt` (replace `<full sha>` with the commit of this repository you start from), or `pip install --no-deps /path/to/eneo-module-kit/packages/bff` on your own machine |
 
-With both from the release, `docker build -t my-module .` and `docker compose up --build` work in a module's own folder. Otherwise build the image with the build context of [step 6](#6-build-the-image).
+With both from such a release, `docker build -t my-module .` and `docker compose up --build` work in a module's own folder. Otherwise build the image with the build context of [step 6](#6-build-the-image).
 
 ## Node and Python
 
@@ -48,6 +71,8 @@ With both from the release, `docker build -t my-module .` and `docker compose up
 | The backend | Python 3.12 |
 
 ## 1. Copy and rename
+
+Steps 1 to 4 are the quick path by hand, to see each step or to change one. Their commands are for bash or zsh (macOS, Linux, WSL); on Windows use the quick path's two scripts. `scripts/new-module.mjs` makes the copy; the renaming in the table is yours either way.
 
 From a checkout of this repository:
 
@@ -83,7 +108,7 @@ npm pack -w packages/ui --pack-destination /path/to/eneo-mod-<name>/web/vendor
 npm ci
 ```
 
-After a change of a dependency or of the kit's version, regenerate the lock: `node scripts/relock.mjs /path/to/the-tarball.tgz` (in `web/`). Do not `npm install <tarball>`: it rewrites `package.json` to a `file:` path. The tarball is not committed (`web/vendor/.gitignore`). To install the release's tarball instead, delete `web/vendor/` and `web/scripts/relock.mjs` and run `npm install` with its address ([where the packages come from](#where-the-packages-come-from)): the lock then names it, with its hash.
+After a change of a dependency or of the kit's version, regenerate the lock: `node scripts/relock.mjs /path/to/the-tarball.tgz` (in `web/`). Do not `npm install <tarball>`: it rewrites `package.json` to a `file:` path. The tarball is not committed (`web/vendor/.gitignore`), so a fresh clone of a module's repository needs it again: `node scripts/new-module.mjs <the clone>` from a kit checkout installs the clone in place. To install the tarball of a release that fits the template instead (`v0.1.0` does not: [where the packages come from](#where-the-packages-come-from)), delete `web/vendor/` and `web/scripts/relock.mjs` and run `npm install` with its address: the lock then names it, with its hash.
 
 The backend. A virtual environment for the module; the locked third-party packages first, then the BFF:
 
@@ -115,7 +140,7 @@ The optional accent settings and their contrast checks are in [configuration](co
 cp .env.example .env
 ```
 
-For the stub Eneo the values work as they are. Change them for a real Eneo:
+For the stub Eneo the values work as they are, and `stub-eneo/dev.mjs` needs no `.env` at all. Change them for a real Eneo:
 
 | Variable | Set to |
 |---|---|
@@ -129,7 +154,7 @@ The module refuses to start with a public URL over http whose host is not `local
 
 ## 4. Run it against the stub
 
-From the module's folder. This is the built app, served by the backend, as it runs in the image.
+From the module's folder. This is the built app, served by the backend, as it runs in the image. `node stub-eneo/dev.mjs` starts the stub and the module in one command ([the quick path](#the-quick-path)); the same by hand, with the settings of `.env`:
 
 ```bash
 # the UI, built to web/dist
@@ -184,7 +209,7 @@ cp -R packages/bff kit-context/bff
 docker build --build-context kit=kit-context -t eneo-module:local template
 ```
 
-With both packages from the release: `docker build -t my-module .` in the module's folder.
+With both packages from a release that fits the template ([where the packages come from](#where-the-packages-come-from)): `docker build -t my-module .` in the module's folder.
 
 Run it against the stub without compose (the stub must listen beyond localhost for the container to reach it: `STUB_HOST=0.0.0.0`, and `host.docker.internal` names the host on Docker Desktop and OrbStack; on Linux add `--add-host=host.docker.internal:host-gateway`):
 
@@ -197,7 +222,7 @@ docker run -d --name my-module -p 127.0.0.1:3001:3001 \
 curl -fsS http://localhost:3001/health        # {"ok":true,"revision":null,"build_date":null,"release":null,"source":null}
 ```
 
-Or with compose. `docker compose up` merges `docker-compose.override.yml`, which runs the module from the image `eneo-module:local`, publishes port 3001 and starts the stub as a second service (`stub-eneo` on 8411). It starts the image built above; with both packages from the release, `docker compose up --build` builds it. The module runs as in production, read-only and without capabilities:
+Or with compose. `docker compose up` merges `docker-compose.override.yml`, which runs the module from the image `eneo-module:local`, publishes port 3001 and starts the stub as a second service (`stub-eneo` on 8411). It starts the image built above; with both packages from a release that fits the template, `docker compose up --build` builds it. The module runs as in production, read-only and without capabilities:
 
 ```bash
 cd template && cp .env.example .env && docker compose up      # then open http://localhost:3001
@@ -218,9 +243,37 @@ The module's rules for people and agents are in its `AGENTS.md`. It links back t
 configuration guides, which are not copied into the module. From `web/`, `npm run astryx -- docs eneo-module`
 reads the UI package's guidance locally.
 
+## Login: what is open and what is not
+
+| Part | Rule | Kept by |
+|---|---|---|
+| A route of the module's backend | Always needs a session (`require_session`); a write also `require_same_origin` and `require_expected_user` | `backend/tests/test_routes.py`, which fails for a route without them |
+| A call to Eneo through the proxy | Needs a session, and a `rule(...)` that names the route | The BFF package |
+| A page | Open unless it is under `Private` in `web/src/App.tsx`: the sign-in page is open, `/flows` is not | The module's own choice |
+
+So a page can be shown without a login, with what the built app itself holds; it has no route of the backend to read from until someone signs in. A backend route without a session is an open question: [decisions](../decisions/README.md#open-questions).
+
 ## 8. Register it in Eneo and go live
 
 In Eneo's admin, register the module: its module key, the callback URL `https://<your domain>/api/auth/callback` (that is `MODULE_PUBLIC_URL` plus `/api/auth/callback`), and a service key, which becomes `ENEO_API_KEY`. The steps and the smoke test are in Eneo's [module operator guide](https://github.com/eneo-ai/eneo/blob/develop/docs/deployment/MODULES.md). Then walk the [security checklist](security-checklist.md), and release and run it: [release and deploy](deploy.md).
+
+## When it does not work
+
+**`npm error code ERESOLVE`, with `peer @astryxdesign/core@"0.6.3" from @eneo-ai/module-kit@0.1.0`.** The UI package of the release `v0.1.0` was installed into the template, which has Astryx 0.7.12. Do not pass `--force` or `--legacy-peer-deps`: that installs a UI package built for another Astryx. Undo the change to `web/package.json` and take the package from a checkout: [the quick path](#the-quick-path).
+
+**`ERROR: Invalid requirement: 'eneo-module-bff @ git+https://github.com/eneo-ai/eneo-module-kit@<full sha>#subdirectory=packages/bff'`.** `backend/requirements.txt` ships with a placeholder where a commit of the kit goes. On your machine the quick path installs the BFF from the checkout and never reads that file. For Docker, CI or the devcontainer in a module's own repository, replace `<full sha>` with the full commit of the kit the module starts from.
+
+**`npm error code ENOENT` for `web/vendor/eneo-ai-module-kit-0.1.0.tgz`.** `npm ci` in `web/` found no packed UI package where the lock looks for it. It is not committed, so a plain copy of the template and a fresh clone of a module's repository both lack it. From a kit checkout: `node scripts/new-module.mjs <the module's folder>`, which installs that folder in place.
+
+**`new-module: Python 3.12 or newer was not found`, or `ERROR: Package 'eneo-module-bff' requires a different Python: 3.11.18 not in '>=3.12'`.** The BFF needs Python 3.12 or newer. Install it; if it is not the `python3` or `python` of your terminal, set the environment variable `PYTHON` to its path before running `scripts/new-module.mjs`.
+
+**`new-module: Node 22.22.2 or newer is needed`, or `npm warn EBADENGINE Unsupported engine`.** `node --version` is older than what the kit's tools need ([Node and Python](#node-and-python)). Install Node 22 (`.nvmrc` names it) and run the command again.
+
+**`dev: Port 3001 is taken`** (or 8411), or by hand `Address already in use`. Something else listens there, often an earlier run of the module. Stop it, or choose other ports: `node stub-eneo/dev.mjs --port 3002 --stub-port 8412`. The module is then on `http://localhost:3002`.
+
+**The devcontainer fails while it is created.** `.devcontainer/devcontainer.json` installs `backend/requirements.txt` and runs `npm ci` in `web/`, and a module as copied has the placeholder in the first and no tarball for the second (the two errors above). Develop on your own machine with the quick path. The devcontainer needs a commit in place of `<full sha>` and the tarball in `web/vendor/` first; that combination is not checked in a container here.
+
+**`dev: No Python at ...` or `dev: The UI is not built`.** The folder is a module that is not installed yet: `node scripts/new-module.mjs <the module's folder>` from a kit checkout, as for the missing tarball above.
 
 ## CI
 
@@ -251,6 +304,7 @@ The kit's CI (`.github/workflows/ci.yml`) builds the template against the packag
 | `template-unit` | `npm test -w template/web`, on this commit's UI package | No network call of the page outside `src/session.ts`, none in a unit test, and the module's name in one place |
 | `template-audit` | `pip-audit` on `template/backend/requirements.lock`, and `npm audit --omit=dev --audit-level=high` on `template/web/package-lock.json` alone | The two locks a module starts from hold no known advisory (high and critical, for npm) |
 | `template-image` | `docker compose config` for the three compose combinations; `docker build` with the `kit` context and CI's build arguments, under the name and a release tag the compose file pulls; `docker compose -f docker-compose.yml up --wait`; `/health` and the revision label | The compose files are valid, the image builds from the workspace packages, it runs read-only and without capabilities until healthy, and it says its commit and the release the deployment names |
+| `quick-path` (Linux, Windows, macOS) | `node scripts/new-module.mjs` into a folder whose name has a space, then the module's `node stub-eneo/dev.mjs --check` and `npm test` | [The quick path](#the-quick-path) works as written on each system: the module is made, starts against the stub, signs in and passes its unit tests |
 | `workflows` | actionlint, with shellcheck, on `.github/workflows/ci.yml` and the template's `ci.yml` and `release.yml` | The workflows a module ships are valid, though no run of the kit executes them |
 
 The gate runs `a11y.spec.ts` for every state in `screens.ts` (`signin`, `flows`, `account-menu`, `version`, `flows-empty`, `flows-error`, `not-found`, `load-failure`, `offline`, `session-warning`, `signed-out`) in fifteen projects: in Chromium phone 320 light, phone 390 light and dark, laptop 1440 light and dark, 200 % zoom, forced colours, reduced motion, both tablets and a phone on its side; in WebKit a phone, a tablet and a laptop; in Firefox a laptop ([quality](quality.md#webkit-and-firefox)). It checks axe (every WCAG violation blocks), every control named (in Chromium), placeholder contrast, target sizes (24 px with a mouse, 44 px under `pointer: coarse`), reflow at every width, text spacing, and no endless motion with reduced motion. Every gate test also has the sentinel the flow tests have (a state that causes a failure on purpose declares it in `screens.ts`). `header-fit.spec.ts` checks that at 320 px with text spacing the brand and the account button keep apart. `keyboard.spec.ts`, in all of them but the phone on its side, tabs through each screen from the top: every stop shows focus (WCAG 2.4.7) and is not hidden under anything (2.4.11), focus leaves the page at the end (no trap, 2.1.2), and on a phone the order reads top to bottom (2.4.3); the account menu, the version dialog (back to the account button), the page's dialog, the warning and the sign-in dialog keep focus inside and give it back. `still.spec.ts`, on the two phones, the upright tablet and the laptop in light, opens `signin`, `flows`, `flows-empty`, `flows-error`, `session-warning` and `not-found` by their address and fails when something on screen moves as an answer arrives ([quality](quality.md#what-is-on-screen-stands-still)). `controls.spec.ts`, on phone 390 and laptop 1440 in light, both tablets and the four WebKit and Firefox projects, presses every control of every state in a fresh copy of it and fails one that does nothing, breaks something or leaves something open ([quality](quality.md#every-control-does-something)). `aria.spec.ts`, on phone 390 and laptop 1440 in light and in WebKit and on laptop 1440 in Firefox, holds each state to a snapshot of what a screen reader is given, curated by hand ([quality](quality.md#what-a-screen-reader-is-given)). `harness.spec.ts` tests the gate itself, once in each engine. The production checks (`web/tests/prod/`), in Chromium, WebKit and Firefox, hold the backend to what the built UI needs: the security headers on the page, its files, the API and an error; the page asked for again with an ETag and a 304, the hashed files kept a year, the scripts and stylesheets compressed for a browser that accepts it, and no server banner; each address of the app its page under its title, an unknown one the page that says it is no page, a missing file or API path a 404 that is not the page; the JS and CSS each page transfers within its budget (in Chromium); and a page whose script a release took away gets a 404 that no cache keeps, and starts the release at the next visit. Thresholds are never lowered. The gate's code is a copy of speech-to-text's: known debt, to become a package export when a second module needs it.

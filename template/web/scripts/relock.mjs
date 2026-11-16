@@ -24,7 +24,7 @@ const write = (path, value) => writeFileSync(path, `${JSON.stringify(value, null
 const manifest = read("package.json");
 const version = manifest.dependencies[NAME];
 write("package.json", { ...manifest, dependencies: { ...manifest.dependencies, [NAME]: `file:${file}` } });
-const resolved = spawnSync("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], { stdio: "inherit" });
+const resolved = spawnSync("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], { stdio: "inherit", shell: process.platform === "win32" });
 write("package.json", manifest);
 if (resolved.status !== 0) process.exit(resolved.status ?? 1);
 

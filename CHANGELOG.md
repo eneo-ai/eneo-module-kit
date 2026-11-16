@@ -7,6 +7,8 @@ Related: [README](README.md), [new module](docs/guides/new-module.md), [UI packa
 ## Unreleased
 
 - `@eneo-ai/module-kit` needs `@astryxdesign/core` 0.7.12, and the template pins Astryx's core and CLI at 0.7.12. Astryx no longer makes a warning or an error banner an alert by itself: the offline notice, the sign-in and session problems, a version that cannot be read and the template's flow list that cannot be shown say `role="alert"` themselves, which Astryx puts on the title and description. The providers give Swedish words for design-system strings that Astryx's Swedish catalog lacks: a scrolling region's name, a clear button, a failed copy and a date that does not exist. `LoadingShell`'s spinner, which Astryx would now read out, is silent: the page is said once it has its content, and the word "Laddar" stays for a screen reader to find. `base.css` carries Astryx's layer position rules, which Astryx 0.7.12 would write into a `<style>` that the strict `style-src 'self'` refuses, and `ModuleProviders` renders the element Astryx looks for first, so a menu or popover opens with no policy violation.
+- `scripts/new-module.mjs` makes a module from the template with the packages of a checkout in one command, and a module's `stub-eneo/dev.mjs` starts the stub Eneo and the module together; `--check` signs in and stops. Both run on macOS, Linux and Windows, and the kit's CI runs them on each.
+- The UI package's build and the unit-test scripts of the package and the template run on Windows.
 
 ## 0.1.0 — 2026-11-08
 

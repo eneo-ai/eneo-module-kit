@@ -15,7 +15,7 @@ Every claim about code names the file, never a line. If a diagram and the code d
 | Template (the smallest working module) | `template/` | Built and tested: backend, stub Eneo, Vite app on the kit's session client, Dockerfile, compose files, module CI that publishes the tested image and releases it by tag, agent files. |
 | Module contract, design, decisions, guides | `docs/` | Current. |
 
-Version 0.1.0 of both packages is released as assets of the GitHub release `v0.1.0`, which `.github/workflows/release.yml` builds from the tagged commit; publishing to npm and PyPI is pending. The template still installs the packages of a commit of this repository ([new module](guides/new-module.md#where-the-packages-come-from)).
+Version 0.1.0 of both packages is released as assets of the GitHub release `v0.1.0`, which `.github/workflows/release.yml` builds from the tagged commit; publishing to npm and PyPI is pending. The template installs the packages of a commit of this repository; the release `v0.1.0` does not fit the template on main ([new module](guides/new-module.md#where-the-packages-come-from)).
 
 ## Parts and package structure
 
@@ -368,6 +368,7 @@ flowchart TB
   commit --> tu["template-unit: the template's unit tests and the rules its code keeps"]
   commit --> ta["template-audit: pip-audit and npm audit on the template's two locks"]
   commit --> ti["template-image: the compose files valid; the image built from this commit's packages, run as docker-compose.yml runs it, saying its commit and release"]
+  commit --> qp["quick-path: a module made by scripts/new-module.mjs and started against the stub, signed in, on Linux, Windows and macOS"]
   commit --> wf["workflows: actionlint on the kit's two workflows and the two a module ships"]
 ```
 

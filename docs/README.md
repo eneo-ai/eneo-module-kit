@@ -4,7 +4,7 @@ Purpose: find the right page of the kit's documentation, and see what each page 
 Read this when: you do not know where a fact lives, or you are adding a page.
 Related: [repository README](../README.md), [AGENTS.md](../AGENTS.md), [glossary](glossary.md).
 
-Docs are English. Every page starts with `Purpose`, `Read this when` and `Related`. One fact lives in one page; other pages link to it. A claim about code names a path, not a line.
+Docs are English, except [prova en modul](guides/prova-en-modul.md), which is Swedish. Every page starts with `Purpose`, `Read this when` and `Related`. One fact lives in one page; other pages link to it. A claim about code names a path, not a line.
 
 Status: **current** matches the code today; **planned** describes something not built yet; **temporary** is build scaffolding that is removed at the end of the build.
 
@@ -20,6 +20,7 @@ Status: **current** matches the code today; **planned** describes something not 
 
 | Page | Purpose | Audience | Status |
 |---|---|---|---|
+| [prova en modul](guides/prova-en-modul.md) | Swedish, one screen: from a clone to a signed-in module against the stub, then an agent builds on it | Workshop participants | current |
 | [new module](guides/new-module.md) | Start from `template/`: copy, rename, install, run against the stub, test, image, register, what CI proves | Module developers | current |
 | [build a module](guides/build-a-module.md) | The backend in detail: `create_app`, guards, proxy rules, uploads, signed files, tests | Module developers | current |
 | [UI package](guides/ui-package.md) | Install and wire `@eneo-ai/module-kit`; its names, colour mode, links, branding, shell, theme | Module developers | current |
@@ -35,7 +36,7 @@ Status: **current** matches the code today; **planned** describes something not 
 |---|---|---|---|
 | [BFF package README](../packages/bff/README.md) | Public names, HTTP surface, answers, limits, how to develop the package | BFF developers | current |
 | [UI package README](../packages/ui/README.md) | The package's exports in brief | UI developers | current |
-| [template README](../template/README.md) | The module template in brief, with the way to try it from a kit checkout | Module developers | current |
+| [template README](../template/README.md) | The module template in brief, started against the stub in one command (`node stub-eneo/dev.mjs`) | Module developers | current |
 | [decisions](decisions/README.md) | K1 to K18, one short page each | Anyone asking why | current |
 | [module contract](module-contract.md) | The calls between the BFF and Eneo, with examples, and what the BFF does with each failure | Stub and Eneo-side developers, debuggers | current |
 | [design](design.md) | The long form: the module contract with Eneo (section 2), the HTTP surface (5), limits (6), open questions (7) | Developers, the owner | current |

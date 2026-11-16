@@ -21,7 +21,7 @@ pip install --require-hashes --no-deps -r requirements.lock   # its dependencies
 pip install --no-deps -r requirements.txt
 ```
 
-Or, from a checkout of this repository: `pip install -e /path/to/eneo-module-kit/packages/bff`.
+Or, from a checkout of this repository: `pip install -e /path/to/eneo-module-kit/packages/bff`. A module made from the template gets the BFF from a checkout through [the quick path](new-module.md#the-quick-path).
 
 Python 3.12 or newer. Its dependencies are ranges with security floors, not pins (`packages/bff/pyproject.toml`): pin and lock them in your module's own requirements (the template's `backend/requirements.lock` is that lock).
 

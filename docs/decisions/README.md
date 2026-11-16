@@ -28,3 +28,7 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 | [K18](k18-a-release-promotes-the-tested-image.md) | A release gives the tested image its version; the deployment names the release | Built |
 
 "Built" means the implementation is in the repository and verified. It does not imply that a package version is published.
+
+## Open questions
+
+**Public backend routes.** Every route of a module's backend needs `require_session`, and the template's test enforces it (`template/backend/tests/test_routes.py` with `guards.py`); a write also needs `require_same_origin` and `require_expected_user`. A page can be open: a route in `template/web/src/App.tsx` outside `Private` renders without a login, but it has no backend route of its own to read without a session. Not decided: whether a module may declare a backend route public, and how the guard test would then tell a deliberate public route from a forgotten guard. See [new module](../guides/new-module.md#login-what-is-open-and-what-is-not).
