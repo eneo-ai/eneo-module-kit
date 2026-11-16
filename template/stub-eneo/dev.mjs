@@ -58,11 +58,13 @@ const children = [
 ];
 
 let stopping = false;
-async function stop(code) {
+// Both stop before the last word is said, so that it is the last line.
+async function stop(code, lastWord) {
   if (stopping) return;
   stopping = true;
   for (const child of children) child.kill();
   await Promise.all(children.map((child) => child.exitCode !== null || child.signalCode !== null || new Promise((done) => child.once("exit", done))));
+  if (lastWord) console.log(lastWord);
   process.exit(code);
 }
 for (const child of children) {
@@ -119,8 +121,7 @@ try {
   await Promise.all([healthy(stub), healthy(module)]);
   if (values.check) {
     const answer = await signIn();
-    console.log(`\nOK: signed in through the stub Eneo, the page is served, and /api/example answered ${answer}`);
-    await stop(0);
+    await stop(0, `\nOK: signed in through the stub Eneo, the page is served, and /api/example answered ${answer}`);
   }
   console.log(`\nThe module runs on ${module} against the stub Eneo on ${stub}.`);
   console.log("Open it and sign in: the stub signs everyone in as Erik Lund. Ctrl+C stops both.");
