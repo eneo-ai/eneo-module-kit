@@ -5,7 +5,8 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 rmSync("dist", { recursive: true, force: true });
-const tsc = spawnSync("tsc", ["-p", "tsconfig.json"], { stdio: "inherit" });
+// tsc is a .cmd file on Windows, which only a shell starts.
+const tsc = spawnSync("tsc", ["-p", "tsconfig.json"], { stdio: "inherit", shell: process.platform === "win32" });
 if (tsc.status !== 0) process.exit(tsc.status ?? 1);
 
 cpSync("src/theme/built", "dist/theme/built", { recursive: true });

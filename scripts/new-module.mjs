@@ -1,12 +1,15 @@
-// A new module from template/, with the packages of this checkout, ready to start. The same on macOS, Linux and Windows:
+// A module from template/, with the packages of this checkout, ready to start. The same on macOS, Linux and Windows:
 //
 //   node scripts/new-module.mjs ../eneo-mod-<name>
 //
+// A folder that does not exist yet becomes a new module. A folder that already holds one (a module made before, a fresh
+// clone of a module's repository) is installed in place.
+//
 // It runs the steps of docs/guides/new-module.md ("By hand"): builds and packs the UI package, copies the template, installs
 // and builds its web app, and makes its virtual environment with the locked packages and this checkout's BFF.
-// CI runs it on Linux and on Windows (the quick-path job).
+// CI runs it on Linux, Windows and macOS (the quick-path job).
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, readdirSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,7 +26,7 @@ function run(command, args, cwd) {
   // npm is a .cmd file on Windows, which only a shell starts. A shell does not quote arguments, so npm is only ever
   // given arguments without spaces: a path reaches it as cwd.
   const done = spawnSync(command, args, { cwd, stdio: "inherit", shell: windows && command === "npm" });
-  if (done.status !== 0) fail(`"${command} ${args.join(" ")}" failed: see above. Delete the new folder before trying again.`);
+  if (done.status !== 0) fail(`"${command} ${args.join(" ")}" failed: see above. Fix it and run the same command again.`);
 }
 
 // Python 3.12 when it is there, else a newer one. PYTHON names another.
@@ -44,7 +47,9 @@ if (!process.argv[2]) fail("Name the new module's folder: node scripts/new-modul
 const target = resolve(process.argv[2]);
 const fromKit = relative(kit, target);
 if (!fromKit.startsWith("..") && !isAbsolute(fromKit)) fail("The new module's folder must be outside this repository, for example ../eneo-mod-<name>.");
-if (existsSync(target) && readdirSync(target).length > 0) fail(`${target} exists and is not empty.`);
+// A folder that already holds a module (a copy of the template, a clone of a module's repository) is installed in place.
+const inPlace = existsSync(join(target, "web", "package.json")) && existsSync(join(target, "backend", "requirements.lock"));
+if (!inPlace && existsSync(target) && readdirSync(target).length > 0) fail(`${target} exists and is not a module made from the template.`);
 
 const python = findPython();
 
@@ -53,10 +58,17 @@ run("npm", ["ci"], kit);
 run("npm", ["run", "-w", "packages/ui", "build"], kit);
 run("npm", ["pack", "-w", "packages/ui", "--pack-destination", "template/web/vendor"], kit);
 
-// The template, dotfiles included, without what an earlier build or test run left in it.
-const LEFTOVERS = new Set(["node_modules", "dist", "test-results", ".test-build", ".venv", ".env", "__pycache__"]);
-cpSync(join(kit, "template"), target, { recursive: true, filter: (source) => !LEFTOVERS.has(basename(source)) });
-console.log(`\nCopied the template to ${target}`);
+if (inPlace) {
+  console.log(`\n${target} holds a module: installing it in place`);
+} else {
+  // The template, dotfiles included, without what an earlier build or test run left in it.
+  const LEFTOVERS = new Set(["node_modules", "dist", "test-results", ".test-build", ".venv", ".env", "__pycache__"]);
+  cpSync(join(kit, "template"), target, { recursive: true, filter: (source) => !LEFTOVERS.has(basename(source)) });
+  console.log(`\nCopied the template to ${target}`);
+}
+const pack = `eneo-ai-module-kit-${JSON.parse(readFileSync(join(kit, "packages", "ui", "package.json"), "utf8")).version}.tgz`;
+mkdirSync(join(target, "web", "vendor"), { recursive: true });
+copyFileSync(join(kit, "template", "web", "vendor", pack), join(target, "web", "vendor", pack));
 
 run("npm", ["ci"], join(target, "web"));
 run("npm", ["run", "build"], join(target, "web"));
