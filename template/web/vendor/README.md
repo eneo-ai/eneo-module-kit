@@ -6,10 +6,13 @@ against the packages of the same commit), so the lock cannot name an address for
 package). Every other package is locked with its hash.
 
 - **Install** (`npm ci`): put the packed UI package here first. From the kit repository: `npm run -w packages/ui build &&
-  npm pack -w packages/ui --pack-destination <this folder>`. The kit's `Dockerfile` does it from the `kit` build context.
+  npm pack -w packages/ui --pack-destination <this folder>`. The kit's `Dockerfile` does it from the `kit` build context, and
+  the kit's `node scripts/new-module.mjs <module folder>` does it for you.
 - **Change a dependency or the kit's version**: `node scripts/relock.mjs /path/to/the-tarball.tgz`, which regenerates the lock.
 - **From the kit's GitHub release** instead: delete this folder and `scripts/relock.mjs`, and install the release's tarball by
   its address ([where the packages come from](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/new-module.md#where-the-packages-come-from)): the lock then names that address, with its
-  hash, and `npm ci` needs nothing here. The package is not on npm yet; once it is, a version from the registry works the same.
+  hash, and `npm ci` needs nothing here. The release must fit the template's Astryx version, and `v0.1.0` does not (`npm`
+  stops with `ERESOLVE`), so until a newer release exists the tarball comes from a checkout of the kit. The package is not on npm yet; once it is,
+  a version from the registry works the same.
 
 The tarball itself is not committed (`.gitignore`).

@@ -8,6 +8,7 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 |---|---|
 | Eneo | The AI platform a module runs beside. It is the installation's only login and the module's AI engine. |
 | Module | A small web app on its own domain that uses Eneo. It has a backend (the BFF, built on this kit) and a UI. Registered in Eneo with a module key, a callback URL and a service key. |
+| Assistant, space | What a person builds inside Eneo itself, without code: the foundation. A module is for an interface and logic of its own. |
 | Kit | This repository: the BFF package, the UI package and the template. |
 | Template | The smallest working module (`template/`). A new module starts as a copy of it. Packages are imported; the template is copied. |
 | BFF | Backend for frontend: the module's server side. It holds the session and the credentials, and the browser talks only to it. Package `eneo-module-bff`. |
@@ -29,7 +30,7 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Mint path | The Eneo route (called with POST) that returns a signed URL for a file. Passed to `stream_signed`. |
 | Signed URL | A short-lived URL from Eneo that is itself the credential for one file. Kept with the session, never given to the browser. |
 | Stream slot | One of `MAX_CONCURRENT_STREAMS` places for files streaming at once. |
-| Stub Eneo | `template/stub-eneo/server.py`: Eneo's side of the module contract in about 170 lines, for development and tests. Never shipped. |
+| Stub Eneo | `template/stub-eneo/server.py`: Eneo's side of the module contract in about 170 lines, for development and tests. Never shipped. `stub-eneo/dev.mjs` starts it together with the module. |
 | Tested image | The image a module's CI built once for a commit of main, ran, and pushed as `sha-<commit>` after every job passed. It is the only image a release can name. |
 | Release | A tag `vX.Y.Z` on a commit of main. It gives that commit's tested image the tags `vX.Y.Z` and `latest` without building it; a deployment names it with `MODULE_VERSION`, and `/health` says it. See [release and deploy](guides/deploy.md). |
 | Gate | The accessibility gate: Playwright and axe over every state of the template at several widths and themes (`template/web/tests/e2e/`). Its thresholds are never lowered. |
@@ -41,4 +42,4 @@ Related: [architecture](architecture.md), [design (module contract)](design.md),
 | Module network | The network the module container shares with Eneo's backend. |
 | Beads | The issue tracker (`br`, `.beads/`) that holds the work order of this repository while the kit is built. Not part of the kit. |
 
-The BFF's answers are English, except two query values it puts on a redirect and the UI package reads: `fel=utgangen` (the session ended) and `fel=annan-anvandare` (another user signed in on a renewal). The template's user-facing text (planned) is Swedish.
+The BFF's answers are English, except two query values it puts on a redirect and the UI package reads: `fel=utgangen` (the session ended) and `fel=annan-anvandare` (another user signed in on a renewal). The template's user-facing text is Swedish.

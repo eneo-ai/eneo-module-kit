@@ -1,6 +1,6 @@
 # Agent instructions: eneo-module-kit
 
-The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package includes its Astryx integration. Version 0.1.0 is released as GitHub release assets; publishing to npm and PyPI is pending. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
+The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are built and tested; the UI package includes its Astryx integration. Version 0.1.0 is released as GitHub release assets; publishing to npm and PyPI is pending. A module is made with `node scripts/new-module.mjs <folder>` and started with its `node stub-eneo/dev.mjs` (`README.md`, "Quick start"); the release `v0.1.0` does not fit the template on main, so never install it into the template. Read `README.md` first (what is built, what stays in each module), then `docs/README.md` (the index of every page and its status).
 
 ## Directory map
 
@@ -12,12 +12,20 @@ The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are 
 | `packages/bff/README.md` | The package's public names, HTTP surface, answers and limits | current |
 | `packages/ui/src/` | The UI package: `color-mode.tsx`, `ModuleProviders.tsx`, `ModuleShell.tsx`, `branding.tsx`, `VersionInfo.tsx` and `CopyButton.tsx` (which build runs, support details), `session/` (the session client, the `./session` export), `theme/eneo.theme.ts` (source) and `theme/built/` (generated, committed), `layers.css`, `base.css`; `index.ts` holds the public names | built |
 | `packages/ui/tests/` | node:test with jsdom, one file per concern | built |
-| `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml` (production: the published image, read-only), `docker-compose.override.yml` (development: a local build and the stub), `docker-compose.traefik.yml` (Traefik with HTTPS), `.env.example`, `.devcontainer/`, `.github/workflows/` (a module's own CI, which publishes the tested image, and `release.yml`, which releases a tag), its own `AGENTS.md` | built |
+| `template/` | The smallest working module: `backend/` (the kit's BFF with one allowlist rule and one guarded route), `stub-eneo/` (Eneo's side, development only; `dev.mjs` starts it and the module together, `--check` signs in and stops), `web/` (Vite, React, react-router: `src/`, and `tests/e2e/` for the browsers and the accessibility gate), `Dockerfile`, `docker-compose.yml` (production: the published image, read-only), `docker-compose.override.yml` (development: a local build and the stub), `docker-compose.traefik.yml` (Traefik with HTTPS), `.env.example`, `.devcontainer/`, `.github/workflows/` (a module's own CI, which publishes the tested image, and `release.yml`, which releases a tag), its own `AGENTS.md` | built |
+| `scripts/new-module.mjs` | Makes a module from `template/` in a folder outside the repository, with the packages of this checkout: packs the UI package, copies the template, installs and builds `web/`, makes `.venv` with the locked packages and the BFF. A folder that already holds a module is installed in place | built |
 | `docs/` | `architecture.md`, `guides/`, `decisions/`, `glossary.md`, `design.md` (long form); `docs/README.md` is the index | current |
-| `.github/workflows/ci.yml` | CI: jobs `bff` (lowest and newest versions, `pip-audit`), `ui`, `template-backend`, `template-unit`, `template-audit`, `template-web`, `template-image`, each against the packages of the same commit, and `workflows` (actionlint). Actions pinned to commits, images to digests, tools to versions | built |
+| `.github/workflows/ci.yml` | CI: jobs `bff` (lowest and newest versions, `pip-audit`), `ui`, `template-backend`, `template-unit`, `template-audit`, `template-web`, `template-image`, each against the packages of the same commit, `quick-path` (the README's quick start as written, on Linux, Windows and macOS), and `workflows` (actionlint). Actions pinned to commits, images to digests, tools to versions | built |
 | `.github/workflows/release.yml` | A tag `vX.Y.Z`, in two jobs. `build`, whose token only reads: fails unless the tag is both packages' version, runs their suites, builds the UI package's tarball and the BFF's wheel and sdist, writes `SHA256SUMS` and takes the CHANGELOG's section as notes. `release`, the only job that can write: no checkout and no dependency, it creates the GitHub release from what `build` handed over. Nothing goes to npm or PyPI yet | built |
 
 ## Commands
+
+A module from the template, against the stub (from the repository root, then the module's folder):
+
+```bash
+node scripts/new-module.mjs ../eneo-mod-example
+cd ../eneo-mod-example && node stub-eneo/dev.mjs --check
+```
 
 From the repository root (Python 3.12):
 
@@ -63,7 +71,7 @@ Never `pkill -f`; stop only what you started. Dependencies are ranges with secur
 - The UI package imports nothing from a router or a meta-framework, no stylesheet from its code, and nothing from the template (`packages/ui/tests/package.test.ts` pins this).
 - Astryx is pinned to an exact version. Run its CLI through the package script (`npm run astryx -- <command>`), read `npm run astryx -- component <Name>` before using a component, and never guess a prop.
 - No ejected Astryx components and no authored StyleX. A design-system shortfall is fixed once, in the theme.
-- User-facing text in the template is Swedish. No fonts or scripts from other origins. These docs and the code comments are English.
+- User-facing text in the template is Swedish. No fonts or scripts from other origins. These docs and the code comments are English, except `docs/guides/prova-en-modul.md` (Swedish, for workshop participants).
 - Accessibility bar: WCAG 2.2 AA, 44 px touch targets, a visible focus indicator, proven by the gate the template ships.
 
 The reasons are in `docs/decisions/` (one page each) and `docs/design.md`.
@@ -94,6 +102,7 @@ Code and docs change in one commit. If they disagree, the code wins: fix the doc
 | The BFF's build backend (`[build-system]` of `packages/bff/pyproject.toml`), or a build tool's update | The same requirement in `packages/bff/build-requirements.in`, then regenerate `packages/bff/build-constraints.txt` with the command in its header, a newer `--exclude-newer` date and `--upgrade`. A build that the constraints do not satisfy fails in CI and in the release |
 | A name the UI package exports (`packages/ui/src/index.ts`) or a prop of one | `packages/ui/README.md`, `docs/guides/ui-package.md` |
 | The template (a file it ships, a command in its README, the Dockerfile, a CI job) | `docs/guides/new-module.md`, `docs/architecture.md` (the image and CI sections); for its compose files and workflows also `docs/guides/deploy.md` |
+| `scripts/new-module.mjs`, `template/stub-eneo/dev.mjs` or what they print | `README.md` ("Quick start"), `docs/guides/new-module.md` ("The quick path", "When it does not work"), `docs/guides/prova-en-modul.md`, `template/README.md`, `template/AGENTS.md`, the skill (`template/.agents/skills/eneo-module/SKILL.md`) |
 | A package's version (`packages/ui/package.json`, `packages/bff/pyproject.toml`) | Both together, and `CHANGELOG.md`'s section for it: `.github/workflows/release.yml` releases a tag only when it is both versions, with that section as the notes |
 | A decision | A new page in `docs/decisions/` (the next K number) and its row in `docs/decisions/README.md`; mark the old page superseded |
 

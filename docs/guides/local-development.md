@@ -43,7 +43,7 @@ For tests, unauthenticated control routes. Each holds for the caller's scope, th
 
 ## Run the module against it
 
-Any module. The values below are `template/.env.example`'s, with the stub on the host; use your own ports if 3001 or 8411 are taken. From the module's folder (a virtual environment with `eneo-module-bff` installed, and the built UI in `web/dist`: see [new module](new-module.md)):
+A module made from the template starts the stub and itself with `node stub-eneo/dev.mjs` ([new module](new-module.md#the-quick-path)). The commands below do the same by hand, for any module (bash or zsh). The values below are `template/.env.example`'s, with the stub on the host; use your own ports if 3001 or 8411 are taken. From the module's folder (a virtual environment with `eneo-module-bff` installed, and the built UI in `web/dist`: see [new module](new-module.md)):
 
 ```bash
 # terminal 1: the stub on 8411

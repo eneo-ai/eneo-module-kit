@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 
 rmSync(".test-build", { recursive: true, force: true });
-const tsc = spawnSync("tsc", ["-p", "tsconfig.test.json"], { stdio: "inherit" });
+// tsc is a .cmd file on Windows, which only a shell starts.
+const tsc = spawnSync("tsc", ["-p", "tsconfig.test.json"], { stdio: "inherit", shell: process.platform === "win32" });
 if (tsc.status !== 0) process.exit(tsc.status ?? 1);
 
 const test = spawnSync(process.execPath, ["--import", "./tests/unit/setup.mjs", "--test", ".test-build/tests/unit/**/*.test.js"], { stdio: "inherit" });

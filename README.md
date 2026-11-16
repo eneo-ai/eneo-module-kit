@@ -4,9 +4,40 @@ Purpose: the starter for Eneo modules, small web apps that run beside an Eneo in
 Read this when: you start a module, work on a part of the kit, or want to know what is built and what is planned.
 Related: [docs index](docs/README.md), [architecture](docs/architecture.md), [new module](docs/guides/new-module.md), [build a module](docs/guides/build-a-module.md), [decisions](docs/decisions/README.md), [AGENTS.md](AGENTS.md).
 
-A module needs the same things every time: the login handoff from Eneo, a server-side session, a proxy that sends the right credentials, a themed and accessible UI shell, and a container image. This repository holds those parts once, so a new module imports them instead of copying them.
+På svenska, för workshopdeltagare: [Prova en modul på tio minuter](docs/guides/prova-en-modul.md).
 
-The first module, [eneo-mod-speech-to-text](https://github.com/eneo-ai/eneo-mod-speech-to-text), is the source the kit is extracted from. Treat every API as provisional (0.x) until that module runs on the kit and a second module has used it.
+## What a module is, and when you need one
+
+Assistants and spaces are the foundation of Eneo. Most needs are met there, without code: a prompt, a model and the right knowledge. Start there.
+
+A module is for what they cannot give you: **an interface of your own and logic of your own**. It is a small web app on its own address, beside Eneo. Eneo stays the only login and is the module's AI engine, so the module does one thing well. The first one, [speech to text](https://github.com/eneo-ai/eneo-mod-speech-to-text), records, transcribes and lets a person edit the text.
+
+Every module needs the same things: the login handoff from Eneo, a server-side session, a way to Eneo's API that denies everything it was not told to allow, a themed and accessible page frame, a container image and CI. The kit holds them once. **The packages are imported, the template is copied, and you build only what your module does.**
+
+## Quick start: from a clone to a signed-in module
+
+You need Git, Node 22.22.2 or newer and Python 3.12 or newer, on macOS, Linux or Windows. You need no Eneo: the template has a stub Eneo to develop against. CI runs these commands on all three systems.
+
+```bash
+git clone https://github.com/eneo-ai/eneo-module-kit.git
+cd eneo-module-kit
+node scripts/new-module.mjs ../eneo-mod-example
+cd ../eneo-mod-example
+node stub-eneo/dev.mjs --check
+node stub-eneo/dev.mjs
+```
+
+| Command | What you should see |
+|---|---|
+| `node scripts/new-module.mjs ../eneo-mod-example` | A minute or two of installing and building, ending with `The module is in ...` |
+| `node stub-eneo/dev.mjs --check` | It starts the stub Eneo and the module, signs in and stops. The last line starts with `OK: signed in through the stub Eneo` and ends with `{"greeting":"Hej Erik Lund"}` |
+| `node stub-eneo/dev.mjs` | `The module runs on http://localhost:3001 against the stub Eneo on http://localhost:8411.` Open that address, press **Logga in med Eneo**, and the page **Välj ett flöde** shows `Hej Erik Lund` and two flows. Ctrl+C stops it |
+
+The new module has its own `README.md`, `AGENTS.md`, `CLAUDE.md` and a skill, so a coding agent started in its folder knows how to build on it. What each step does, the same steps by hand, and what to do when one fails: [new module](docs/guides/new-module.md).
+
+> **Start from a checkout, as above, not from the release.** The GitHub release `v0.1.0` does not fit the template on `main`: its UI package needs Astryx 0.6.3 and the template has 0.7.12, so `npm install` of the release's tarball stops with `ERESOLVE`. The packages are not on npm or PyPI either. This holds until a newer release exists.
+
+The kit is extracted from speech to text. Treat every API as provisional (0.x) until a second module has used it.
 
 ## Status
 
@@ -16,13 +47,13 @@ The first module, [eneo-mod-speech-to-text](https://github.com/eneo-ai/eneo-mod-
 | UI package | `packages/ui/` | `@eneo-ai/module-kit`: React and Astryx: theme, colour mode, providers, page shell, brand | **Built and tested.** Version 0.1.0, released as an asset of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0); not on npm yet. `@eneo-ai/module-kit/session` is the session client: the gate (`RequireSession`), the sign-in screen, the page a login window lands on (`SignedInAgain`) and `fetchWithSession`. See `packages/ui/README.md`. |
 | Template | `template/` | The smallest working module: backend, stub Eneo, Vite app, Dockerfile, compose files, CI that publishes the tested image, releases by tag, agent files | **Built and tested** against both packages on every commit. Its pages run on the kit's session client. |
 | Docs | `docs/` | Architecture, guides, decisions, the module contract | Current. |
-| Release 0.1.0 | | Both packages as assets of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0) (the UI package's tarball, the BFF's wheel and sdist, `SHA256SUMS`), built by CI from the tagged commit | **Released** 2026-11-08. Publishing to npm and PyPI is pending. A module installs the release's assets ([build a module](docs/guides/build-a-module.md#1-install-the-package), [UI package](docs/guides/ui-package.md#install)); the template still installs the packages of a commit of this repository, and moves to the release's pins later. |
+| Release 0.1.0 | | Both packages as assets of the GitHub release [`v0.1.0`](https://github.com/eneo-ai/eneo-module-kit/releases/tag/v0.1.0) (the UI package's tarball, the BFF's wheel and sdist, `SHA256SUMS`), built by CI from the tagged commit | **Released** 2026-11-08. Publishing to npm and PyPI is pending. The release does not fit the template on `main` (its UI package needs Astryx 0.6.3, the template has 0.7.12): a module made from the template installs the packages of a checkout ([quick start](#quick-start-from-a-clone-to-a-signed-in-module)). |
 
 What is built versus planned is marked on every page. The decisions behind both are in [docs/decisions/](docs/decisions/README.md).
 
-## Quick start: the BFF
+## Work on the BFF package
 
-From the repository root (Python 3.12):
+For a change to the package itself, not for starting a module. From the repository root (Python 3.12):
 
 ```bash
 python3.12 -m venv .venv
@@ -44,23 +75,7 @@ python -c "from eneo_module_bff import serve; serve('main:app')"
 
 It needs the environment of [configuration](docs/guides/configuration.md) and an Eneo to sign in against. To try it without one, follow [local development](docs/guides/local-development.md), which has a stub Eneo and a walk through the login. [Build a module](docs/guides/build-a-module.md) covers guards, proxy rules, uploads and signed files.
 
-## Quick start: a module with a UI
-
-From the repository root (Node 22.22.2 or newer, Python 3.12). The template installs the packages of this checkout, not the release's ([where the packages come from](docs/guides/new-module.md#where-the-packages-come-from)), so the UI package goes in `web/vendor/` as a tarball and the BFF is installed from its folder:
-
-```bash
-npm ci && npm run -w packages/ui build
-mkdir -p /tmp/kit-pack && npm pack -w packages/ui --pack-destination /tmp/kit-pack
-cp -R template ../eneo-mod-example && cd ../eneo-mod-example
-cp /tmp/kit-pack/eneo-ai-module-kit-0.1.0.tgz web/vendor/
-(cd web && npm ci && npm run build)
-python3.12 -m venv .venv && .venv/bin/pip install --require-hashes --no-deps -r backend/requirements.lock
-.venv/bin/pip install --no-deps /path/to/eneo-module-kit/packages/bff
-```
-
-Then the stub Eneo and the backend, as in step 4 of the guide below.
-
-[New module](docs/guides/new-module.md) has every step in order: rename, environment, run against the stub, test, build the image, register in Eneo, and what CI proves. A plain `docker build` of the template as it ships fails (its BFF pin is a placeholder, and its lock looks for the UI package in `web/vendor/`): [the guide](docs/guides/new-module.md#6-build-the-image) builds the image with the packages of this checkout, as `template/README.md` does.
+[New module](docs/guides/new-module.md) has every step after the quick start, in order: rename, environment, test, build the image, register in Eneo, and what CI proves. A plain `docker build` of the template as it ships fails (its BFF pin is a placeholder, and its lock looks for the UI package in `web/vendor/`): [the guide](docs/guides/new-module.md#6-build-the-image) builds the image with the packages of this checkout.
 
 ## The module contract, in short
 
@@ -99,7 +114,7 @@ A new module starts as a copy of `template/` and imports the two packages. It do
 - A presentational page shell and brand lockup.
 - The session client, `@eneo-ai/module-kit/session`: the sign-in screen, keeping the login (a keepalive, a warning five minutes before the end), and a cover over the page, with a sign-in dialog, when the login has ended, so nothing on the page is lost.
 
-**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, a production compose file with a Traefik overlay, module CI that publishes the tested image and releases it by tag ([release and deploy](docs/guides/deploy.md)), devcontainer, agent instructions, browser tests in three browsers, an accessibility gate in Chromium at eleven screen settings and in WebKit and Firefox at four, production checks of what the backend sends with the built UI in all three, unit tests with guards of the module's code, and a stub Eneo for development.
+**`template/`** (built), a Vite + React app served as static files by the BFF, in one process and one container: a backend that declares the module's own allowed Eneo routes and one guarded route of its own, a sign-in page and one example page, Dockerfile, a production compose file with a Traefik overlay, module CI that publishes the tested image and releases it by tag ([release and deploy](docs/guides/deploy.md)), devcontainer, agent instructions, one command that starts it against the stub Eneo (`stub-eneo/dev.mjs`), browser tests in three browsers, an accessibility gate in Chromium at eleven screen settings and in WebKit and Firefox at four, production checks of what the backend sends with the built UI in all three, unit tests with guards of the module's code, and a stub Eneo for development.
 
 ## What stays in each module
 
@@ -123,6 +138,7 @@ Astryx's hosted MCP server is optional for discovery; the pinned CLI is the sour
 | You want | Read |
 |---|---|
 | The pictures: parts, login, proxy, uploads, UI layers, image, deployment | [docs/architecture.md](docs/architecture.md) |
+| To try a module in ten minutes, in Swedish | [docs/guides/prova-en-modul.md](docs/guides/prova-en-modul.md) |
 | To start a module | [docs/guides/new-module.md](docs/guides/new-module.md) |
 | To write a module's backend | [docs/guides/build-a-module.md](docs/guides/build-a-module.md) |
 | To release and deploy a module | [docs/guides/deploy.md](docs/guides/deploy.md) |
@@ -149,7 +165,7 @@ Astryx's hosted MCP server is optional for discovery; the pinned CLI is the sour
 | Release 0.1.0 of both packages | Released 2026-11-08 as GitHub release assets, built by `.github/workflows/release.yml` |
 | Both packages on npm and PyPI | Pending. Public packages under `@eneo-ai` and AGPL-3.0-only are decided; the npm scope and the PyPI project are set up first ([design.md](docs/design.md) section 7) |
 | The template on the release's pins | Planned: its `backend/requirements.txt` and `web/package-lock.json` name the release instead of a commit and a packed tarball |
-| Speech-to-text running on the kit | After its Astryx port, on a released kit version |
+| Speech-to-text running on the kit | Planned. It runs on Astryx with its own copies of this code, and moves to the kit on a released kit version |
 
 ## Licence
 
