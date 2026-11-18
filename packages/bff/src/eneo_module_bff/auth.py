@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import math
+import re
 import secrets
 import threading
 import time
@@ -32,16 +35,27 @@ from .upstream import SMALL_ANSWER
 logger = logging.getLogger("eneo_module_auth")
 
 SESSION_COOKIE = "eneo_module_session"
+# Each login that has not returned has a cookie of its own, named after its state (state_cookie_name), so a second
+# login (another tab, the session cover's sign-in) never ends the first. It binds the callback to the browser that
+# started the login, for Settings.login_timeout_seconds (LOGIN_TIMEOUT_MINUTES), and its callback clears it. On
+# /api/auth, so that a new login sees how many wait; it therefore goes with every /api/auth request, the status too.
 STATE_COOKIE = "eneo_module_login_state"
+STATE_COOKIE_PATH = "/api/auth"
+# Logins that may wait at once: a new login drops the oldest past this. A cleanup target, not a limit: starts sent before
+# the others' answers land each see the same cookies, so two at once leave six until the next start, and the cleanup
+# bounds no number of simultaneous starts.
+MAX_PENDING_LOGINS = 5
 # The browser session cookie's upper bound is Settings.session_max_age_seconds
 # (SESSION_MAX_AGE_MINUTES). The session also ends at Eneo's
 # session ceiling (module_auth_max_session_hours); the shorter-lived module
 # token is refreshed through Eneo until then.
-STATE_MAX_AGE = 5 * 60
 CALLBACK_PATH = "/api/auth/callback"
 # After Eneo fails to answer a token refresh, wait this long before asking
 # again; the current, still valid token stays in use meanwhile.
 REFRESH_RETRY_SECONDS = 10
+# How long the whole check of a refused token at Eneo's session route may take (ModuleAuth.login_refused), the answer
+# included; past it nothing is confirmed and the session stays.
+SESSION_CHECK_SECONDS = 10.0
 # The methods that change nothing. A WebSocket handshake is a GET too, but the socket it opens acts for the user, so it
 # is checked like a write.
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -119,8 +133,30 @@ def with_query(path: str, query: str) -> str:
     return urlunsplit(parts._replace(query=f"{parts.query}&{query}" if parts.query else query))
 
 
+def state_cookie_name(state: str) -> str:
+    """The cookie that holds this login's state; a digest, so the name is a valid cookie name whatever the query held."""
+    return f"{STATE_COOKIE}_{hashlib.sha256(state.encode()).hexdigest()[:24]}"
+
+
+# Only a name of the form state_cookie_name gives counts as a waiting login: a cookie under the prefix with any other
+# name, which the kit never sets, is neither read nor deleted, and its name may be one the response could not even
+# delete. This stops no cookie by its origin: one that a site on a parent domain sets under a name of this form counts,
+# and may be picked first for deletion, but the delete carries no Domain attribute and does not reach it; it admits no
+# callback, whose state's signature is checked.
+_STATE_COOKIE_NAME = re.compile(rf"{STATE_COOKIE}_[0-9a-f]{{24}}")
+
+
 # The state cookie carries ``next``; a long one makes a cookie that browsers drop, and the login fails.
 MAX_NEXT_LENGTH = 512
+# The largest signed state a login keeps, in bytes; a next that would make it larger is the home path. The cookies of
+# waiting logins go with every /api/auth request: five after the cleanup, six after two starts at once (the tested
+# case), stay under a proxy's limit (ingress-nginx: 8 KB) whatever their next. More simultaneous starts than that are
+# not bounded, and past the limit the proxy would refuse every login until the cookies expire.
+MAX_STATE_COOKIE_BYTES = 1024
+# The most a home path may take, in bytes of UTF-8: a rule a module's author can know in advance. A login's state holds
+# it with a renewal's identity under MAX_STATE_COOKIE_BYTES, even when JSON writes every character as two (a quote or a
+# backslash) and nothing compresses; test_auth proves it.
+MAX_HOME_PATH_BYTES = 256
 
 
 def module_path(value: str | None, home_path: str) -> str:
@@ -196,6 +232,21 @@ class ModuleSessionStore:
             if session_id in self._sessions:
                 self._sessions[session_id] = session
 
+    def delete_if_token(self, session_id: str, access_token: str) -> bool:
+        """Delete the session, and its signed URLs, if it still holds ``access_token``, in one step.
+
+        True when the session is gone now, ended here or before (by a call beside this one, a logout, a new login or
+        its expiry); False when it holds another token, renewed meanwhile and still live, and it stays. A renewed
+        session past its end protects nothing: it goes here, as get() would drop it, and only this one is looked at.
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None and session.access_token != access_token and session.expires_at > time.time():
+                return False
+            self._sessions.pop(session_id, None)
+            self._signed_urls.pop(session_id, None)
+            return True
+
     def delete(self, session_id: str | None) -> None:
         if session_id is None:
             return
@@ -258,6 +309,32 @@ def eneo_is_unavailable(status_code: int) -> bool:
     return status_code in {408, 429} or status_code >= 500
 
 
+def refuses_the_login(answer: httpx2.Response) -> bool:
+    """Eneo's answer says that the user's token is not valid any more: 401, and the code ``authentication_error`` at the
+    top of its JSON body, the string code Eneo documents for its clients to branch on.
+
+    It is a revoked token (a changed password, "log out everywhere"), an expired one, or one whose user is gone; but a
+    route of Eneo's that takes no module tokens answers the same for a valid one. So it is not proof that the login is
+    over: ``ModuleAuth.login_refused`` asks Eneo's session route first. Nothing else is this: not ``invalid_api_key``
+    (the module's key, not the user's), no 403, no other 401 code (a step-up asks for more of the same login), and no
+    body without the code at its top. The number ``eneo_error_code`` is not read: 9005 is ``invalid_api_key``'s too.
+    """
+    if answer.status_code != 401:
+        return False
+    try:
+        body = json.loads(answer.content)
+    except (ValueError, RecursionError):
+        # RecursionError: JSON nested deeper than the parser goes is a body that cannot be read, not a 500.
+        return False
+    return isinstance(body, dict) and body.get("code") == "authentication_error"
+
+
+def session_ended() -> HTTPException:
+    """The kit's answer when the browser's session is gone: 401 and ``X-Auth-Required: session``, which the page reads as
+    its login's end and answers with a new login in place. No body of Eneo's goes with it."""
+    return HTTPException(status_code=401, detail="Not authenticated", headers={"X-Auth-Required": "session"})
+
+
 def _refusal(connection: HTTPConnection, error: HTTPException) -> Exception:
     """``error`` for an HTTP request; a WebSocket handshake is closed unaccepted."""
     if connection.scope["type"] == "websocket":
@@ -280,6 +357,7 @@ class ModuleAuth:
             settings.session_secret,
             salt="eneo-module-login-state",
         )
+        self._check_home_path_fits()
         self.sessions = ModuleSessionStore()
         # Token refreshes in flight, by session id; an entry lives only while
         # its refresh runs.
@@ -294,8 +372,14 @@ class ModuleAuth:
     def callback_url(self) -> str:
         return f"{self.settings.module_public_url}{CALLBACK_PATH}"
 
+    @property
+    def _session_url(self) -> str:
+        """Eneo's session route: who a token is, with the module's key beside it, as every resource call checks both."""
+        return f"{self.settings.eneo_backend_url}/api/v1/module-auth/{quote(self.settings.module_key, safe='')}/session/"
+
     async def login(
         self,
+        request: Request,
         next_path: Annotated[str | None, Query(alias="next")] = None,
         renew: Annotated[bool, Query()] = False,
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
@@ -311,14 +395,13 @@ class ModuleAuth:
             )
             refused.headers["Cache-Control"] = "no-store"
             return refused
-        pending = self.state_serializer.dumps(
-            PendingLogin(
-                state=state,
-                next=module_path(next_path, self.settings.home_path),
-                renew_user_id=current.user.id if current is not None else None,
-                renew_tenant_id=current.tenant_id if current is not None else None,
-            ).model_dump()
+        login = PendingLogin(
+            state=state,
+            next=module_path(next_path, self.settings.home_path),
+            renew_user_id=current.user.id if current is not None else None,
+            renew_tenant_id=current.tenant_id if current is not None else None,
         )
+        pending = self._signed_state(login)
         query = urlencode(
             {
                 "module_key": self.settings.module_key,
@@ -330,46 +413,95 @@ class ModuleAuth:
             url=f"{self.settings.eneo_public_url}/module-login?{query}",
             status_code=303,
         )
+        for oldest in self._pending_logins(request)[: -MAX_PENDING_LOGINS + 1 or None]:
+            self._delete_state_cookie(response, oldest)
         response.set_cookie(
-            key=STATE_COOKIE,
+            key=state_cookie_name(state),
             value=pending,
             httponly=True,
             secure=self.settings.cookie_secure,
             samesite="lax",
-            max_age=STATE_MAX_AGE,
-            path=CALLBACK_PATH,
+            max_age=self.settings.login_timeout_seconds,
+            path=STATE_COOKIE_PATH,
         )
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    def _signed_state(self, login: PendingLogin) -> str:
+        """The login's signed state: with its next, else with the home path; never over MAX_STATE_COOKIE_BYTES.
+
+        Start-up has checked that the home path fits with a renewal's identity as Eneo's ids are (two UUIDs); this
+        guard is for an identity longer than that, which no fallback can make fit, and fails rather than send a cookie
+        a proxy may refuse with every other waiting login.
+        """
+        pending = self.state_serializer.dumps(login.model_dump())
+        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
+            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.settings.home_path}).model_dump())
+        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
+            raise RuntimeError(
+                f"The login's signed state is {len(pending.encode())} bytes even with the home path, over "
+                f"MAX_STATE_COOKIE_BYTES ({MAX_STATE_COOKIE_BYTES}): the renewal's user or tenant id is far longer than "
+                "Eneo's UUIDs"
+            )
+        return pending
+
+    def _check_home_path_fits(self) -> None:
+        """Refuse to start with a home path a login's state cannot hold: at most MAX_HOME_PATH_BYTES of UTF-8, and no
+        control character, which a browser can read as part of another address (a tab in `/<tab>/host` reads as
+        `//host`). Otherwise a sign-in fails later, or lands elsewhere.
+
+        Here, not in a Settings validator: every Settings, built by load_settings, directly or by model_copy (which
+        runs no validators), reaches create_app.
+        """
+        home_path = self.settings.home_path
+        size = len(home_path.encode())
+        if size > MAX_HOME_PATH_BYTES:
+            raise RuntimeError(
+                f"home_path is {size} bytes of UTF-8; at most {MAX_HOME_PATH_BYTES} fit a login's state cookie. "
+                "Choose a shorter one (load_settings(home_path=...) or Settings(home_path=...))."
+            )
+        if has_control_character(home_path):
+            raise RuntimeError(
+                "home_path holds a control character, which a browser can read as part of another address. "
+                "Choose another one (load_settings(home_path=...) or Settings(home_path=...))."
+            )
+
+    def _pending_logins(self, request: Request) -> list[str]:
+        """The browser's waiting logins' cookie names, oldest first; one that cannot be read counts as the oldest."""
+
+        def started(name: str) -> float:
+            try:
+                return self.state_serializer.loads(request.cookies[name], return_timestamp=True)[1].timestamp()
+            except (BadSignature, ValueError):
+                return 0
+
+        return sorted((name for name in request.cookies if _STATE_COOKIE_NAME.fullmatch(name)), key=started)
+
     async def callback(
         self,
+        request: Request,
         ticket: Annotated[str | None, Query()] = None,
         state: Annotated[str | None, Query()] = None,
-        pending_cookie: Annotated[
-            str | None,
-            Cookie(alias=STATE_COOKIE),
-        ] = None,
         held_session_id: Annotated[
             str | None,
             Cookie(alias=SESSION_COOKIE),
         ] = None,
     ) -> RedirectResponse:
-        pending = self._load_pending_login(pending_cookie)
+        # Only this login's own cookie: another login's state, however valid, never admits this callback.
+        cookie_name = state_cookie_name(state) if state is not None else None
+        pending = self._load_pending_login(request.cookies.get(cookie_name) if cookie_name else None)
         if (
             ticket is None
             or state is None
             or pending is None
             or not secrets.compare_digest(state.encode(), pending.state.encode())
         ):
-            return self._auth_error("invalid_state")
+            return self._auth_error(cookie_name, "invalid_state")
 
         try:
             upstream = await self.http_client.post(
                 f"{self.settings.eneo_backend_url}/api/v1/module-auth/token/",
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key
-                },
+                headers=self._eneo_headers(),
                 json={"ticket": ticket},
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
@@ -378,20 +510,20 @@ class ModuleAuth:
             # The kind of error, never its text, here and below: httpx2's quotes a header it could not send, and a
             # validation error the answer it refused. Either can hold a token.
             logger.error("Module ticket exchange could not reach Eneo (%s)", type(error).__name__)
-            return self._auth_error("exchange_unavailable")
+            return self._auth_error(cookie_name, "exchange_unavailable")
 
         if upstream.status_code != 200:
             logger.warning(
                 "Module ticket exchange failed with status %s",
                 upstream.status_code,
             )
-            return self._auth_error("exchange_failed")
+            return self._auth_error(cookie_name, "exchange_failed")
 
         try:
             token = ModuleTokenResponse.model_validate(upstream.json())
         except (ValueError, ValidationError):
             logger.error("Module ticket exchange returned an invalid response")
-            return self._auth_error("exchange_invalid")
+            return self._auth_error(cookie_name, "exchange_invalid")
 
         now = int(time.time())
         session_expires_at = min(
@@ -404,50 +536,44 @@ class ModuleAuth:
             or session_expires_at <= now
         ):
             logger.error("Module ticket exchange returned the wrong module or expiry")
-            return self._auth_error("exchange_invalid")
+            return self._auth_error(cookie_name, "exchange_invalid")
 
         try:
             validation = await self.http_client.get(
-                (
-                    f"{self.settings.eneo_backend_url}/api/v1/module-auth/"
-                    f"{quote(self.settings.module_key, safe='')}/session/"
-                ),
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-                    "Authorization": f"Bearer {token.access_token}",
-                },
+                self._session_url,
+                headers=self._eneo_headers(token.access_token),
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
         except httpx2.RequestError as error:
             logger.error("Module session validation could not reach Eneo (%s)", type(error).__name__)
-            return self._auth_error("validation_unavailable")
+            return self._auth_error(cookie_name, "validation_unavailable")
 
         if validation.status_code != 200:
             logger.warning(
                 "Module session validation failed with status %s",
                 validation.status_code,
             )
-            return self._auth_error("validation_failed")
+            return self._auth_error(cookie_name, "validation_failed")
         try:
             validated = ModuleResourceSessionResponse.model_validate(validation.json())
         except (ValueError, ValidationError):
             logger.error("Module session validation returned an invalid response")
-            return self._auth_error("validation_invalid")
+            return self._auth_error(cookie_name, "validation_invalid")
         if (
             validated.module_key != token.module_key
             or validated.tenant_id != token.tenant_id
             or validated.user.id != token.user.id
         ):
             logger.error("Module session validation returned a different identity")
-            return self._auth_error("validation_invalid")
+            return self._auth_error(cookie_name, "validation_invalid")
 
         if pending.renew_user_id is not None and (
             token.user.id != pending.renew_user_id or token.tenant_id != pending.renew_tenant_id
         ):
             logger.warning("A session renewal signed in a different user; the session is kept")
             response = RedirectResponse(url=with_query(pending.next, "fel=annan-anvandare"), status_code=303)
-            self._delete_state_cookie(response)
+            self._delete_state_cookie(response, cookie_name)
             self._secure_callback_response(response)
             return response
 
@@ -467,7 +593,7 @@ class ModuleAuth:
         # The new cookie replaces the browser's old one, so the old session ends with it: a login, or a
         # renewal by the same user, must not leave two sessions alive for one browser.
         self.sessions.delete(held_session_id)
-        self._delete_state_cookie(response)
+        self._delete_state_cookie(response, cookie_name)
         self._secure_callback_response(response)
         return response
 
@@ -527,16 +653,75 @@ class ModuleAuth:
     ) -> ModuleSession:
         session = await self._live_session(session_id)
         if session is None:
-            raise _refusal(
-                connection,
-                HTTPException(
-                    status_code=401,
-                    detail="Not authenticated",
-                    headers={"X-Auth-Required": "session"},
-                ),
-            )
+            raise _refusal(connection, session_ended())
+        # What the request was admitted under: the token it sends to Eneo, and the session that a refusal of it may end.
         connection.state.module_session = session
+        connection.state.module_session_id = session_id
         return session
+
+    async def raise_if_session_ended(self, connection: HTTPConnection, answer: httpx2.Response) -> None:
+        """``session_ended()`` (a socket: closed with 1008) when Eneo's ``answer`` to a call made with this request's
+        token means that its login is over, the session then gone (``login_refused``); else nothing, and the caller
+        answers Eneo's ``answer`` as it would anyway.
+
+        The answer must have been read: a streamed one (``stream=True``) is a RuntimeError, whatever its status, so that
+        a call that would let a refusal pass unseen fails the first time it runs.
+        """
+        try:
+            answer.content
+        except httpx2.ResponseNotRead:
+            raise RuntimeError(
+                "raise_if_session_ended needs Eneo's answer read: call `await answer.aread()` first, "
+                "or make the call without stream=True"
+            ) from None
+        if await self.login_refused(connection, answer):
+            raise _refusal(connection, session_ended())
+
+    async def login_refused(self, connection: HTTPConnection, answer: httpx2.Response) -> bool:
+        """Whether Eneo's ``answer`` to a call made with this request's token means its login is over, the session
+        then gone. False: Eneo's answer goes on as it is.
+
+        The one rule for every call made with the user's token. A refusal that may end the login
+        (``refuses_the_login``) ends it only when the session still holds the token that was refused and Eneo's own
+        session route refuses that token too, asked once per refusal; anything else confirms nothing. A session that
+        is gone already gets the answer without a check, as ``require_session`` would; one renewed since the call went
+        out is not about this refusal, and the page counts a renewal as the same login, so Eneo's answer goes on. The
+        refresh keeps a rule of its own: it asks whether the session can go on, and ends it at any refusal.
+        """
+        if not refuses_the_login(answer):
+            return False
+        sent = self.session_from_request(connection)
+        session_id = connection.state.module_session_id
+        held = self.sessions.get(session_id)
+        if held is None:
+            return True
+        if held.access_token != sent.access_token:
+            return False
+        if not await self._eneo_confirms_the_end(sent):
+            # A refusal of the same token at the same time may have ended the session while this check waited.
+            if self.sessions.get(session_id) is None:
+                return True
+            logger.warning("Eneo refused a session's token, and its session route did not confirm it: the session stays")
+            return False
+        ended = self.sessions.delete_if_token(session_id, sent.access_token)
+        if ended:
+            logger.info("Eneo refused a session's token, and its session route confirmed it: the session has ended")
+        return ended
+
+    async def _eneo_confirms_the_end(self, session: ModuleSession) -> bool:
+        """Eneo's session route refuses ``session``'s token as the call was refused. Bounded in time, the answer
+        included, and in size; an answer of any other kind, none in time or none at all, confirms nothing."""
+        try:
+            async with asyncio.timeout(SESSION_CHECK_SECONDS):
+                answer = await self.http_client.get(
+                    self._session_url,
+                    headers=self._eneo_headers(session.access_token),
+                    timeout=httpx2.Timeout(SESSION_CHECK_SECONDS),
+                    extensions=SMALL_ANSWER,
+                )
+        except (httpx2.RequestError, TimeoutError):
+            return False
+        return refuses_the_login(answer)
 
     async def _live_session(self, session_id: str | None) -> ModuleSession | None:
         """The caller's session, with its module token refreshed once due."""
@@ -587,10 +772,7 @@ class ModuleAuth:
                     f"{self.settings.eneo_backend_url}/api/v1/module-auth/"
                     f"{quote(self.settings.module_key, safe='')}/token/refresh/"
                 ),
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-                    "Authorization": f"Bearer {session.access_token}",
-                },
+                headers=self._eneo_headers(session.access_token),
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
@@ -666,12 +848,15 @@ class ModuleAuth:
             raise RuntimeError("Module session dependency did not run")
         return session
 
+    def _eneo_headers(self, access_token: str | None = None) -> dict[str, str]:
+        """Eneo's credentials: the module's key, and a user's token once there is one."""
+        headers = {self.settings.eneo_api_key_header_name: self.settings.eneo_api_key}
+        if access_token is not None:
+            headers["Authorization"] = f"Bearer {access_token}"
+        return headers
+
     def upstream_auth_headers(self, connection: HTTPConnection) -> dict[str, str]:
-        session = self.session_from_request(connection)
-        return {
-            self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-            "Authorization": f"Bearer {session.access_token}",
-        }
+        return self._eneo_headers(self.session_from_request(connection).access_token)
 
     def _set_session_cookie(
         self,
@@ -695,24 +880,25 @@ class ModuleAuth:
         if cookie is None:
             return None
         try:
-            payload = self.state_serializer.loads(cookie, max_age=STATE_MAX_AGE)
+            payload = self.state_serializer.loads(cookie, max_age=self.settings.login_timeout_seconds)
             return PendingLogin.model_validate(payload)
         except (BadSignature, SignatureExpired, ValidationError):
             return None
 
-    def _auth_error(self, code: str) -> RedirectResponse:
+    def _auth_error(self, cookie_name: str | None, code: str) -> RedirectResponse:
         response = RedirectResponse(
             url=f"/?{urlencode({'auth_error': code})}",
             status_code=303,
         )
-        self._delete_state_cookie(response)
+        if cookie_name is not None:
+            self._delete_state_cookie(response, cookie_name)
         self._secure_callback_response(response)
         return response
 
-    def _delete_state_cookie(self, response: Response) -> None:
+    def _delete_state_cookie(self, response: Response, name: str) -> None:
         response.delete_cookie(
-            STATE_COOKIE,
-            path=CALLBACK_PATH,
+            name,
+            path=STATE_COOKIE_PATH,
             secure=self.settings.cookie_secure,
             httponly=True,
             samesite="lax",

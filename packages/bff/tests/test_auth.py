@@ -1,11 +1,13 @@
 import asyncio
 import itertools
 import os
+import random
 import re
 import secrets
 import time
 import timeit
 import unittest
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -13,20 +15,27 @@ from urllib.parse import parse_qs, urlparse
 import httpx2
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
+from itsdangerous import URLSafeTimedSerializer
 
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import (
     ModuleAuth,
     ModuleSession,
     ModuleSessionStore,
+    MAX_HOME_PATH_BYTES,
+    MAX_STATE_COOKIE_BYTES,
     ModuleUser,
+    PendingLogin,
     SESSION_COOKIE,
     SignedUrl,
     STATE_COOKIE,
+    state_cookie_name,
     with_query,
 )
 from eneo_module_bff.deps import require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
+
+from .test_login_redirect import VECTORS
 
 # Eneo's session ceiling in these tests; shorter than the module's 8-hour default.
 ENEO_SESSION_SECONDS = 4 * 60 * 60
@@ -84,6 +93,15 @@ def token_payload(
     }
 
 
+def pending_logins(cookies) -> dict[str, str]:
+    """The login states in a cookie jar or a response's cookies: one per sign-in that has not returned yet."""
+    return {name: value for name, value in dict(cookies).items() if name.startswith(f"{STATE_COOKIE}_")}
+
+
+def cookie_header(cookies: dict[str, str]) -> dict[str, str]:
+    return {"Cookie": "; ".join(f"{name}={value}" for name, value in cookies.items())}
+
+
 class FakeResponse:
     def __init__(self, status_code: int = 200, *, user_id: str = "user-id", naive: bool = False) -> None:
         self.status_code = status_code
@@ -126,8 +144,10 @@ class ModuleAuthTests(unittest.TestCase):
             query["redirect_uri"],
             ["https://module.example.test/api/auth/callback"],
         )
-        self.assertIn("eneo_module_login_state", response.cookies)
-        return query["state"][0], location
+        state = query["state"][0]
+        self.assertEqual(list(pending_logins(response.cookies)), [state_cookie_name(state)])
+        self.assertIn("Path=/api/auth;", response.headers["set-cookie"])
+        return state, location
 
     def test_login_redirect_binds_state_to_callback_cookie(self) -> None:
         state, location = self.start_login()
@@ -227,6 +247,127 @@ class ModuleAuthTests(unittest.TestCase):
         )
 
         self.assertEqual(callback.status_code, 303)
+        self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
+        self.assertEqual(self.exchange_client.calls, [])
+
+    def test_a_sign_in_that_takes_six_minutes_at_eneo_completes(self) -> None:
+        # Signed out of Eneo, a person first signs in there; that alone may take longer than five minutes.
+        state, _ = self.start_login()
+
+        with patch("time.time", return_value=time.time() + 6 * 60):
+            callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/flows")
+        self.assertIn(SESSION_COOKIE, callback.cookies)
+
+    def test_a_sign_in_past_the_login_timeout_is_invalid_state_and_exchanges_nothing(self) -> None:
+        # LOGIN_TIMEOUT_MINUTES sets the window; 10 minutes here, so the default is not what the test relies on.
+        with patch.object(self.auth.settings, "login_timeout_seconds", 10 * 60):
+            response = self.client.get("/api/auth/login")
+            state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+            self.assertIn(f"Max-Age={10 * 60}", response.headers["set-cookie"])
+            # A browser that kept the cookie past its Max-Age anyway: the signed age is checked on its own.
+            waiting = pending_logins(response.cookies)
+            self.client.cookies.clear()
+
+            with patch("time.time", return_value=time.time() + 10 * 60 + 5):
+                callback = self.client.get(
+                    "/api/auth/callback",
+                    params={"ticket": "one-time-ticket", "state": state},
+                    headers=cookie_header(waiting),
+                )
+
+        self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
+        self.assertNotIn(SESSION_COOKIE, callback.cookies)
+        self.assertEqual(self.exchange_client.calls, [])
+
+    def test_a_second_sign_in_started_before_the_first_returned_ends_neither(self) -> None:
+        # Another tab, or the session cover's sign-in, starts a sign-in while the first is still at Eneo.
+        first, _ = self.start_login()
+        second, _ = self.start_login()
+        self.assertEqual(len(pending_logins(self.client.cookies)), 2)
+
+        for state in (first, second):
+            with self.subTest(state=state):
+                callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+                self.assertEqual(callback.headers["location"], "/flows")
+                self.assertIn(SESSION_COOKIE, callback.cookies)
+        self.assertEqual(pending_logins(self.client.cookies), {}, "each callback clears its own state")
+
+    def test_at_most_five_sign_ins_wait_and_a_sixth_drops_the_oldest(self) -> None:
+        start = time.time()
+        states = []
+        for second in range(6):
+            with patch("time.time", return_value=start + second):
+                states.append(self.start_login()[0])
+        self.assertEqual(len(pending_logins(self.client.cookies)), 5)
+        self.assertNotIn(state_cookie_name(states[0]), self.client.cookies)
+
+        with patch("time.time", return_value=start + 10):
+            oldest = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": states[0]})
+            self.assertEqual(oldest.headers["location"], "/?auth_error=invalid_state")
+            self.assertEqual(self.exchange_client.calls, [])
+            newest = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": states[5]})
+            self.assertEqual(newest.headers["location"], "/flows")
+
+    def test_two_sign_ins_started_at_once_overshoot_the_five_only_until_the_next_start(self) -> None:
+        # Two starts sent before either answer lands both see the same four waiting logins: the five is a cleanup target
+        # that the next start restores, not a lock across requests.
+        start = time.time()
+        waiting: dict[str, str] = {}
+        for second in range(4):
+            with patch("time.time", return_value=start + second):
+                waiting |= pending_logins(self.client.get("/api/auth/login", headers=cookie_header(waiting)).cookies)
+        with patch("time.time", return_value=start + 4):
+            both = [self.client.get("/api/auth/login", headers=cookie_header(waiting)) for _ in range(2)]
+        for response in both:
+            self.assertNotIn("Max-Age=0", str(response.headers.get_list("set-cookie")))
+            waiting |= pending_logins(response.cookies)
+        self.assertEqual(len(waiting), 6)
+
+        with patch("time.time", return_value=start + 5):
+            next_start = self.client.get("/api/auth/login", headers=cookie_header(waiting))
+
+        dropped = [cookie for cookie in next_start.headers.get_list("set-cookie") if "Max-Age=0" in cookie]
+        self.assertEqual(len(dropped), 2, "the two oldest go, so five wait again")
+        self.assertTrue(all(any(cookie.startswith(f"{name}=") for name in list(waiting)[:2]) for cookie in dropped))
+
+    def test_a_cookie_the_module_never_set_is_no_waiting_login_and_breaks_no_login(self) -> None:
+        # Another site on the parent domain can set cookies with any name; a name the module could not have set is ignored.
+        foreign = {f"{STATE_COOKIE}_{name}": "x" for name in ("@", "a", "b", "c", "d", "e" * 24)}
+
+        response = self.client.get("/api/auth/login", headers=cookie_header(foreign))
+
+        self.assertEqual(response.status_code, 303)
+        self.assertNotIn("Max-Age=0", response.headers["set-cookie"], "nothing it did not set is deleted")
+
+    def test_a_callback_reads_only_its_own_login_s_state(self) -> None:
+        # A renewal binds the new login to the page's user. Another login waiting beside it, which binds no one, never
+        # admits the renewal's callback for someone else.
+        self.sign_in()
+        renewal = self.start_renewal()
+        plain, _ = self.start_login()
+        self.exchange_client.response = FakeResponse(user_id="someone-else")
+        self.exchange_client.validation_response = FakeResponse(user_id="someone-else")
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "other-user", "state": renewal})
+
+        self.assertEqual(callback.headers["location"], "/inloggad?fel=annan-anvandare")
+        self.assertNotIn(SESSION_COOKIE, callback.cookies)
+        self.assertEqual(self.client.get("/api/auth/status").json()["user"]["id"], "user-id")
+        self.assertEqual(list(pending_logins(self.client.cookies)), [state_cookie_name(plain)], "the other login waits on")
+
+    def test_the_state_cookie_of_a_login_before_this_version_is_ignored(self) -> None:
+        # One cookie under the old fixed name: a login started before an upgrade fails once as invalid_state.
+        legacy = self.client.get("/api/auth/login")
+        state = parse_qs(urlparse(legacy.headers["location"]).query)["state"][0]
+        [value] = pending_logins(legacy.cookies).values()
+        self.client.cookies.clear()
+
+        callback = self.client.get(
+            "/api/auth/callback", params={"ticket": "one-time-ticket", "state": state}, headers={"Cookie": f"{STATE_COOKIE}={value}"}
+        )
+
         self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
         self.assertEqual(self.exchange_client.calls, [])
 
@@ -343,6 +484,19 @@ class ModuleAuthTests(unittest.TestCase):
 
                 self.assertEqual(callback.headers["location"], "/flows")
 
+    def test_a_finished_login_whose_next_holds_a_control_character_lands_on_the_home_path(self) -> None:
+        # The rule against control characters in next holds with a state cookie per login, also while others wait.
+        self.start_login()
+        for label, value in VECTORS.items():
+            with self.subTest(label):
+                response = self.client.get("/api/auth/login", params={"next": value})
+                state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+
+                callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+                self.assertEqual(callback.headers["location"], "/flows")
+        self.assertEqual(len(pending_logins(self.client.cookies)), 1, "the login started first still waits")
+
     def test_a_next_above_512_characters_falls_back_to_the_home_path(self) -> None:
         # 6 000 characters make a state cookie of 8 KB, which browsers drop: the login would fail as invalid_state.
         for length, lands_on_next in ((512, True), (513, False), (6000, False)):
@@ -350,13 +504,61 @@ class ModuleAuthTests(unittest.TestCase):
                 # Random, because the signed state is compressed: a repeated character would hide the size.
                 long_next = "/" + secrets.token_urlsafe(length)[: length - 1]
                 login = self.client.get("/api/auth/login", params={"next": long_next})
-                state_cookie = next(h for h in login.headers.get_list("set-cookie") if h.startswith(f"{STATE_COOKIE}="))
+                state_cookie = next(h for h in login.headers.get_list("set-cookie") if h.startswith(f"{STATE_COOKIE}_"))
                 self.assertLess(len(state_cookie), 4096)
                 state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
 
                 callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
 
                 self.assertEqual(callback.headers["location"], long_next if lands_on_next else "/flows")
+
+    def test_six_waiting_logins_stay_under_a_proxy_s_8_kb_header_whatever_their_next(self) -> None:
+        # Every waiting login's cookie goes with every /api/auth request, the status calls too: a long next in each could
+        # push the Cookie header past a proxy's limit (ingress-nginx: 8 KB) and lock the browser out of signing in until
+        # they expire. Six, as two starts at once can leave. The bound is the signed cookie's bytes, not next's
+        # characters. Varied characters: the signed payload is compressed, and a repeated one would hide the size.
+        varied = lambda first, count: "/" + "".join(chr(first + i) for i in range(count))
+        for kind, next_path in (("ascii", "/" + secrets.token_urlsafe(600)[:511]), ("cjk", varied(0x4E00, 511)), ("emoji", varied(0x1F300, 511))):
+            with self.subTest(kind=kind):
+                waiting: dict[str, str] = {}
+                for _ in range(4):
+                    waiting |= pending_logins(self.client.get("/api/auth/login", params={"next": next_path}, headers=cookie_header(waiting)).cookies)
+                four = cookie_header(waiting)
+                for _ in range(2):
+                    waiting |= pending_logins(self.client.get("/api/auth/login", params={"next": next_path}, headers=four).cookies)
+                self.assertEqual(len(waiting), 6)
+                self.assertTrue(all(len(value.encode()) <= MAX_STATE_COOKIE_BYTES for value in waiting.values()))
+                self.assertLessEqual(len(cookie_header(waiting)["Cookie"].encode()), 8 * 1024)
+                self.client.cookies.clear()
+
+        response = self.client.get("/api/auth/login", params={"next": "/flows/a?run=r1"})
+        state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+        callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+        self.assertEqual(callback.headers["location"], "/flows/a?run=r1", "an ordinary next is kept")
+
+    def test_a_next_whose_signed_state_passes_the_byte_bound_lands_on_the_home_path(self) -> None:
+        # 511 characters pass MAX_NEXT_LENGTH, but as CJK they sign to more than MAX_STATE_COOKIE_BYTES.
+        long_next = "/" + "".join(chr(0x4E00 + i) for i in range(510))
+        login = self.client.get("/api/auth/login", params={"next": long_next})
+        state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/flows")
+
+    def test_a_renewal_whose_signed_state_would_pass_the_byte_bound_is_refused_not_sent(self) -> None:
+        # Eneo's ids are UUIDs, which start-up counts on; an id far longer than that cannot make a cookie over the bound.
+        session_id = self.auth.sessions.create(
+            ModuleSession(
+                access_token="t", expires_at=int(time.time()) + 600, refresh_at=int(time.time()) + 300,
+                session_expires_at=int(time.time()) + 3600, module_key="speech-to-text", tenant_id="tenant-id",
+                user=ModuleUser(id=secrets.token_urlsafe(1200), email="user@example.test"),
+            )
+        )
+        self.client.cookies.set(SESSION_COOKIE, session_id)
+
+        with self.assertRaisesRegex(RuntimeError, "MAX_STATE_COOKIE_BYTES"):
+            self.client.get("/api/auth/login", params={"renew": "1", "next": "/inloggad"})
 
     def test_the_signal_for_the_page_goes_before_a_fragment(self) -> None:
         self.assertEqual(with_query("/page", "fel=x"), "/page?fel=x")
@@ -423,7 +625,7 @@ class ModuleAuthTests(unittest.TestCase):
                 # No handoff to Eneo: with no user to bind to, anyone could sign in under this page.
                 self.assertEqual(response.status_code, 303)
                 self.assertEqual(response.headers["location"], "/inloggad?fel=utgangen")
-                self.assertNotIn(STATE_COOKIE, response.cookies)
+                self.assertEqual(pending_logins(response.cookies), {})
                 self.assertNotIn(SESSION_COOKIE, response.cookies)
 
     def test_failed_exchange_redirects_without_creating_session(self) -> None:
@@ -994,6 +1196,68 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
         self.assertEqual(len(eneo.refresh_calls), 1)
         # Nothing outlives the refresh that it coordinated.
         self.assertEqual(self.auth._refreshes, {})
+
+
+class HomePathTests(unittest.TestCase):
+    """The home path is where a login lands when its own next does not fit, so it must fit itself, renewal and all."""
+
+    @staticmethod
+    def app_with(home_path: str) -> FastAPI:
+        return create_app(
+            Settings(
+                eneo_backend_url="https://eneo.example.test",
+                eneo_public_url="https://eneo.example.test",
+                module_public_url="https://module.example.test",
+                module_key="speech-to-text",
+                eneo_api_key="test-key",
+                session_secret="x" * 48,
+                cookie_secure=False,
+                home_path=home_path,
+            ),
+            http_client=FakeExchangeClient(),
+        )
+
+    def test_the_longest_home_path_allowed_fits_a_renewals_signed_state(self) -> None:
+        # The proof of the limit: it fails if PendingLogin grows. Counted as if nothing compressed (compression is
+        # used only when shorter), and with characters that JSON writes as two, the most a home path can take.
+        doubled = "".join(random.Random(7).choice('"\\') for _ in range(MAX_HOME_PATH_BYTES - 1))
+        for kind, home in {
+            "random ASCII": "/" + secrets.token_urlsafe(MAX_HOME_PATH_BYTES)[: MAX_HOME_PATH_BYTES - 1],
+            "characters JSON doubles": "/" + doubled,
+        }.items():
+            with self.subTest(kind):
+                self.assertEqual(len(home.encode()), MAX_HOME_PATH_BYTES)
+                module_auth = self.app_with(home).state.module_auth
+                renewal = PendingLogin(
+                    state=secrets.token_urlsafe(32), next=home, renew_user_id=str(uuid.uuid4()), renew_tenant_id=str(uuid.uuid4())
+                )
+
+                with patch("itsdangerous.url_safe.zlib.compress", lambda data, *args, **kwargs: data + b"never shorter"):
+                    signed = module_auth._signed_state(renewal)
+
+                self.assertLessEqual(len(signed.encode()), MAX_STATE_COOKIE_BYTES)
+                self.assertEqual(module_auth.state_serializer.loads(signed)["next"], home)
+
+    def test_a_home_path_over_the_limit_stops_the_start_and_says_what_to_do(self) -> None:
+        for home, size in (("/" + "a" * MAX_HOME_PATH_BYTES, MAX_HOME_PATH_BYTES + 1), ("/" + "\u754c" * 86, 259)):
+            with self.subTest(size=size):
+                with self.assertRaises(RuntimeError) as refused:
+                    self.app_with(home)
+                self.assertEqual(
+                    str(refused.exception),
+                    f"home_path is {size} bytes of UTF-8; at most {MAX_HOME_PATH_BYTES} fit a login's state cookie. "
+                    "Choose a shorter one (load_settings(home_path=...) or Settings(home_path=...)).",
+                )
+
+    def test_a_home_path_with_a_control_character_stops_the_start(self) -> None:
+        for home in ("/a\nb", "/a\tb", "/a\u2028b"):
+            with self.subTest(home=home), self.assertRaisesRegex(RuntimeError, "^home_path holds a control character"):
+                self.app_with(home)
+
+    def test_an_ordinary_home_path_starts(self) -> None:
+        for home in ("/", "/flows", "/" + "a" * (MAX_HOME_PATH_BYTES - 1)):
+            with self.subTest(home=home[:20]):
+                self.app_with(home)
 
 
 if __name__ == "__main__":

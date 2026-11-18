@@ -70,7 +70,7 @@ class CallbackStateTests(unittest.IsolatedAsyncioTestCase):
         async def start_login() -> str:
             # A failed callback deletes the pending-login cookie, so each attempt starts a login of its own.
             login = await browser.get("/api/auth/login")
-            self.assertIn(STATE_COOKIE, browser.cookies)
+            self.assertTrue(any(name.startswith(f"{STATE_COOKIE}_") for name in browser.cookies))
             return httpx2.URL(login.headers["location"]).params["state"]
 
         for state in ("%C3%A9", "%E2%82%AC%E2%82%AC", "%00", "a" * 3000):

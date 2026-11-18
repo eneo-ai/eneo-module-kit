@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 import unittest
@@ -263,6 +264,14 @@ class FakeSignedUrlResponse:
     def __init__(self, status_code: int = 200, payload: object = None) -> None:
         self.status_code = status_code
         self.payload = payload
+
+    @property
+    def content(self) -> bytes:
+        # What a read httpx2.Response has: the body json() parses.
+        try:
+            return json.dumps(self.json()).encode()
+        except ValueError:
+            return b"not JSON"
 
     def json(self):
         if self.status_code != 200:

@@ -102,7 +102,7 @@ Source: `packages/bff/src/eneo_module_bff/app.py` (`create_app`). Routes added t
 
 ## Login handoff
 
-Look at: the two cookies. The state cookie binds the login to this browser for five minutes; the session cookie is an opaque id, and the token it stands for stays in the module's memory.
+Look at: the two cookies. The state cookie, one per login, binds the login to this browser for `LOGIN_TIMEOUT_MINUTES` (30 by default); the session cookie is an opaque id, and the token it stands for stays in the module's memory.
 
 ```mermaid
 sequenceDiagram
@@ -127,8 +127,8 @@ sequenceDiagram
 | Fact | Value | Where |
 |---|---|---|
 | Session cookie | `eneo_module_session`, random id, HttpOnly, SameSite=Lax, `Secure` unless `COOKIE_SECURE=false`, path `/`, ends with the session | `auth.py` |
-| State cookie | `eneo_module_login_state`, signed with `SESSION_SECRET`, five minutes, path `/api/auth/callback`, deleted by the callback | `auth.py` |
-| Where login returns | `next` if it is a path of this module of at most 512 characters with no backslash and no control character (a tab, CR or LF would make `/<tab>/host` read as `//host`), else `Settings.home_path` (default `/`) | `auth.py` (`module_path`) |
+| State cookie | One per login, `eneo_module_login_state_` and 24 hex digits of its state's SHA-256, signed with `SESSION_SECRET`, `LOGIN_TIMEOUT_MINUTES` (30 by default), path `/api/auth`, deleted by its callback; a new login deletes the oldest past five waiting (a cleanup target, not a limit) | `auth.py` |
+| Where login returns | `next` if it is a path of this module of at most 512 characters with no backslash and no control character (a tab, CR or LF would make `/<tab>/host` read as `//host`), else `Settings.home_path` (default `/`). Also the home path when the signed state would pass 1024 bytes (`MAX_STATE_COOKIE_BYTES`): the cookies of waiting logins go with every `/api/auth` request, the status calls too, and six of them stay under a proxy's 8 KB header limit whatever their `next`. The home path itself is at most 256 bytes of UTF-8 (`MAX_HOME_PATH_BYTES`) with no control character, which fits with a renewal's identity: `create_app` refuses to start otherwise, and a state that still does not fit is an error, never a cookie | `auth.py` (`module_path`; the byte bound in `ModuleAuth.login`, the home path's check when `ModuleAuth` is made) |
 | Callback failure | 303 to `/?auth_error=<code>`: `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid` | `auth.py` |
 | Session end | `min(SESSION_MAX_AGE_MINUTES, Eneo's session_expires_at)` | `auth.py` |
 | A new login | Ends the session the browser held | `auth.py` (`callback`) |
@@ -179,10 +179,13 @@ flowchart TB
   up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
+  up -->|"401 authentication_error"| chk{"Eneo's session route refuses the same token too? One check, 10 s"}
+  chk -->|"yes"| e401b["401, X-Auth-Required: session; the session and its signed URLs deleted"]
+  chk -->|"no, or no answer"| resp
   up -->|"any other status"| resp["Same status and body. Set-Cookie, Location and Eneo's security and caching headers dropped; the module's added, Cache-Control no-store"]
 ```
 
-Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`) and `limits.py`. A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
+Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`), `auth.py` (`ModuleAuth.login_refused`) and `limits.py`. A forwarded upload and the minting of a signed URL check a 401 `authentication_error` the same way; fetching the file with its signed URL does not ([K19](decisions/k19-a-session-ends-on-eneos-confirmation.md)). A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
 
 ## Uploads
 

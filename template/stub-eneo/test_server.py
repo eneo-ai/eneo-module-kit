@@ -154,5 +154,58 @@ class StubEneoTests(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/v1/flows/", both(other))[0].status, 200)
 
 
+    # Eneo's refusals as its handlers write them (see the docstring of server.py for the source).
+    UNAUTHENTICATED = {"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error"}
+
+    def test_a_refusal_has_the_shape_and_the_code_of_enos(self) -> None:
+        token = self.token()
+        bearer = {"Authorization": f"Bearer {token}"}
+        for headers in ({}, self.KEY, bearer, {**self.KEY, "Authorization": "Bearer wrong"}):
+            with self.subTest(headers=headers):
+                response, body = self.call("GET", "/api/v1/flows/", headers)
+                self.assertEqual((response.status, body), (401, self.UNAUTHENTICATED), "a credential missing, or a token Eneo does not take")
+        response, body = self.call("GET", "/api/v1/flows/", {"X-API-Key": "wrong", **bearer})
+        self.assertEqual(response.status, 401)
+        refused_key = {"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}}
+        self.assertEqual(body, {**refused_key, "eneo_error_code": 9005, "detail": refused_key}, "the module's key, not the user's")
+
+    def test_every_eneo_route_asks_for_both_credentials_before_it_is_found(self) -> None:
+        both = {**self.KEY, "Authorization": f"Bearer {self.token()}"}
+        self.assertEqual(self.call("POST", "/api/v1/files/", self.KEY, {})[1], self.UNAUTHENTICATED)
+        self.assertEqual(self.call("POST", "/api/v1/files/f1/signed-url/", both, {})[0].status, 404, "signed in: a route the stub does not have")
+        self.call("POST", "/__stub/end-session")
+        for method, path in (("POST", "/api/v1/files/"), ("POST", "/api/v1/files/f1/signed-url/"), ("GET", "/api/v1/anything/")):
+            with self.subTest(path):
+                response, body = self.call(method, path, both, {} if method == "POST" else None)
+                self.assertEqual((response.status, body), (401, self.UNAUTHENTICATED))
+
+    def test_ended_tokens_are_refused_everywhere_and_still_counted_in_their_scope(self) -> None:
+        mine = {"Cookie": "stub_scope=mine"}
+        login = self.login(mine)
+        both = {**self.KEY, "Authorization": f"Bearer {login['access_token']}"}
+        self.assertEqual(self.call("GET", "/__stub/calls", mine)[1], {"session_route": 0, "refresh": 0})
+        self.call("POST", "/__stub/end-session", mine)
+
+        session, body = self.call("GET", f"/api/v1/module-auth/{server.MODULE_KEY}/session/", both)
+        self.assertEqual((session.status, body), (401, self.UNAUTHENTICATED), "the session route confirms the end")
+        refresh, _ = self.call("POST", f"/api/v1/module-auth/{server.MODULE_KEY}/token/refresh/", both)
+        self.assertEqual(refresh.status, 401)
+        self.assertEqual(self.call("GET", "/__stub/calls", mine)[1], {"session_route": 1, "refresh": 1})
+        self.assertEqual(self.call("GET", "/__stub/calls")[1], {"session_route": 0, "refresh": 0}, "another scope counts its own")
+
+    def test_refused_resources_refuse_a_valid_token_while_the_session_route_takes_it(self) -> None:
+        both = {**self.KEY, "Authorization": f"Bearer {self.token()}"}
+        response, _ = self.call("POST", "/__stub/resources?answer=refused")
+        self.assertEqual(response.status, 200)
+
+        for method, path in (("GET", "/api/v1/flows/"), ("POST", "/api/v1/files/")):
+            response, body = self.call(method, path, both, {} if method == "POST" else None)
+            self.assertEqual((response.status, body), (401, self.UNAUTHENTICATED), path)
+        self.assertEqual(self.call("GET", f"/api/v1/module-auth/{server.MODULE_KEY}/session/", both)[0].status, 200, "the token is valid")
+        self.assertEqual(self.call("POST", f"/api/v1/module-auth/{server.MODULE_KEY}/token/refresh/", both)[0].status, 200)
+        self.call("POST", "/__stub/resources?answer=normal")
+        self.assertEqual(self.call("GET", "/api/v1/flows/", both)[0].status, 200)
+        self.assertEqual(self.call("POST", "/__stub/resources?answer=sometimes")[0].status, 400)
+
 if __name__ == "__main__":
     unittest.main()

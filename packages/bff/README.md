@@ -52,6 +52,7 @@ Run from the module's directory, with the environment of [configuration](https:/
 | `require_same_origin` | Route dependency: writes and WebSocket handshakes only from the module's own origin, else 403. |
 | `require_expected_user` | Route dependency: the page names the session's user in `X-Expected-User`, else 409 `user_changed`. A write and a WebSocket handshake must name one, a read may name none. Runs `require_session` first. The proxy applies it. |
 | `upstream_auth_headers(request)` | The service key and `Authorization: Bearer <module-user token>`, for a call to Eneo from a module's route. |
+| `await raise_if_session_ended(request_or_websocket, answer)` | Call it with Eneo's read answer to such a call: when Eneo confirms that the login is over, the session ends and it raises the 401 of an ended session (a socket is closed with 1008); otherwise it returns. See [When Eneo ends the login](#when-eneo-ends-the-login). |
 | `heavy_io_slot(request_or_websocket)` | Context manager yielding whether a module operation was admitted, without waiting. Keep it through upstream cleanup. |
 | `rule(methods, pattern)`, `ProxyRule`, `RESOURCE_ID` | One allowed proxy route, its type, and `[^/]+`. |
 | `forward_upload(request, upstream_path)` | Re-posts the one file of an upload to Eneo. |
@@ -81,6 +82,28 @@ Uploads are admitted before the body is read and share capacity with signed-file
 
 A module's own routes go in `routers=`. They are registered after the kit's own routes (`/health`, `/api/auth/*`, `/api/branding*`) and before the proxy and the built UI, so they win over both, including under `/api/eneo/`, and cannot replace a kit route. The kit does not add `require_session` to them: each route declares its own. Routes added to the app after `create_app` returns come after the proxy and the page and are not reached; use `routers=`.
 
+## When Eneo ends the login
+
+Eneo can end a login before the module's session ends: a changed password, "log out everywhere", a user who is gone. It then refuses the user's token with 401 and the code `authentication_error` at the top of its JSON body. The session ends only when Eneo's session route (`GET /api/v1/module-auth/{MODULE_KEY}/session/`) refuses the same token too, because a route of Eneo's that takes no module tokens answers the same for a valid one. The browser then gets the 401 of an ended session, with `X-Auth-Required: session`, and its page asks for a new login in place.
+
+- One check per refused call, bounded to 10 seconds with its answer and to the small-answer size. No answer, a slow one or any other answer confirms nothing: the session stays and Eneo's answer goes on unchanged.
+- A 403, a 401 with another code (`invalid_api_key` is the module's key, not the user's), and a body that cannot be read never start a check.
+- A token refreshed before or during the check keeps its session while that session is live; a renewed session past its end is ended. A session ended meanwhile gets the answer of an ended session.
+- The ended session's signed URLs go with it.
+- A confirmed end is logged at INFO by the `eneo_module_auth` logger, which shows only when the module sets up logging for it (`serve` does not).
+
+The kit applies it to every call it makes with the user's token: the proxy, `forward_upload` and the minting of a signed URL in `stream_signed`. Fetching the file with its signed URL carries no user token, so a refusal there ends nothing.
+
+A module's own call to Eneo gets the same rule in one line:
+
+```python
+answer = await request.app.state.http.get(url, headers=upstream_auth_headers(request))
+await raise_if_session_ended(request, answer)
+```
+
+- The answer must have been read. One made with `stream=True` is a `RuntimeError` that says so, whatever its status: call `await answer.aread()` first, or make the call without `stream=True`.
+- On a WebSocket, accepted or not, the socket is closed with 1008 and the reason `Not authenticated`. An accepted socket keeps the token of its handshake: once the session's token has been refreshed, a refused call made with the old one ends nothing and the socket stays open.
+
 ## HTTP surface
 
 Stable for the UI package and for any other frontend.
@@ -88,7 +111,7 @@ Stable for the UI package and for any other frontend.
 | Route | Purpose |
 |---|---|
 | `GET /health`, `GET /api/healthz` | `{"ok": true}` and which build runs: `revision`, `build_date`, `release`, `source`, each `null` when not known ([configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md#which-build-runs)). No session needed |
-| `GET /api/auth/login?next=&renew=` | Starts the handoff: 303 to Eneo's `/module-login`, with a state cookie |
+| `GET /api/auth/login?next=&renew=` | Starts the handoff: 303 to Eneo's `/module-login`, with a state cookie of this login's own on `/api/auth` |
 | `GET /api/auth/callback?ticket=&state=` | Finishes it: 303 to `next` with the session cookie set, or to `/?auth_error=<code>` |
 | `POST /api/auth/logout` | Ends the session (same origin required) |
 | `GET /api/auth/status` | `{"authenticated": false, "user": null}`, or `{authenticated, user, session_ends_in, refresh_in}` (`refresh_in` only while a refresh is still possible) |
@@ -107,7 +130,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 | 304 | `If-None-Match` names the ETag of the branding stylesheet, of the page or of a file of the built UI (of the body that would go out, compressed or not) | empty |
 | 400 | An upload is not exactly one file named `upload_file`, or has a control character or line separator in its file name or content type | `{"detail": ...}` |
 | 400 | A `Content-Length` that is not a length (not digits, longer than 19 characters, or 2**63 or more). Header `Connection: close` | `{"detail": "Invalid Content-Length"}` |
-| 401 | No live session. Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
+| 401 | No live session, or Eneo confirmed that the login is over ([When Eneo ends the login](#when-eneo-ends-the-login)). Header `X-Auth-Required: session` | `{"detail": "Not authenticated"}` |
 | 403 | A write from another origin | `{"detail": "Invalid request origin"}` |
 | 409 | A route with `require_expected_user` (the proxy's): a write that does not name the session's user in `X-Expected-User`, or a request that names another | `{"detail": "user_changed"}` |
 | 403 | The path is not named by a rule, or leaves its route | `{"detail": "Eneo resource is not exposed"}` |
@@ -124,7 +147,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 | 408 | The upload body exceeds its total or inactivity receive deadline. Header `Connection: close` | `{"error": "upload_receive_timeout", ...}` |
 | 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
 | 500 | An error no route handled. Headers: the security headers, `Cache-Control: no-store` | `Internal Server Error` (text) |
-| other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
+| other | The proxy and an upload pass Eneo's own status and body through, unless Eneo confirms that the login is over (401 above) | as Eneo sent |
 
 A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid`. Two Swedish query values are read by the UI package: `fel=utgangen` and `fel=annan-anvandare`.
 
@@ -148,7 +171,7 @@ More in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/de
 
 ```
 src/eneo_module_bff/   the package: one file per concern (see docs/architecture.md, "Where each fact lives")
-tests/                 unittest, one file per module of the package
+tests/                 unittest, one file per module of the package; a behaviour that spans several modules has a file named after it (test_login_end.py)
 pyproject.toml         name, version, dependency ranges with security floors
 ```
 

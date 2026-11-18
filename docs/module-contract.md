@@ -15,8 +15,10 @@ GET {MODULE_PUBLIC_URL}/api/auth/login?next=/flows
 
 303 See Other
 Location: {ENEO_PUBLIC_URL}/module-login?module_key=MODULE_KEY&redirect_uri={MODULE_PUBLIC_URL}/api/auth/callback&state=STATE
-Set-Cookie: eneo_module_login_state=...; HttpOnly; SameSite=Lax; Max-Age=300; Path=/api/auth/callback
+Set-Cookie: eneo_module_login_state_<24 hex digits>=...; HttpOnly; SameSite=Lax; Max-Age=1800; Path=/api/auth
 ```
+
+Each login has a state cookie of its own, named after the first 24 hex digits of the SHA-256 of its `state`, so a second login (another tab, the session cover's sign-in) does not end the first. Its path is `/api/auth`, so the cookies of waiting logins also go with every status call. A `next` whose signed state would pass 1024 bytes is replaced by the module's home path, so that six waiting cookies stay under a proxy's 8 KB header limit. A new login deletes the oldest past five waiting; five is a cleanup target, not a limit: two logins started at once can leave six until the next start.
 
 `state` is 32 random bytes, URL-safe. `redirect_uri` is the callback registered in Eneo with the module key.
 
@@ -102,7 +104,19 @@ Authorization: Bearer TOKEN
 {"has_more": false, "count": 2, "items": [{"id": "flow-1", "name": "Nämndmöte till rapport", "description": "...", "published_version": 3, "is_published": true, "space_id": "space-1", "space_name": "Kommunledningskontoret"}]}
 ```
 
-A call without both is a 401 from Eneo (and from the stub).
+A call without both, or with a token Eneo does not take (revoked, expired, its user gone), is a 401 with the code `authentication_error`; a service key Eneo does not take is a 401 with `invalid_api_key`. Eneo's code for both, at commit `12ff9ada38` of `eneo-ai/eneo`: `backend/src/eneo/server/dependencies/module_auth.py` (both credentials, else `AuthenticationException`), `backend/src/eneo/main/exceptions.py` (`AuthenticationException` is 401, "Unauthenticated", 9005), `backend/src/eneo/server/exception_handlers.py` (the bodies), `backend/src/eneo/authentication/api_key_resolver.py` and `backend/src/eneo/authentication/api_key_router_helpers.py` (`invalid_api_key`). The stub answers the same:
+
+```json
+401 Unauthorized
+{"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error"}
+```
+
+```json
+401 Unauthorized
+{"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}, "eneo_error_code": 9005, "detail": {"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}}}
+```
+
+A route of Eneo's that takes no module tokens answers the first for a valid token too, which is why the BFF asks step 4's route before it ends a session (below).
 
 ## What the BFF does with each answer
 
@@ -117,9 +131,10 @@ A call without both is a 401 from Eneo (and from the stub).
 | 4 | Not the shape above, or another identity than step 3 | `validation_invalid` |
 | 5 | 408, 429, 5xx, no answer, or an unexpected error in the module | The session keeps its still valid token and asks again in 10 s |
 | 5 | Any other non-200, a body that is not the shape above, another identity, or `expires_in` not above zero | The session ends; the next request is a 401 |
-| 6 | Any status | Passed through with its body, except a redirect (301, 302, 303, 307, 308), which is a 502 `upstream_redirect` |
+| 6 | 401 with `code: authentication_error` at the top of the body | Step 4's route is asked once with the same token. A 401 `authentication_error` there ends the session: the browser gets 401 with `X-Auth-Required: session`. Anything else, or no answer within 10 s, and Eneo's answer is passed through. A session that is gone already gets the 401 with `X-Auth-Required: session` without a check, and so does a call whose own check confirmed nothing while another refusal of the same token ended the session ([K19](decisions/k19-a-session-ends-on-eneos-confirmation.md)) |
+| 6 | Any other status | Passed through with its body, except a redirect (301, 302, 303, 307, 308), which is a 502 `upstream_redirect` |
 
-An `auth_error` code reaches the browser as the query of `/?auth_error=<code>`. The state cookie is deleted by every callback answer, and those answers carry `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+An `auth_error` code reaches the browser as the query of `/?auth_error=<code>`. The login's own state cookie is deleted by every callback answer that names a `state`, and those answers carry `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 
 ## A renewal
 

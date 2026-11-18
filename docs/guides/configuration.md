@@ -19,6 +19,7 @@ Related: [build a module](build-a-module.md), [local development](local-developm
 | `ENEO_API_KEY_HEADER_NAME` | `X-API-Key` | a valid HTTP header name that is not a credential or framing header (`Authorization`, `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, ...) | The header that carries the service key to Eneo. The module sets `Authorization` from the session after it, so a key sent under that name would never arrive: it is refused at start, and by `Settings` itself when a module builds it. |
 | `COOKIE_SECURE` | `true` | `true`, `1`, `yes`, `on`, `false`, `0`, `no`, `off`; `false` only when the module is on this machine | `false` only for local development over http. |
 | `SESSION_MAX_AGE_MINUTES` | `480` | integer above zero | The most a login lasts. The session also ends at Eneo's own ceiling, whichever comes first. |
+| `LOGIN_TIMEOUT_MINUTES` | `30` | integer above zero | How long a person may take to sign in at Eneo: the login-state cookie and its signature live this long, and a callback after it is `invalid_state`. Keep it above Eneo's `OIDC_STATE_TTL_SECONDS` (600 by default), since a person signed out of Eneo signs in there first. |
 | `UPLOAD_PROXY_TIMEOUT_SECONDS` | `1800` | number above zero | The timeout of each read and of each write of one upload to Eneo, not a total for the upload. A request's `X-Upload-Timeout-Seconds` header can lower it, never below 60 s. |
 | `UPLOAD_RECEIVE_TIMEOUT_SECONDS` | `1800` | finite number above zero | Total time to receive and parse the browser's upload body. A deadline returns 408 and closes partial files. |
 | `UPLOAD_RECEIVE_IDLE_TIMEOUT_SECONDS` | `30` | finite number above zero | Maximum wait for the next body chunk. This does not reset the total receive deadline. |
@@ -58,7 +59,7 @@ The release comes from the deployment because a release gives the tested image i
 
 | Argument of `load_settings` | Default | Meaning |
 |---|---|---|
-| `home_path` | `/` | Where the callback lands when login was started without a usable `next`. |
+| `home_path` | `/` | Where the callback lands when login was started without a usable `next`. It is at most 256 bytes of UTF-8 (`MAX_HOME_PATH_BYTES`) with no control character; `create_app` refuses to start otherwise and says so. |
 | `default_organization` | none | `Organization(name=..., logo=...)` when no `ORGANIZATION_*` is set. `logo` is `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it, `/api/branding/logo/*` is a 404), `"custom"` (served by the kit, from `ORGANIZATION_LOGO`) or none (the name as text). |
 
 `create_app()` loads with the defaults of these two. A module that sets one builds the settings itself:
@@ -79,6 +80,6 @@ for name, field in Settings.model_fields.items():
 EOF
 ```
 
-`session_max_age_seconds` is `SESSION_MAX_AGE_MINUTES` times 60. The variables and their checks are in `load_settings`.
+`session_max_age_seconds` is `SESSION_MAX_AGE_MINUTES` times 60, and `login_timeout_seconds` is `LOGIN_TIMEOUT_MINUTES` times 60. The variables and their checks are in `load_settings`.
 
 `Settings` validates the capacity values and receive deadlines even when a module constructs it directly. A module passing its own HTTP client to `create_app` must give that pool room beyond its configured heavy-operation ceiling, and apply `heavy_io_slot` to its own long-lived upstream connections. The shared ceiling does not reserve capacity against arbitrary short API traffic.

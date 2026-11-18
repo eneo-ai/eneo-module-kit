@@ -10,21 +10,34 @@ It answers what a module's BFF asks of Eneo (docs/module-contract.md):
   GET  /api/v1/module-auth/{module_key}/session/      who the token is; needs both credentials
   POST /api/v1/module-auth/{module_key}/token/refresh/  a new token; needs both credentials
   GET  /api/v1/flows/                                 two published flows; needs both credentials
-A call without both credentials (the service key in X-API-Key and the module-user token as a bearer token) is a 401.
+Every other /api/v1/ route asks for both credentials (the service key in X-API-Key and the module-user token as a bearer
+token) before it is looked up, then is a 404. A refusal is a 401 with Eneo's body (the core at commit 12ff9ada38:
+backend/src/eneo/server/dependencies/module_auth.py, main/exceptions.py, server/exception_handlers.py,
+authentication/api_key_resolver.py and authentication/api_key_router_helpers.py):
+  a credential missing, or a token Eneo does not take    {"message": "Unauthenticated", "eneo_error_code": 9005,
+                                                          "code": "authentication_error"}
+  a service key Eneo does not take                       {"code": "invalid_api_key", "message": "API key is invalid.",
+                                                          "context": {"auth_layer": "identity"}, "eneo_error_code": 9005,
+                                                          "detail": {the same code, message and context}}
 
 For tests, unauthenticated control routes. Each holds for the caller's scope: the `stub_scope` cookie, which a browser
 test's context sends to these routes and to /module-login (template/web/tests/e2e/fixtures.ts), so that tests running at
 once do not change each other's answers. A login and its tokens keep the scope of the browser that signed in. Without the
 cookie (curl, a browser by hand) the scope is the one of everyone else without it.
-  POST /__stub/end-session                            the scope's tokens are refused from now on, as when Eneo ends the login: the
-                                                      module's session ends at its next refresh (with token_seconds=4, within a few
-                                                      seconds)
+  POST /__stub/end-session                            the scope's tokens are refused from now on, by every route, as when Eneo ends
+                                                      the login: the module's session ends at its next call with the token (its
+                                                      session route confirms the refusal) or its next refresh
   POST /__stub/session?ends_in=S&token_seconds=T      for the scope's logins made after this call: the session ends S seconds after the
                                                       login (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module
                                                       refreshes at half). Defaults 28800 and 900; `reset` as a value restores them
   POST /__stub/login-as?user=erik|sara                who the scope's logins made after this call are (default erik: Erik Lund), to show
                                                       a renewal that signs in someone else
   POST /__stub/flows?mode=normal|empty|error          what the flow list answers the scope's tokens (two flows, none, or a 500)
+  POST /__stub/resources?answer=normal|refused        refused: every /api/v1/ route but module-auth refuses the scope's valid tokens
+                                                      with authentication_error, while the session route and the refresh take them,
+                                                      as a route of Eneo's that takes no module tokens does: the module's session stays
+  GET  /__stub/calls                                  how often the scope's tokens, ended ones too, reached the session route and the
+                                                      refresh: {"session_route": n, "refresh": n}
 """
 
 import json
@@ -66,6 +79,8 @@ class Controls:
         self.flows_mode = "normal"
         self.session_seconds = SESSION_SECONDS
         self.token_seconds = TOKEN_SECONDS
+        self.resources = "normal"
+        self.calls = {"session_route": 0, "refresh": 0}
 
 
 # A token's end of session, its user and its scope.
@@ -79,6 +94,8 @@ class State:
     def __init__(self) -> None:
         self.tickets: dict[str, tuple[float, str]] = {}
         self.tokens: dict[str, Login] = {}
+        # The tokens end-session refused, by scope, so that a call with one still counts in its scope.
+        self.ended: dict[str, str] = {}
         self.scopes: defaultdict[str, Controls] = defaultdict(Controls)
 
     def new_token(self, scope: str, previous: Login | None = None) -> dict[str, object]:
@@ -114,19 +131,47 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def refuse(self, why: str) -> None:
-        self.send_json(401, {"detail": why})
+    def unauthenticated(self) -> None:
+        self.send_json(401, {"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error"})
+
+    def refuse_key(self) -> None:
+        refused = {"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}}
+        self.send_json(401, {**refused, "eneo_error_code": 9005, "detail": refused})
 
     def has_service_key(self) -> bool:
         return secrets.compare_digest(self.headers.get("X-API-Key", ""), API_KEY)
+
+    def count(self, route: str) -> None:
+        """One call with the bearer token to ``route``, in the token's scope; a token the stub never gave counts nowhere."""
+        token = self.bearer() or ""
+        scope = STATE.tokens[token][2] if token in STATE.tokens else STATE.ended.get(token)
+        if scope is not None:
+            STATE.scopes[scope].calls[route] += 1
 
     def bearer(self) -> str | None:
         header = self.headers.get("Authorization", "")
         return header[7:] if header.startswith("Bearer ") else None
 
     def login(self) -> Login | None:
-        """The login of the bearer token, when the call also has the service key: both credentials, or None."""
-        return STATE.tokens.get(self.bearer() or "") if self.has_service_key() else None
+        """The login of the bearer token, when the call also has the service key; else None, and the refusal is sent."""
+        if not self.headers.get("X-API-Key") or not self.bearer():
+            self.unauthenticated()
+            return None
+        if not self.has_service_key():
+            self.refuse_key()
+            return None
+        login = STATE.tokens.get(self.bearer() or "")
+        if login is None:
+            self.unauthenticated()
+        return login
+
+    def resource_login(self) -> Login | None:
+        """``login()`` for a resource route, which also refuses a valid token while the scope's resources are refused."""
+        login = self.login()
+        if login is not None and STATE.scopes[login[2]].resources == "refused":
+            self.unauthenticated()
+            return None
+        return login
 
     def scope(self) -> str:
         """The caller's scope: its stub_scope cookie, or none."""
@@ -136,10 +181,12 @@ class Handler(BaseHTTPRequestHandler):
                 return value
         return ""
 
+    def body_bytes(self) -> bytes:
+        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+
     def body(self) -> dict:
-        length = int(self.headers.get("Content-Length") or 0)
         try:
-            return json.loads(self.rfile.read(length) or b"{}")
+            return json.loads(self.body_bytes() or b"{}")
         except ValueError:
             return {}
 
@@ -159,13 +206,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if path == "/__stub/calls":
+            return self.send_json(200, STATE.scopes[self.scope()].calls)
         if path == f"/api/v1/module-auth/{quote(MODULE_KEY)}/session/":
+            self.count("session_route")
             if (login := self.login()) is None:
-                return self.refuse("both the service key and the module-user token are required")
+                return None
             return self.send_json(200, {"module_key": MODULE_KEY, "tenant_id": TENANT, "user": login[1]})
-        if path == "/api/v1/flows/":
-            if (login := self.login()) is None:
-                return self.refuse("both the service key and the module-user token are required")
+        if path.startswith("/api/v1/"):
+            if (login := self.resource_login()) is None:
+                return None
+            if path != "/api/v1/flows/":
+                return self.send_json(404, {"detail": f"stub: {path}"})
             mode = STATE.scopes[login[2]].flows_mode
             if mode == "error":
                 return self.send_json(500, {"detail": "The stub was told to fail."})
@@ -177,23 +229,32 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         path = url.path
         if path == "/api/v1/module-auth/token/":
+            if not self.headers.get("X-API-Key"):
+                return self.unauthenticated()
             if not self.has_service_key():
-                return self.refuse("the service key is required")
+                return self.refuse_key()
             ticket = self.body().get("ticket")
             expires, scope = STATE.tickets.pop(ticket, (0, "")) if isinstance(ticket, str) else (0, "")
             if expires < time.time():
                 return self.send_json(400, {"detail": "The ticket is unknown, used or expired."})
             return self.send_json(200, STATE.new_token(scope))
         if path == f"/api/v1/module-auth/{quote(MODULE_KEY)}/token/refresh/":
+            self.count("refresh")
             if (login := self.login()) is None:
-                return self.refuse("both the service key and the module-user token are required")
+                return None
             return self.send_json(200, STATE.new_token(login[2], login))
+        if path.startswith("/api/v1/"):
+            self.body_bytes()  # an upload's body, read so that the module can send all of it before it reads the answer
+            if self.resource_login() is None:
+                return None
+            return self.send_json(404, {"detail": f"stub: {path}"})
         if path == "/__stub/end-session":
             scope = self.scope()
             # A copy to walk: another test's login may add a token meanwhile.
             for token, login in list(STATE.tokens.items()):
                 if login[2] == scope:
                     STATE.tokens.pop(token, None)
+                    STATE.ended[token] = scope
             return self.send_json(200, {"ok": True})
         controls = STATE.scopes[self.scope()]
         if path == "/__stub/session":
@@ -214,6 +275,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(400, {"detail": "user is erik or sara"})
             controls.user = user
             return self.send_json(200, {"ok": True, "user": USERS[user]["username"]})
+        if path == "/__stub/resources":
+            answer = parse_qs(url.query).get("answer", ["normal"])[0]
+            if answer not in {"normal", "refused"}:
+                return self.send_json(400, {"detail": "answer is normal or refused"})
+            controls.resources = answer
+            return self.send_json(200, {"ok": True, "resources": answer})
         if path == "/__stub/flows":
             mode = parse_qs(url.query).get("mode", ["normal"])[0]
             if mode not in {"normal", "empty", "error"}:
