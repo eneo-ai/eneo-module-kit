@@ -30,16 +30,21 @@ What it answers (the same list is the docstring of the file):
 | `GET /api/v1/module-auth/{module_key}/session/` | Who the token is. Needs both credentials |
 | `POST /api/v1/module-auth/{module_key}/token/refresh/` | A new token. Needs both credentials |
 | `GET /api/v1/flows/` | Two published flows. Needs both credentials |
+| any other `/api/v1/` route | Asks for both credentials before it is looked up, then 404 |
 | `GET /health` | `{"ok": true}` |
+
+A refusal is a 401 with Eneo's own body: `authentication_error` for a missing credential or a token Eneo does not take, `invalid_api_key` for a service key it does not take. The docstring names the source in Eneo's code it is taken from.
 
 For tests, unauthenticated control routes. Each holds for the caller's scope, the `stub_scope` cookie: a browser test's context sends it to these routes and to `/module-login` (`web/tests/e2e/fixtures.ts`), and a login and its tokens keep the scope of the browser that signed in, so tests that run at once do not change each other's answers. A call without the cookie (`curl`, a browser by hand) has the scope of everyone else without one.
 
 | Call | Effect |
 |---|---|
-| `POST /__stub/end-session` | The scope's tokens are refused from now on, as when Eneo ends the login: the module's session ends at its next token refresh |
+| `POST /__stub/end-session` | The scope's tokens are refused from now on by every route, as when Eneo ends the login: the module's session ends at its next call with the token (Eneo's session route confirms the refusal) or its next refresh |
 | `POST /__stub/session?ends_in=S&token_seconds=T` | For the scope's logins made after this call: the session ends S seconds after the login (Eneo's ceiling; a refresh keeps it) and a token lives T seconds (the module refreshes at half). Defaults 28800 and 900; `reset` as a value restores them |
 | `POST /__stub/login-as?user=erik\|sara` | Who the scope's logins made after this call are (default Erik Lund), to show a renewal that signs in someone else |
 | `POST /__stub/flows?mode=normal\|empty\|error` | What the flow list answers the scope's tokens: two flows, none, or a 500 |
+| `POST /__stub/resources?answer=normal\|refused` | `refused`: every `/api/v1/` route but `module-auth` refuses the scope's valid tokens with `authentication_error`, while the session route and the refresh take them, as a route of Eneo's that takes no module tokens does. The module's session stays |
+| `GET /__stub/calls` | How often the scope's tokens, ended ones too, reached the session route and the refresh: `{"session_route": n, "refresh": n}` |
 
 ## Run the module against it
 
@@ -95,7 +100,8 @@ curl -s -b jar -c jar -X POST -H "Origin: $M" -w ' %{http_code}\n' "$M/api/auth/
 |---|---|
 | A refresh | Lower `TOKEN_SECONDS` in the stub (for example to 20): the token is refreshed at half its life, on the next request or `GET /api/auth/status` after it. |
 | The session ending | Set `SESSION_MAX_AGE_MINUTES=1` on the module: a minute later the next request is a 401. |
-| Eneo ending the login | `curl -X POST localhost:8411/__stub/end-session`: a call to Eneo (`/api/eneo/flows/`) now answers 401, and the module's next refresh is refused and ends the session. With `__stub/session?token_seconds=4` set before the login, that takes seconds, and the page is covered by the sign-in dialog. |
+| Eneo ending the login | `curl -X POST localhost:8411/__stub/end-session`: the next call to Eneo (`/api/eneo/flows/`) ends the session at once and answers 401 with `X-Auth-Required: session`, and the page is covered by the sign-in dialog. Without a call, the next refresh ends it; with `__stub/session?token_seconds=4` set before the login, that takes seconds. `curl localhost:8411/__stub/calls` shows that the session route, not a refresh, confirmed it. |
+| Eneo refusing a token it still takes | `curl -X POST "localhost:8411/__stub/resources?answer=refused"`: `/api/eneo/flows/` answers Eneo's own 401 and the session stays, because the session route takes the token. `answer=normal` restores it. |
 | The warning before the end | `curl -X POST "localhost:8411/__stub/session?ends_in=200"`, then sign in: the page warns at once (five minutes before the end). `?ends_in=reset&token_seconds=reset` restores the defaults. |
 | Someone else signing in | `curl -X POST "localhost:8411/__stub/login-as?user=sara"` before the new login: after an end the page stays covered and says whom to sign in as; before the warning's renewal, the renewal is refused (`fel=annan-anvandare`) and the old login is kept. |
 | An empty list, a failing Eneo | `curl -X POST "localhost:8411/__stub/flows?mode=empty"` or `mode=error`, then reload the flows page; `mode=normal` restores it. |

@@ -102,7 +102,19 @@ Authorization: Bearer TOKEN
 {"has_more": false, "count": 2, "items": [{"id": "flow-1", "name": "Nämndmöte till rapport", "description": "...", "published_version": 3, "is_published": true, "space_id": "space-1", "space_name": "Kommunledningskontoret"}]}
 ```
 
-A call without both is a 401 from Eneo (and from the stub).
+A call without both, or with a token Eneo does not take (revoked, expired, its user gone), is a 401 with the code `authentication_error`; a service key Eneo does not take is a 401 with `invalid_api_key`. Eneo's code for both, at commit `12ff9ada38` of `eneo-ai/eneo`: `backend/src/eneo/server/dependencies/module_auth.py` (both credentials, else `AuthenticationException`), `backend/src/eneo/main/exceptions.py` (`AuthenticationException` is 401, "Unauthenticated", 9005), `backend/src/eneo/server/exception_handlers.py` (the bodies), `backend/src/eneo/authentication/api_key_resolver.py` and `backend/src/eneo/authentication/api_key_router_helpers.py` (`invalid_api_key`). The stub answers the same:
+
+```json
+401 Unauthorized
+{"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error"}
+```
+
+```json
+401 Unauthorized
+{"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}, "eneo_error_code": 9005, "detail": {"code": "invalid_api_key", "message": "API key is invalid.", "context": {"auth_layer": "identity"}}}
+```
+
+A route of Eneo's that takes no module tokens answers the first for a valid token too, which is why the BFF asks step 4's route before it ends a session (below).
 
 ## What the BFF does with each answer
 
