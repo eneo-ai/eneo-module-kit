@@ -91,6 +91,8 @@ Eneo can end a login before the module's session ends: a changed password, "log 
 - A token refreshed before or during the check keeps its session. A session ended meanwhile gets the answer of an ended session.
 - The ended session's signed URLs go with it.
 
+The kit applies it to every call it makes with the user's token: the proxy, `forward_upload` and the minting of a signed URL in `stream_signed`. Fetching the file with its signed URL carries no user token, so a refusal there ends nothing.
+
 A module's own call to Eneo gets the same rule in one line:
 
 ```python
@@ -144,7 +146,7 @@ There is no `/docs`, `/redoc` or `/openapi.json`. A path is matched as written: 
 | 408 | The upload body exceeds its total or inactivity receive deadline. Header `Connection: close` | `{"error": "upload_receive_timeout", ...}` |
 | 504 | A read or write of the upload to Eneo took longer than its timeout (per phase, not a total) | `{"error": "upstream_upload_timeout", ...}` |
 | 500 | An error no route handled. Headers: the security headers, `Cache-Control: no-store` | `Internal Server Error` (text) |
-| other | The proxy and an upload pass Eneo's own status and body through | as Eneo sent |
+| other | The proxy and an upload pass Eneo's own status and body through, unless Eneo confirms that the login is over (401 above) | as Eneo sent |
 
 A callback that fails redirects to `/?auth_error=<code>`, with one of `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid`. Two Swedish query values are read by the UI package: `fel=utgangen` and `fel=annan-anvandare`.
 

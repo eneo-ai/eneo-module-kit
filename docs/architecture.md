@@ -179,10 +179,13 @@ flowchart TB
   up -->|"answer past MAX_RESPONSE_BYTES, or encoded"| e502c["502 upstream_too_large"]
   up -->|"no answer"| e502a["502 upstream_unreachable"]
   up -->|"301, 302, 303, 307, 308"| e502b["502 upstream_redirect"]
+  up -->|"401 authentication_error"| chk{"Eneo's session route refuses the same token too? One check, 10 s"}
+  chk -->|"yes"| e401b["401, X-Auth-Required: session; the session and its signed URLs deleted"]
+  chk -->|"no, or no answer"| resp
   up -->|"any other status"| resp["Same status and body. Set-Cookie, Location and Eneo's security and caching headers dropped; the module's added, Cache-Control no-store"]
 ```
 
-Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`) and `limits.py`. A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
+Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`), `auth.py` (`ModuleAuth.login_refused`) and `limits.py`. A forwarded upload and the minting of a signed URL check a 401 `authentication_error` the same way; fetching the file with its signed URL does not ([K19](decisions/k19-a-session-ends-on-enos-confirmation.md)). A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
 
 ## Uploads
 

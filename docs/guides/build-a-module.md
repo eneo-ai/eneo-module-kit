@@ -96,7 +96,7 @@ async def add_note() -> dict[str, bool]:
 
 `require_session` answers 401 with `X-Auth-Required: session`; `require_same_origin` answers 403; `require_expected_user` answers 409 `user_changed` when a write does not name the session's user in `X-Expected-User` (the page's `fetchWithSession` does), or a request names another: a login in another tab put someone else's session under the page. The proxy applies all three. A route you leave public on purpose still gets the request body cap, because the cap looks at no session.
 
-To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run. Then hand Eneo's answer to `raise_if_session_ended`, so that a login Eneo has ended ends your module's session too:
+To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run. Then hand Eneo's answer to `raise_if_session_ended`, so that a login Eneo has ended ends your module's session too, as the proxy, `forward_upload` and `stream_signed` do:
 
 ```python
 from fastapi import Depends, Request
@@ -164,6 +164,7 @@ The path is relative to `{ENEO_BACKEND_URL}/api/v1/`. The browser sends a `multi
 | The multipart body ends without its final boundary | 400 |
 | A read or write of the upload to Eneo takes longer than `UPLOAD_PROXY_TIMEOUT_SECONDS` (or the lower `X-Upload-Timeout-Seconds`, never below 60 s). Each is timed on its own: there is no total deadline | 504 |
 | Eneo cannot be reached, answers with a redirect, or answers with more than `MAX_RESPONSE_BYTES` (or encoded) | 502 |
+| Eneo refuses the user's token (401 `authentication_error`) and its session route confirms it | 401 with `X-Auth-Required: session`; the session ends |
 | Otherwise | Eneo's status, body and `Content-Type` |
 
 ## 7. Stream a signed file

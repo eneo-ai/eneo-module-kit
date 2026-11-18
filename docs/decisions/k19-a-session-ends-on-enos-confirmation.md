@@ -16,7 +16,7 @@ Eneo refuses such a token with 401 and the code `authentication_error`. So does 
 
 A refusal that may end the login (401, `authentication_error` at the top of the JSON body) starts one check: the BFF asks Eneo's session route with the same token, bounded in time (10 seconds, the answer included) and in size. Only when that route refuses the token too does the session end, and only if it still holds the refused token: the session and its signed URLs are deleted in one step, and the browser gets the 401 of an ended session (`X-Auth-Required: session`). Anything else confirms nothing: the session stays and Eneo's answer goes on unchanged.
 
-The rule lives in `ModuleAuth`, and a module's own calls with the user's token reach it through `raise_if_session_ended`.
+The rule lives in `ModuleAuth`, and every call made with the user's token uses it: the proxy, `forward_upload`, the minting in `stream_signed`, and a module's own calls through `raise_if_session_ended`. Fetching a file with its signed URL does not: a refused signed URL says nothing about the login.
 
 The alternatives were to end the session on the code alone (signs people out for a module's mistake) and to wait for the next refresh (the page shows Eneo's refusal for up to half a token's lifetime). No new trust is added: the session ends only on Eneo's own word, and the check uses the route the login already uses.
 

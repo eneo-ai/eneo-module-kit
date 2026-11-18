@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers
 
-from .deps import require_expected_user, require_same_origin, require_session, upstream_auth_headers
+from .deps import raise_if_session_ended, require_expected_user, require_same_origin, require_session, upstream_auth_headers
 from .settings import CREDENTIAL_AND_FRAMING_HEADERS
 from .upstream import UnboundedAnswer
 from .web import accepted_encodings
@@ -272,6 +272,8 @@ def proxy_router(rules: Sequence[ProxyRule], forward_request_headers: Sequence[s
                 upstream.status_code,
             )
             return upstream_redirect()
+        # Eneo's 401 for a login it has ended is the module's own session answer, once Eneo confirms it.
+        await raise_if_session_ended(request, upstream)
 
         resp_headers = {
             k: v

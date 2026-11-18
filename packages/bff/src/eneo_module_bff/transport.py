@@ -17,7 +17,7 @@ from starlette.formparsers import MultiPartException, MultiPartParser
 from starlette.types import Receive, Scope, Send
 
 from .auth import SESSION_COOKIE, SignedUrl
-from .deps import upstream_auth_headers
+from .deps import raise_if_session_ended, upstream_auth_headers
 from .limits import _capacity_slot, allow_upload, declared_length, heavy_io_slot, too_large
 from .proxy import REDIRECT_STATUSES, forwarded_headers, leaves_route, upstream_redirect, upstream_too_large, upstream_url, uri_too_long
 from .settings import Settings, has_control_character
@@ -209,6 +209,7 @@ async def _post_file(request: Request, upstream_path: str, upload_file: UploadFi
     if upstream.status_code in REDIRECT_STATUSES:
         logger.error("Upload was answered with a redirect: url=%s status=%s", url, upstream.status_code)
         return upstream_redirect()
+    await raise_if_session_ended(request, upstream)
 
     return Response(
         content=upstream.content,
@@ -345,6 +346,7 @@ async def _signed_url(request: Request, session_id: str, mint_path: str, unavail
         logger.error("Signed URL request failed: path=%s (%s)", mint_path, type(error).__name__)
         raise HTTPException(status_code=502, detail="Eneo could not be reached.")
     if upstream.status_code >= 400:
+        await raise_if_session_ended(request, upstream)
         try:
             detail = upstream.json()
         except ValueError:

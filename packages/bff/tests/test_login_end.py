@@ -13,11 +13,11 @@ import unittest
 from unittest.mock import patch
 
 import httpx2
-from fastapi import Depends, HTTPException, Request, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from eneo_module_bff import auth, raise_if_session_ended, require_session, upstream_auth_headers
+from eneo_module_bff import auth, forward_upload, raise_if_session_ended, require_session, rule, stream_signed, upstream_auth_headers
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleAuth, ModuleSession, ModuleUser, SignedUrl, refuses_the_login
 from eneo_module_bff.settings import Settings
@@ -480,6 +480,134 @@ class PublicNameTests(unittest.TestCase):
         browser.cookies.clear()
         refused = browser.get("/api/own")
         self.assertEqual((refused.status_code, refused.json(), refused.headers.get("x-auth-required")), (401, {"detail": "Not authenticated"}, "session"))
+
+
+FILE_URL = f"{ENEO}/signed/f1?sig=1"
+
+
+class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
+    """Each call the kit makes to Eneo with the user's token, with Eneo refusing it: the proxy, a forwarded upload and the
+    minting of a signed URL. Fetching the file with its signed URL carries no user token and is no evidence."""
+
+    SITES = {
+        "the proxy": ("GET", "/api/eneo/things/", {}),
+        "a write through the proxy": ("POST", "/api/eneo/things/", {"json": {}}),
+        "a forwarded upload": ("POST", "/api/upload", {"files": {"upload_file": ("note.txt", b"text", "text/plain")}}),
+        "the minting of a signed URL": ("GET", "/api/file", {}),
+    }
+
+    def module(self, resource_answer, session_answer=SESSION_ROUTE_ACCEPTS, *, file_answer=None):
+        """A module on the kit with the three sites; Eneo answers ``resource_answer`` to each, and the session route
+        ``session_answer`` (a response, or an async function that answers)."""
+        self.checks: list[httpx2.Request] = []
+
+        async def eneo(request: httpx2.Request) -> httpx2.Response:
+            url = str(request.url)
+            if url == SESSION_ROUTE:
+                self.checks.append(request)
+                answer = await session_answer() if callable(session_answer) else session_answer
+            elif url == FILE_URL:
+                answer = file_answer
+            else:
+                answer = resource_answer
+            return httpx2.Response(answer.status_code, stream=_Arriving(answer.content), headers=answer.headers)
+
+        router = APIRouter()
+
+        @router.post("/api/upload", dependencies=[Depends(require_session)])
+        async def upload(request: Request):
+            return await forward_upload(request, "things/files/")
+
+        @router.get("/api/file", dependencies=[Depends(require_session)])
+        async def file(request: Request):
+            return await stream_signed(request, "f1", mint_path="files/f1/signed-url/", unavailable="The file is not available")
+
+        client = httpx2.AsyncClient(transport=httpx2.MockTransport(eneo))
+        self.app = create_app(settings(), http_client=client, routers=[router], proxy_rules=[rule({"GET", "POST"}, r"things/$")])
+        self.sessions = self.app.state.module_auth.sessions
+        self.session_id = self.sessions.create(a_session())
+        self.sessions.remember_signed_url(self.session_id, "files/other/signed-url/", SignedUrl(FILE_URL, time.time() + 600))
+
+    async def send(self, site: str) -> httpx2.Response:
+        method, path, sent = self.SITES[site]
+        headers = {"Cookie": f"{SESSION_COOKIE}={self.session_id}", "Origin": ORIGIN, "X-Expected-User": "user-id"}
+        async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=self.app, raise_app_exceptions=False), base_url=ORIGIN) as browser:
+            return await browser.request(method, path, headers=headers, **sent)
+
+    async def test_a_confirmed_end_of_the_login_is_the_kits_answer_at_every_site(self) -> None:
+        for site in self.SITES:
+            with self.subTest(site):
+                self.module(httpx2.Response(401, json=REVOKED), httpx2.Response(401, json=REVOKED))
+
+                response = await self.send(site)
+
+                self.assertEqual(response.status_code, 401, response.text)
+                self.assertEqual(response.headers.get("x-auth-required"), "session")
+                self.assertEqual(response.json(), {"detail": "Not authenticated"}, "the kit's own answer, never Eneo's")
+                self.assertNotIn("set-cookie", response.headers, "the browser's cookie is left as it is")
+                self.assertIsNone(self.sessions.get(self.session_id))
+                self.assertIsNone(self.sessions.signed_url(self.session_id, "files/other/signed-url/"))
+                self.assertEqual(len(self.checks), 1)
+                self.assertEqual(self.checks[0].headers["Authorization"], "Bearer module-user-token")
+
+    async def test_a_refusal_that_is_not_the_logins_end_is_answered_as_before_and_the_session_stays(self) -> None:
+        cases = {
+            "the module's key refused": (httpx2.Response(401, json=KEY_REFUSED), 0),
+            "the key not registered": (httpx2.Response(403, json=NOT_REGISTERED), 0),
+            "the user inactive": (httpx2.Response(403, json=INACTIVE), 0),
+            "a 401 the session route does not confirm": (httpx2.Response(401, json=REVOKED), 1),
+        }
+        for site in self.SITES:
+            for case, (answer, checks) in cases.items():
+                with self.subTest(site=site, case=case):
+                    self.module(answer)
+
+                    response = await self.send(site)
+
+                    self.assertNotIn("x-auth-required", response.headers)
+                    if site == "the minting of a signed URL":
+                        self.assertEqual((response.status_code, response.json()), (answer.status_code, {"detail": answer.json()}))
+                    else:
+                        self.assertEqual((response.status_code, response.json()), (answer.status_code, answer.json()), "Eneo's answer, as it is")
+                    self.assertEqual(self.sessions.get(self.session_id).access_token, "module-user-token")
+                    self.assertEqual(len(self.checks), checks)
+
+    async def test_a_refused_signed_url_starts_no_check(self) -> None:
+        self.module(
+            httpx2.Response(200, json={"url": FILE_URL, "expires_at": time.time() + 600}),
+            httpx2.Response(401, json=REVOKED),
+            file_answer=httpx2.Response(401, json=REVOKED, headers={"content-type": "application/json"}),
+        )
+
+        response = await self.send("the minting of a signed URL")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("x-auth-required", response.headers)
+        self.assertEqual(self.checks, [])
+        self.assertIsNotNone(self.sessions.get(self.session_id))
+
+    async def test_a_request_cancelled_during_the_check_frees_its_slots(self) -> None:
+        for site in self.SITES:
+            with self.subTest(site):
+                asked = asyncio.Event()
+
+                async def never():
+                    asked.set()
+                    await asyncio.Event().wait()
+
+                self.module(httpx2.Response(401, json=REVOKED), never)
+                streams = self.app.state.stream_slots._value
+                request = asyncio.create_task(self.send(site))
+                await asyncio.wait_for(asked.wait(), 1)
+
+                request.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await request
+
+                self.assertEqual(self.app.state.upload_slots.borrowed_tokens, 0)
+                self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
+                self.assertEqual(self.app.state.stream_slots._value, streams)
+                self.assertEqual(self.sessions.get(self.session_id).access_token, "module-user-token")
 
 
 if __name__ == "__main__":

@@ -117,7 +117,8 @@ A call without both is a 401 from Eneo (and from the stub).
 | 4 | Not the shape above, or another identity than step 3 | `validation_invalid` |
 | 5 | 408, 429, 5xx, no answer, or an unexpected error in the module | The session keeps its still valid token and asks again in 10 s |
 | 5 | Any other non-200, a body that is not the shape above, another identity, or `expires_in` not above zero | The session ends; the next request is a 401 |
-| 6 | Any status | Passed through with its body, except a redirect (301, 302, 303, 307, 308), which is a 502 `upstream_redirect` |
+| 6 | 401 with `code: authentication_error` at the top of the body | Step 4's route is asked once with the same token. A 401 `authentication_error` there ends the session: the browser gets 401 with `X-Auth-Required: session`. Anything else, or no answer within 10 s, and Eneo's answer is passed through ([K19](decisions/k19-a-session-ends-on-enos-confirmation.md)) |
+| 6 | Any other status | Passed through with its body, except a redirect (301, 302, 303, 307, 308), which is a 502 `upstream_redirect` |
 
 An `auth_error` code reaches the browser as the query of `/?auth_error=<code>`. The state cookie is deleted by every callback answer, and those answers carry `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 
