@@ -10,15 +10,24 @@ import { Brand } from "../branding.js";
 import { ModuleShell } from "../ModuleShell.js";
 import { useRouteReady } from "../routes.js";
 import { messages } from "./messages.js";
+import { isLoginWindow, LoginWindowFailed } from "./SignedInAgain.js";
 
 // Signing in leaves the app for Eneo's login: a plain link, not the router's (a `linkComponent` of ModuleProviders).
 const Anchor = (props: AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} />;
 
+type SignInScreenProps = Parameters<typeof SignInPage>[0];
+
 /**
  * The sign-in screen: one button that starts Eneo's login (the backend's `/api/auth/login`) and, when the callback
- * failed (`/?auth_error=…`), says so once. SSO only.
+ * failed (`/?auth_error=…`), says so once. SSO only. In the sign-in dialog's login window (`isLoginWindow()`), where a
+ * failed sign-in lands too, it is the window's failure view instead, with or without `auth_error`: a login window never
+ * offers a sign-in of its own.
  */
-export function SignInScreen({
+export function SignInScreen(props: SignInScreenProps) {
+  return isLoginWindow() ? <LoginWindowFailed productName={props.productName} /> : <SignInPage {...props} />;
+}
+
+function SignInPage({
   productName,
   title,
   description,

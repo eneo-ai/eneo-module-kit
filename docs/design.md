@@ -146,13 +146,14 @@ Stable for the UI package and for any other frontend:
 
 A request without a session gets 401 with `X-Auth-Required: session`, and so does a request whose call to Eneo was refused for a login that Eneo's session route confirms is over ([K19](decisions/k19-a-session-ends-on-eneos-confirmation.md)). A write from another origin gets 403. A write through the proxy that does not name the session's user in `X-Expected-User` gets 409 `user_changed`. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
 
-The UI package's session client depends on four things in this surface:
+The UI package's session client depends on these things in this surface:
 
 - The `X-Auth-Required: session` mark on a 401: it is how a request learns that the login ended, as opposed to Eneo's own 401.
 - `X-Expected-User` on a write, and the 409 `{"detail": "user_changed"}` answer: how a page learns that the session under it is someone else's.
 - `session_ends_in` and `refresh_in` in `/api/auth/status`: the warning and the keepalive.
 - `next` and `renew=1` on `/api/auth/login`: before the end a renewal is bound to the user signed in; after the end the backend refuses a renewal (`fel=utgangen`), so the page starts a login without `renew`.
 - The redirect `?fel=annan-anvandare` or `?fel=utgangen` when a renewal is refused: the value is part of the contract and is Swedish.
+- A failed callback's redirect to a page of the module with `auth_error`: the sign-in screen says so once, and in the login window the failure view shows ([K20](decisions/k20-the-login-window-knows-itself.md)).
 
 ## 6. Limits to be honest about
 

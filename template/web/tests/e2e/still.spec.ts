@@ -41,6 +41,7 @@ const BY_ADDRESS: Record<string, (page: Page) => Locator> = {
   "flows-error": (page) => page.getByText("Flödena kunde inte visas."),
   "session-warning": (page) => page.getByRole("alertdialog", { name: "Du loggas snart ut" }),
   "not-found": (page) => page.getByRole("heading", { level: 1, name: "Sidan finns inte." }),
+  "login-window-failed": (page) => page.getByRole("heading", { level: 1, name: "Inloggningen kunde inte slutföras" }),
 };
 
 // The organisation's mark is 40 px high (base.css of @eneo-ai/module-kit) and arrives when the brand is read. With a

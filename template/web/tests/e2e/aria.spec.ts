@@ -19,6 +19,7 @@ import { STATES } from "./screens";
 /** Each state, and the region of it that is kept: the whole shell for a page, the dialog or menu open over one. */
 const SNAPSHOTS: { state: string; region: (page: Page) => Locator }[] = [
   { state: "signin", region: (page) => page.locator(".astryx-app-shell") },
+  { state: "login-window-failed", region: (page) => page.locator(".astryx-app-shell") },
   { state: "flows", region: (page) => page.locator(".astryx-app-shell") },
   { state: "account-menu", region: (page) => page.getByRole("menu") },
   { state: "version", region: (page) => page.getByRole("dialog") },

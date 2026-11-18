@@ -47,6 +47,16 @@ export const STATES: State[] = [
     },
   },
   {
+    // A sign-in that failed in the login window, too late: the dialog marks the window it opens (sessionStorage), and
+    // the backend sends the failure to `/?auth_error=`, where a marked window says so and stays.
+    name: "login-window-failed",
+    go: async (page) => {
+      await page.addInitScript(() => window.sessionStorage.setItem("eneo-module:login-window", "1"));
+      await page.goto("/?auth_error=invalid_state");
+      await expect(page.getByRole("heading", { level: 1, name: "Inloggningen kunde inte slutföras" })).toBeVisible();
+    },
+  },
+  {
     name: "flows",
     go: async (page) => {
       await stubFlows(page, "normal");

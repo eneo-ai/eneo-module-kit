@@ -277,7 +277,7 @@ sequenceDiagram
   E-->>B: refused
   B-->>P: authenticated false
   P->>P: cover the page, open the sign-in dialog
-  P->>W: person presses Logga in igen, window opens /api/auth/login?next=/inloggad
+  P->>W: person presses Logga in igen: mark set, window opens /api/auth/login?next=/inloggad, mark removed
   W->>E: sign in, back to the BFF callback
   E-->>W: ticket
   W->>B: callback, session cookie set, then to /inloggad
@@ -287,7 +287,7 @@ sequenceDiagram
   P->>P: lift the cover, give the focus back
 ```
 
-Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. The page reads the status again at once, so the dialog says whom to sign in as. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decision: [K15](decisions/k15-cover-for-an-ended-login.md).
+The dialog marks the window as it opens it: the mark is in the page's `sessionStorage` for the moment of the call, and the browser gives a window opened with an opener a copy, which outlasts a page on the way that sets `Cross-Origin-Opener-Policy`. A sign-in that fails in the window sends it to `/?auth_error=<code>`; there the mark shows the failure view (close the window, try again from the page), which tells the page nothing and stays, and the page keeps its cover ([K20](decisions/k20-the-login-window-knows-itself.md)). Before the end the same dialog is a warning five minutes ahead, and its button opens `/api/auth/login?renew=1&next=/inloggad`, so the new login is bound to the user signed in now. After the end the backend refuses a renewal, so the button opens the login without `renew`, and the page is lifted only when the user is the page's own. A request that finds a 401 with `X-Auth-Required: session` ends the login at once, and so does a write that finds a 409 `user_changed`: the session under the page is someone else's (another tab signed them in), and the write is never sent as them. The page reads the status again at once, so the dialog says whom to sign in as. Source: `packages/ui/src/session/` (`RequireSession.tsx`, `SessionDialog.tsx`, `SignedInAgain.tsx`, `state.ts`, `keepalive.ts`). Decisions: [K15](decisions/k15-cover-for-an-ended-login.md), [K20](decisions/k20-the-login-window-knows-itself.md).
 
 ## Where the organisation's branding enters
 

@@ -1,0 +1,5 @@
+- link "Hoppa till innehåll":
+  - /url: "#astryx-app-shell-main"
+- main:
+  - heading "Inloggningen kunde inte slutföras" [level=1]
+  - paragraph: Inloggningen tog för lång tid eller avbröts. Stäng fönstret och försök igen från sidan.

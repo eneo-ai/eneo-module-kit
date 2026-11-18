@@ -7,7 +7,7 @@
  * asks for within a few seconds (tokens of four seconds, refreshed at half).
  */
 import type { Page } from "@playwright/test";
-import { expect, signIn, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
+import { endLogin, expect, signIn, signInShortLived, stubControl, stubDefaults, stubFlows, test, untilModal } from "./fixtures";
 
 const SIGN_IN = { name: "Du behöver logga in igen" };
 
@@ -18,27 +18,6 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ page }) => {
   await stubDefaults(page);
 });
-
-/** Signs in with tokens that live four seconds, so that ending the login takes seconds, not minutes. */
-async function signInShortLived(page: Page) {
-  await stubControl(page, "session?token_seconds=4");
-  await signIn(page);
-}
-
-/** Eneo ends the login; the page learns at its next keepalive, or when it is looked at again. */
-async function endLogin(page: Page) {
-  await stubControl(page, "end-session");
-  const dialog = page.getByRole("alertdialog", SIGN_IN);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-        return dialog.isVisible();
-      },
-      { timeout: 20_000, intervals: [500] },
-    )
-    .toBe(true);
-}
 
 /** The login in a window of its own, as the dialog's button opens it; resolves when that window has closed itself. */
 async function signInAgainInWindow(page: Page, context: import("@playwright/test").BrowserContext, button: string) {

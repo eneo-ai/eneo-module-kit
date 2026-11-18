@@ -153,6 +153,32 @@ class StubEneoTests(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/v1/flows/", both(anyone))[0].status, 401, "a call without a scope ends the logins without one")
         self.assertEqual(self.call("GET", "/api/v1/flows/", both(other))[0].status, 200)
 
+    def test_the_login_control_can_fail_the_scope_s_logins_and_put_an_opener_policy_page_on_the_way(self) -> None:
+        mine = {"Cookie": "stub_scope=mine"}
+        login = f"/module-login?module_key={server.MODULE_KEY}&redirect_uri=http://module.test/api/auth/callback&state=a%22b"
+        self.assertEqual(self.call("POST", "/__stub/module-login?ticket=refused", mine)[0].status, 200)
+        response, body = self.call("POST", "/api/v1/module-auth/token/", self.KEY, {"ticket": self.ticket(mine)})
+        self.assertEqual(response.status, 400, "the exchange refuses the scope's tickets, as Eneo refuses a used one")
+        self.assertEqual(self.login()["user"]["username"], "Erik Lund", "other scopes sign in")
+
+        self.call("POST", "/__stub/module-login?ticket=normal&opener_policy=same-origin", mine)
+        response = HTTPConnection("127.0.0.1", self.port)
+        response.request("GET", login, headers=mine)
+        page = response.getresponse()
+        html = page.read().decode()
+        self.assertEqual((page.status, page.getheader("Cross-Origin-Opener-Policy")), (200, "same-origin"))
+        self.assertIn('http-equiv="refresh"', html)
+        self.assertIn("http://module.test/api/auth/callback?ticket=", html)
+        # The query's quote is percent-encoded already; the escape shows in the separator between its parameters.
+        self.assertIn("&amp;state=a%22b", html, "the address is written escaped")
+        self.assertNotIn("&state=", html)
+        self.assertEqual(self.call("GET", login)[0].status, 303, "a scope without the control is sent on at once")
+
+        self.call("POST", "/__stub/module-login?ticket=normal&opener_policy=none", mine)
+        self.assertEqual(self.login(mine)["user"]["username"], "Erik Lund")
+        for bad in ("ticket=maybe", "opener_policy=unsafe-none"):
+            self.assertEqual(self.call("POST", f"/__stub/module-login?{bad}", mine)[0].status, 400)
+
 
     # Eneo's refusals as its handlers write them (see the docstring of server.py for the source).
     UNAUTHENTICATED = {"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error"}

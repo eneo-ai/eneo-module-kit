@@ -383,7 +383,7 @@ test("the window a login ends in tells the module's tabs and closes itself; a re
   assert.deepEqual(told, ["signed-in"]);
   assert.equal(closed.length, 1);
   assert.equal(document.title, "Du är inloggad igen · Testmodul");
-  assert.ok(done.container.querySelector('[role="main"]'), "one main region in a window with no shell");
+  assert.equal(done.container.querySelectorAll('main, [role="main"]').length, 1, "one main region in the window's page");
   await done.unmount();
 
   const wrong = await mount(createElement(SignedInAgain, { productName: "Testmodul", refusal: "annan-anvandare" }));
@@ -635,4 +635,357 @@ test("the old deadline that passes after the login window said it is done, befor
   });
   assert.equal(state.signedOut, false, "the confirmation is taken");
   assert.ok(!dialog(), "no warning, no cover: the new login ends in eight hours");
+});
+
+/** The address of the page under test, until the test ends. */
+function at(t: import("node:test").TestContext, path: string) {
+  window.history.replaceState(null, "", path);
+  t.after(() => window.history.replaceState(null, "", "/"));
+}
+
+const MARK = "eneo-module:login-window";
+const markedWindow = (t: import("node:test").TestContext) => {
+  window.sessionStorage.setItem(MARK, "1");
+  t.after(() => window.sessionStorage.clear());
+};
+
+/** What the module's tabs are told (each with whether the window was marked then), and how often the window closed itself. */
+function watchWindow(t: import("node:test").TestContext) {
+  const nodeChannel = globalThis.BroadcastChannel;
+  globalThis.BroadcastChannel = FakeChannel as unknown as typeof BroadcastChannel;
+  const listener = new FakeChannel("eneo-module:session");
+  const told: Array<{ data: unknown; marked: boolean }> = [];
+  listener.addEventListener("message", (event) => told.push({ data: event.data, marked: window.sessionStorage.getItem(MARK) === "1" }));
+  const closed: number[] = [];
+  t.mock.method(window, "close", () => closed.push(1));
+  t.after(() => {
+    listener.close();
+    globalThis.BroadcastChannel = nodeChannel;
+  });
+  return { told, closed };
+}
+
+test("the login window is opened with the mark in the page's storage, which is gone after the call, whatever the call does; a page marked before stays marked", async (t) => {
+  const { openLoginWindow, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  t.after(() => window.sessionStorage.clear());
+  const login = {} as Window;
+  let outcome: "opened" | "blocked" | "thrown" = "opened";
+  const markedAtCall: boolean[] = [];
+  t.mock.method(window, "open", () => {
+    markedAtCall.push(isLoginWindow());
+    if (outcome === "thrown") throw new Error("no window");
+    return outcome === "opened" ? login : null;
+  });
+  for (const result of ["opened", "blocked", "thrown"] as const) {
+    for (const before of [false, true]) {
+      const kind = `${result}, ${before ? "on a page marked before" : "on a page"}`;
+      outcome = result;
+      window.sessionStorage.clear();
+      if (before) window.sessionStorage.setItem(MARK, "1");
+      markedAtCall.length = 0;
+      if (result === "thrown") assert.throws(() => openLoginWindow("/api/auth/login?next=%2Finloggad"), /no window/, `${kind}: the error is the caller's`);
+      else assert.equal(openLoginWindow("/api/auth/login?next=%2Finloggad"), result === "opened" ? login : null, kind);
+      assert.deepEqual(markedAtCall, [true], `${kind}: one call, marked while the window is made`);
+      assert.equal(isLoginWindow(), before, `${kind}: after the call the page is as it was`);
+    }
+  }
+});
+
+test("storage that refuses a write, or cannot be read at all, does not stop the window: it is opened once, unmarked", async (t) => {
+  const { openLoginWindow, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  t.after(() => window.sessionStorage.clear());
+  const markedAtCall: boolean[] = [];
+  t.mock.method(window, "open", () => {
+    markedAtCall.push(isLoginWindow());
+    return {} as Window;
+  });
+  const proto = Object.getPrototypeOf(window.sessionStorage) as Storage;
+  const write = t.mock.method(proto, "setItem", () => {
+    throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+  });
+  const remove = t.mock.method(proto, "removeItem");
+  openLoginWindow("/api/auth/login?next=%2Finloggad");
+  assert.deepEqual(markedAtCall, [false], "a write refused: opened once, unmarked");
+  assert.equal(remove.mock.callCount(), 0, "a write refused: nothing removed");
+  write.mock.restore();
+  remove.mock.restore();
+
+  // A storage the browser refuses (blocked site data): reading it throws.
+  const storage = Object.getOwnPropertyDescriptor(window, "sessionStorage");
+  Object.defineProperty(window, "sessionStorage", {
+    configurable: true,
+    get() {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    },
+  });
+  try {
+    openLoginWindow("/api/auth/login?next=%2Finloggad");
+  } finally {
+    if (storage) Object.defineProperty(window, "sessionStorage", storage);
+    else Reflect.deleteProperty(window, "sessionStorage");
+  }
+  assert.deepEqual(markedAtCall, [false, false], "no storage: opened once, unmarked");
+});
+
+test("the dialog opens its window marked, without a name, straight on the login, back to the window's page whole; a renewal only before the end", async (t) => {
+  backend(t, () => json(signedIn(anna, 200)));
+  const { isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  const opened: Array<[string, string, string, boolean]> = [];
+  t.mock.method(window, "open", (url: string, name: string, features: string) => {
+    opened.push([url, name, features, isLoginWindow()]);
+    return {} as Window;
+  });
+  for (const page of ["/inloggad", "/klart?lang=sv#resultat"]) {
+    for (const renew of [true, false]) {
+      const kind = `${page}, ${renew ? "before the end" : "after the end"}`;
+      opened.length = 0;
+      const view = await gate({ signedInAgainPath: page });
+      await view.act(async () => settle(50));
+      if (!renew) await view.act(async () => view.state.observe(signedOutStatus));
+      await view.act(async () => button(dialog()!, renew ? "Fortsätt arbeta" : "Logga in igen")!.click());
+      const next = encodeURIComponent(page);
+      assert.deepEqual(opened, [[renew ? `/api/auth/login?renew=1&next=${next}` : `/api/auth/login?next=${next}`, "_blank", "popup,width=520,height=700", true]], kind);
+      assert.equal(isLoginWindow(), false, `${kind}: the page is not marked after the call`);
+      await view.unmount();
+    }
+  }
+});
+
+test("a second press opens a new window, then closes the one the dialog opened before; a blocked press leaves that one open and says so", async (t) => {
+  backend(t, () => json(signedIn(anna, 200)));
+  const events: string[] = [];
+  let blocked = false;
+  let made = 0;
+  t.mock.method(window, "open", () => {
+    if (blocked) {
+      events.push("blocked");
+      return null;
+    }
+    const n = made++;
+    events.push(`open ${n}`);
+    return { close: () => events.push(`close ${n}`) } as unknown as Window;
+  });
+  const { act } = await gate();
+  await act(async () => settle(50));
+  const press = () => act(async () => button(dialog()!, "Fortsätt arbeta")!.click());
+  await press();
+  await press();
+  assert.deepEqual(events, ["open 0", "open 1", "close 0"], "the new window first, then the old one closed");
+  blocked = true;
+  await press();
+  assert.deepEqual(events.slice(3), ["blocked"], "the window it has stays open");
+  assert.match(dialog()?.textContent ?? "", /Fönstret kunde inte öppnas/);
+  blocked = false;
+  await press();
+  assert.deepEqual(events.slice(4), ["open 2", "close 1"], "the next window closes the last one the dialog opened");
+  assert.doesNotMatch(dialog()?.textContent ?? "", /Fönstret kunde inte öppnas/);
+});
+
+test("the window's page decides on the backend's refusal in its address, over the prop; the last recognised refusal counts", async (t) => {
+  backend(t, () => json(signedIn(anna)));
+  const { SignedInAgain, refusalOf } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  const TITLE = { utgangen: "Inloggningen har redan gått ut", "annan-anvandare": "Du loggade in som en annan användare" } as const;
+  const TEXT = { utgangen: /^Stäng fönstret\. Om det finns osparat arbete/, "annan-anvandare": /^Stäng fönstret och logga in som Anna Berg för att fortsätta\.$/ } as const;
+  for (const fel of ["utgangen", "annan-anvandare"] as const) {
+    for (const refusal of [null, fel === "utgangen" ? "annan-anvandare" : "utgangen"] as const) {
+      const kind = `?fel=${fel}, refusal=${refusal}`;
+      at(t, `/inloggad?fel=${fel}`);
+      const view = await mount(createElement(SignedInAgain, { productName: "Testmodul", refusal }));
+      await view.act(async () => settle());
+      assert.equal(view.container.querySelector("h1")?.textContent, TITLE[fel], kind);
+      assert.match(view.container.querySelector("p")?.textContent ?? "", TEXT[fel], kind);
+      await view.unmount();
+    }
+  }
+  // A configured `fel=` before the one the backend adds after the return address's query.
+  at(t, "/inloggad?fel=&lang=sv&fel=utgangen");
+  const configured = await mount(createElement(SignedInAgain, { productName: "Testmodul" }));
+  assert.equal(configured.container.querySelector("h1")?.textContent, TITLE.utgangen);
+  assert.match(configured.container.querySelector("p")?.textContent ?? "", TEXT.utgangen);
+  await configured.unmount();
+  assert.deepEqual(told, [], "nothing told");
+  assert.equal(closed.length, 0, "nothing closed");
+
+  assert.equal(refusalOf("?fel=annan-anvandare&fel=utgangen"), "utgangen");
+  assert.equal(refusalOf("?fel=utgangen&fel=nagot"), "utgangen");
+  assert.equal(refusalOf("?fel=&fel="), null);
+});
+
+test("the window's page with a failure in its address signs in as with any other query: it is the failure view's page that says a sign-in failed", async (t) => {
+  const { SignedInAgain, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  markedWindow(t);
+  at(t, "/inloggad?auth_error=x");
+  const view = await mount(createElement(SignedInAgain, { productName: "Testmodul" }));
+  assert.match(view.container.textContent ?? "", /Du är inloggad igen/);
+  assert.deepEqual(told, [{ data: "signed-in", marked: false }]);
+  assert.equal(closed.length, 1);
+  assert.equal(isLoginWindow(), false);
+});
+
+test("a failed sign-in in the login window says so and stays: no word to the tabs, no close, the same after a reload, and no code shown", async (t) => {
+  const calls = backend(t, () => json(signedIn()));
+  const { told, closed } = watchWindow(t);
+  markedWindow(t);
+  for (const [code, words] of [
+    ["exchange_failed", "Stäng fönstret och försök igen från sidan."],
+    ["invalid_state", "Inloggningen tog för lång tid eller avbröts. Stäng fönstret och försök igen från sidan."],
+  ]) {
+    // Where the backend sends a failed callback, under the module's gate.
+    at(t, `/?auth_error=${code}`);
+    for (const load of ["first", "after a reload"]) {
+      const view = await gate();
+      await view.act(async () => settle());
+      const main = view.container.querySelector('main, [role="main"]');
+      assert.equal(main?.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras", `${code}, ${load}`);
+      assert.equal(main?.querySelector("p")?.textContent, words, `${code}, ${load}`);
+      assert.doesNotMatch(view.container.textContent ?? "", new RegExp(code));
+      assert.equal(document.title, "Inloggningen kunde inte slutföras · Testmodul");
+      assert.equal(window.location.search, `?auth_error=${code}`, "the address keeps what the view is made of");
+      await view.unmount();
+    }
+  }
+  assert.deepEqual(told, []);
+  assert.equal(closed.length, 0);
+  assert.equal(calls.length, 0, "it asks nothing");
+});
+
+test("a sign-in screen in a marked window shows the window's failure view, with or without auth_error, and never a sign-in", async (t) => {
+  const { SignInScreen } = await import("../src/session/SignInScreen.js");
+  const { ModuleProviders } = await import("../src/ModuleProviders.js");
+  markedWindow(t);
+  for (const address of ["/?auth_error=invalid_state", "/"]) {
+    at(t, address);
+    const view = await mount(createElement(ModuleProviders, { children: createElement(SignInScreen, { productName: "Testmodul", title: "Testmodul", next: "/flows" }) }));
+    await view.act(async () => settle());
+    assert.equal(view.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras", address);
+    assert.equal(view.container.querySelector('a[href^="/api/auth/login"]'), null, "no sign-in in a login window");
+    assert.equal(window.location.search, address.slice(1), "the address stays, so a reload says the same");
+    await view.unmount();
+  }
+});
+
+test("a completed sign-in in a marked window removes the mark, then tells the tabs and closes", async (t) => {
+  const { SignedInAgain, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  markedWindow(t);
+  at(t, "/inloggad");
+  await mount(createElement(SignedInAgain, { productName: "Testmodul" }));
+  assert.deepEqual(told, [{ data: "signed-in", marked: false }], "unmarked before the word goes out");
+  assert.equal(isLoginWindow(), false);
+  assert.equal(closed.length, 1);
+});
+
+test("in a marked window the gate is only the failure view, also on the window's page: a completed return inside the gate tells the page nothing and reads no status", async (t) => {
+  const calls = backend(t, () => json(signedIn()));
+  const { SignedInAgain, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  markedWindow(t);
+  at(t, "/inloggad");
+  const view = await gate({}, createElement(SignedInAgain, { productName: "Testmodul" }));
+  await view.act(async () => settle());
+  assert.equal(view.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras");
+  assert.equal(isLoginWindow(), true, "the mark is still there");
+  assert.deepEqual(told, [], "nothing told");
+  assert.equal(closed.length, 0, "nothing closed");
+  assert.equal(calls.length, 0, "the status is never read");
+});
+
+test("in a marked window on `/` with the backend's failure, a gate given `/` as the window's page opens no warning over the failure view", async (t) => {
+  backend(t, () => json(signedIn(anna, 200)));
+  const { SignedInAgain } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  markedWindow(t);
+  at(t, "/?auth_error=exchange_failed");
+  const view = await gate({ signedInAgainPath: "/" }, createElement(SignedInAgain, { productName: "Testmodul" }));
+  await view.act(async () => settle(50));
+  assert.equal(view.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras");
+  assert.ok(!dialog(), "no warning: less than five minutes are left, and the gate does not run");
+  assert.deepEqual(told, [], "nothing told");
+  assert.equal(closed.length, 0, "nothing closed");
+});
+
+test("in a marked window an ordinary page with a live session is the failure view: the page is not rendered and the status is never read", async (t) => {
+  const calls = backend(t, () => json(signedIn()));
+  markedWindow(t);
+  at(t, "/flows");
+  const view = await gate({}, "Flödeslistan");
+  await view.act(async () => settle());
+  assert.equal(view.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras");
+  assert.doesNotMatch(view.container.textContent ?? "", /Flödeslistan/);
+  assert.equal(calls.length, 0, "the status is never read");
+});
+
+test("the gate in a marked window never shows a sign-in, whatever `signIn` or `navigate` the module gives; an unmarked tab is the gate as before", async (t) => {
+  let answer = () => json(signedIn());
+  const calls = backend(t, () => answer());
+  const tab = await gate();
+  await tab.act(async () => settle());
+  assert.match(tab.container.textContent ?? "", /Sidan/, "an unmarked tab with a live session shows the page");
+  assert.equal(calls.length, 1);
+  await tab.unmount();
+
+  answer = () => json(signedOutStatus);
+  markedWindow(t);
+  const went: string[] = [];
+  const out = await gate({ signIn: "Modulens inloggning", navigate: (path: string) => went.push(path) });
+  await out.act(async () => settle());
+  assert.equal(out.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras");
+  assert.doesNotMatch(out.container.textContent ?? "", /Modulens inloggning/, "not the module's sign-in");
+  assert.deepEqual(went, [], "not sent to the module's sign-in");
+  assert.equal(calls.length, 1, "the marked window reads no status");
+});
+
+test("the backend's failure landing on the home path is never done, also where the window's page is the home path: the failure view, marked or not", async (t) => {
+  const { SignedInAgain, isLoginWindow } = await import("../src/session/SignedInAgain.js");
+  const { told, closed } = watchWindow(t);
+  t.after(() => window.sessionStorage.clear());
+  at(t, "/?auth_error=exchange_failed");
+  for (const marked of [true, false]) {
+    window.sessionStorage.clear();
+    if (marked) window.sessionStorage.setItem(MARK, "1");
+    for (const load of ["first", "mounted again"]) {
+      const kind = `${marked ? "marked" : "unmarked"}, ${load}`;
+      const view = await mount(createElement(SignedInAgain, { productName: "Testmodul" }));
+      await view.act(async () => settle());
+      assert.equal(view.container.querySelector("h1")?.textContent, "Inloggningen kunde inte slutföras", kind);
+      assert.equal(isLoginWindow(), marked, `${kind}: the mark as it was`);
+      await view.unmount();
+    }
+  }
+  assert.deepEqual(told, [], "nothing told");
+  assert.equal(closed.length, 0, "nothing closed");
+
+  // A completed return to the home path finishes: the rule reads the query key, not the text.
+  for (const address of ["/", "/?next=auth_error#auth_error"]) {
+    window.sessionStorage.setItem(MARK, "1");
+    at(t, address);
+    const done = await mount(createElement(SignedInAgain, { productName: "Testmodul" }));
+    await done.act(async () => settle());
+    assert.match(done.container.textContent ?? "", /Du är inloggad igen/, address);
+    await done.unmount();
+  }
+  assert.deepEqual(told, Array(2).fill({ data: "signed-in", marked: false }));
+  assert.equal(closed.length, 2);
+});
+
+test("a page marked already keeps its mark when its first read of storage throws: one window, nothing written, nothing removed", async (t) => {
+  const { openLoginWindow } = await import("../src/session/SignedInAgain.js");
+  markedWindow(t);
+  const proto = Object.getPrototypeOf(window.sessionStorage) as Storage;
+  const read = proto.getItem;
+  let reads = 0;
+  t.mock.method(proto, "getItem", function (this: Storage, key: string) {
+    if (reads++ === 0) throw new DOMException("The operation is insecure.", "SecurityError");
+    return read.call(this, key);
+  });
+  const write = t.mock.method(proto, "setItem");
+  const remove = t.mock.method(proto, "removeItem");
+  const open = t.mock.method(window, "open", () => ({}) as Window);
+  openLoginWindow("/api/auth/login?next=%2Finloggad");
+  assert.equal(open.mock.callCount(), 1);
+  assert.equal(write.mock.callCount(), 0, "nothing written");
+  assert.equal(remove.mock.callCount(), 0, "nothing removed");
+  assert.equal(read.call(window.sessionStorage, MARK), "1", "the page's own mark is still there");
 });

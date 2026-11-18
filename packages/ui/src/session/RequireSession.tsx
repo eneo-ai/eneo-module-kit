@@ -4,7 +4,7 @@ import { fetchReporting, onlineStatus } from "../online-status.js";
 import { keepSessionAlive } from "./keepalive.js";
 import { SessionDialog } from "./SessionDialog.js";
 import { SignedOutCover } from "./SignedOutCover.js";
-import { SESSION_CHANNEL } from "./SignedInAgain.js";
+import { isLoginWindow, LoginWindowFailed, SESSION_CHANNEL } from "./SignedInAgain.js";
 import { SignInScreen } from "./SignInScreen.js";
 import { sessionState, type Question, type SessionState } from "./state.js";
 import type { SessionStatus, SessionUser } from "./types.js";
@@ -56,9 +56,17 @@ async function readStatus(): Promise<SessionStatus> {
  * login: it asks the backend for the session when the page becomes visible, when a login in a window of its own says
  * it is done, and when the backend wants Eneo's token renewed; it warns five minutes before the end; and when the login
  * has ended it covers the page (kept mounted, hidden and out of reach) with a modal dialog that asks for a new login in
- * place, so nothing on the page is lost. Only the page's own user signing in again lifts it.
+ * place, so nothing on the page is lost. Only the page's own user signing in again lifts it. In the sign-in dialog's login
+ * window, where a failed sign-in lands, it is the window's failure view and nothing else, whatever the path: no status
+ * read, no sign-in, no dialog, no `children`. So the window's page (`SignedInAgain`) is routed outside the gate.
  */
-export function RequireSession({
+export function RequireSession(props: RequireSessionProps) {
+  return isLoginWindow() ? <LoginWindowFailed productName={props.productName} /> : <Gate {...props} />;
+}
+
+type RequireSessionProps = Parameters<typeof Gate>[0];
+
+function Gate({
   children,
   productName,
   signInTitle,
@@ -84,7 +92,10 @@ export function RequireSession({
   /** With `signInPath`: where an app with a route of its own for signing in sends the person, in place of the screen. */
   navigate?: (path: string) => void;
   signInPath?: string;
-  /** The route of the page that tells the module's tabs a login window is done (`SignedInAgain`). */
+  /**
+   * The route of the login window's page (`SignedInAgain`), outside the gate: it tells the module's tabs the login is done.
+   * Its `fel` is the kit's (the backend appends a refusal there), and so is `auth_error` on `/` (the backend's failure landing).
+   */
   signedInAgainPath?: string;
   /** Called with the signed-in user, and awaited, before `children` are shown (clear what belongs to someone else). */
   onIdentity?: (user: SessionUser) => void | Promise<void>;
