@@ -30,6 +30,8 @@ from eneo_module_bff.auth import (
 from eneo_module_bff.deps import require_session, upstream_auth_headers
 from eneo_module_bff.settings import Settings
 
+from .test_login_redirect import VECTORS
+
 # Eneo's session ceiling in these tests; shorter than the module's 8-hour default.
 ENEO_SESSION_SECONDS = 4 * 60 * 60
 
@@ -476,6 +478,19 @@ class ModuleAuthTests(unittest.TestCase):
                 )
 
                 self.assertEqual(callback.headers["location"], "/flows")
+
+    def test_a_finished_login_whose_next_holds_a_control_character_lands_on_the_home_path(self) -> None:
+        # The rule against control characters in next holds with a state cookie per login, also while others wait.
+        self.start_login()
+        for label, value in VECTORS.items():
+            with self.subTest(label):
+                response = self.client.get("/api/auth/login", params={"next": value})
+                state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+
+                callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+                self.assertEqual(callback.headers["location"], "/flows")
+        self.assertEqual(len(pending_logins(self.client.cookies)), 1, "the login started first still waits")
 
     def test_a_next_above_512_characters_falls_back_to_the_home_path(self) -> None:
         # 6 000 characters make a state cookie of 8 KB, which browsers drop: the login would fail as invalid_state.
