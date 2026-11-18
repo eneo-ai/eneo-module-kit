@@ -101,7 +101,7 @@ await raise_if_session_ended(request, answer)
 ```
 
 - The answer must have been read. One made with `stream=True` is a `RuntimeError` that says so, whatever its status: call `await answer.aread()` first, or make the call without `stream=True`.
-- On a WebSocket, accepted or not, the socket is closed with 1008 and the reason `Not authenticated`.
+- On a WebSocket, accepted or not, the socket is closed with 1008 and the reason `Not authenticated`. An accepted socket keeps the token of its handshake: once the session's token has been refreshed, a refused call made with the old one ends nothing and the socket stays open.
 
 ## HTTP surface
 
@@ -170,7 +170,7 @@ More in [design.md](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/de
 
 ```
 src/eneo_module_bff/   the package: one file per concern (see docs/architecture.md, "Where each fact lives")
-tests/                 unittest, one file per module of the package
+tests/                 unittest, one file per module of the package; a behaviour that spans several modules has a file named after it (test_login_end.py)
 pyproject.toml         name, version, dependency ranges with security floors
 ```
 

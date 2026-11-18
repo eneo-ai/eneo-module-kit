@@ -7,7 +7,7 @@ The starter for Eneo modules. `packages/bff`, `packages/ui` and `template/` are 
 | Path | Holds | Status |
 |---|---|---|
 | `packages/bff/src/eneo_module_bff/` | The BFF package, one file per concern: `app.py` (factory), `auth.py` (login, session, refresh), `deps.py` (route dependencies), `proxy.py` (allowlist proxy), `transport.py` (uploads, signed files), `limits.py` (body limit), `upstream.py` (the client to Eneo: no cookies, answers bounded), `web.py` (security headers, built UI), `build.py` (which build runs, for `/health`), `branding.py`, `settings.py`, `serve.py`. `__init__.py` holds the public names | built |
-| `packages/bff/tests/` | unittest, one file per module of the package | built |
+| `packages/bff/tests/` | unittest, one file per module of the package; a behaviour that spans several modules has a file named after the behaviour (`test_login_end.py`, `test_against_the_stub.py`) | built |
 | `packages/bff/build-requirements.in`, `packages/bff/build-constraints.txt` | What building the BFF needs, and its lock with hashes, generated: the release build and CI's BFF job use it; the template jobs and its image still build the BFF with pip, unconstrained | built |
 | `packages/bff/README.md` | The package's public names, HTTP surface, answers and limits | current |
 | `packages/ui/src/` | The UI package: `color-mode.tsx`, `ModuleProviders.tsx`, `ModuleShell.tsx`, `branding.tsx`, `VersionInfo.tsx` and `CopyButton.tsx` (which build runs, support details), `session/` (the session client, the `./session` export), `theme/eneo.theme.ts` (source) and `theme/built/` (generated, committed), `layers.css`, `base.css`; `index.ts` holds the public names | built |

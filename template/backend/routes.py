@@ -6,8 +6,9 @@ someone else's session cannot write as them (see ``tests/test_routes.py``: it fa
 
     @router.post("/api/notes", dependencies=[Depends(require_session), Depends(require_same_origin), Depends(require_expected_user)])
 
-Call Eneo from a route with ``upstream_auth_headers(request)``, which holds the service key and the user's token; for
-an upload or a file, the kit's ``forward_upload`` and ``stream_signed``.
+Call Eneo from a route with ``upstream_auth_headers(request)``, which holds the service key and the user's token, and
+pass Eneo's read answer to ``await raise_if_session_ended(request, answer)``, so a login Eneo has ended ends the session;
+for an upload or a file, the kit's ``forward_upload`` and ``stream_signed``.
 """
 
 from typing import Annotated

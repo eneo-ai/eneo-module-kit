@@ -42,8 +42,9 @@ SESSION_COOKIE = "eneo_module_session"
 # /api/auth, so that a new login sees how many wait; it therefore goes with every /api/auth request, the status too.
 STATE_COOKIE = "eneo_module_login_state"
 STATE_COOKIE_PATH = "/api/auth"
-# Logins that may wait at once: a new login drops the oldest past this. A cleanup target, not a limit: two logins
-# started before either answer lands can leave one more, until the next start.
+# Logins that may wait at once: a new login drops the oldest past this. A cleanup target, not a limit: starts sent before
+# the others' answers land each see the same cookies, so two at once leave six until the next start, and the cleanup
+# bounds no number of simultaneous starts.
 MAX_PENDING_LOGINS = 5
 # The browser session cookie's upper bound is Settings.session_max_age_seconds
 # (SESSION_MAX_AGE_MINUTES). The session also ends at Eneo's
@@ -138,16 +139,19 @@ def state_cookie_name(state: str) -> str:
     return f"{STATE_COOKIE}_{hashlib.sha256(state.encode()).hexdigest()[:24]}"
 
 
-# Only a name state_cookie_name gives: a cookie set under the prefix by anyone else (a site on the parent domain) is no
-# login of this module's, and its name may be one the response could not even delete.
+# Only a name of the form state_cookie_name gives counts as a waiting login: a cookie under the prefix with any other
+# name, which the kit never sets, is neither read nor deleted, and its name may be one the response could not even
+# delete. This stops no cookie by its origin: one that a site on a parent domain sets under a name of this form counts,
+# and may be the first a new login deletes, but admits no callback, whose state's signature is checked.
 _STATE_COOKIE_NAME = re.compile(rf"{STATE_COOKIE}_[0-9a-f]{{24}}")
 
 
 # The state cookie carries ``next``; a long one makes a cookie that browsers drop, and the login fails.
 MAX_NEXT_LENGTH = 512
-# The largest signed state a login keeps, in bytes; a next that would make it larger is the home path. Up to five waiting
-# logins (six for a moment) go with every /api/auth request, and this keeps their Cookie header under a proxy's limit
-# (ingress-nginx: 8 KB) whatever their next: past it, the proxy would refuse every login until they expire.
+# The largest signed state a login keeps, in bytes; a next that would make it larger is the home path. The cookies of
+# waiting logins go with every /api/auth request: five after the cleanup, six after two starts at once (the tested
+# case), stay under a proxy's limit (ingress-nginx: 8 KB) whatever their next. More simultaneous starts than that are
+# not bounded, and past the limit the proxy would refuse every login until the cookies expire.
 MAX_STATE_COOKIE_BYTES = 1024
 
 

@@ -66,7 +66,7 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   [add backend routes](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/build-a-module.md), and
   [configuration](https://github.com/eneo-ai/eneo-module-kit/blob/main/docs/guides/configuration.md) in the kit repository.
 - **The stub Eneo** (`stub-eneo/server.py`, development and tests only) signs everyone in as Erik Lund and answers what the backend
-  asks of Eneo. Control routes, all `POST`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses the tokens
+  asks of Eneo. Control routes, `POST` but for `GET /__stub/calls`, for what a test needs to provoke: `/__stub/end-session` (Eneo refuses the tokens
   from now on: the module's session ends at its next call to Eneo, or its next token refresh); `/__stub/session?ends_in=S&token_seconds=T` (the logins made
   after it end S seconds after the login, with tokens of T seconds the backend refreshes at half: `token_seconds=4` makes
   `end-session` take seconds, `ends_in=200` opens the five-minute warning at once; `reset` restores 28800 and 900);
