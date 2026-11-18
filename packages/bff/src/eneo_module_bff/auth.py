@@ -227,11 +227,12 @@ class ModuleSessionStore:
         """Delete the session, and its signed URLs, if it still holds ``access_token``, in one step.
 
         True when the session is gone now, ended here or before (by a call beside this one, a logout, a new login or
-        its expiry); False when it holds another token, renewed meanwhile, and it stays.
+        its expiry); False when it holds another token, renewed meanwhile and still live, and it stays. A renewed
+        session past its end protects nothing: it goes here, as get() would drop it, and only this one is looked at.
         """
         with self._lock:
             session = self._sessions.get(session_id)
-            if session is not None and session.access_token != access_token:
+            if session is not None and session.access_token != access_token and session.expires_at > time.time():
                 return False
             self._sessions.pop(session_id, None)
             self._signed_urls.pop(session_id, None)

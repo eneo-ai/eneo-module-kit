@@ -364,6 +364,21 @@ class StoreTests(unittest.TestCase):
         self.assertIsNone(store.signed_url(session_id, "files/f1/signed-url/"))
         self.assertTrue(store.delete_if_token(session_id, "new"), "gone already: gone")
 
+    def test_a_session_renewed_meanwhile_that_has_since_expired_is_gone_with_its_signed_urls(self) -> None:
+        # A token refreshed during the check, and the session's end reached before the check answers: the renewal
+        # protects nothing, and the refused call gets the ended-session answer, not Eneo's refusal.
+        store = auth.ModuleSessionStore()
+        session_id = store.create(a_session("old"))
+        store.remember_signed_url(session_id, "files/f1/signed-url/", SignedUrl("https://eneo/f1?sig", time.time() + 6000))
+        store.replace(session_id, a_session("new"))
+        past_its_end = time.time() + 3600 + 1
+
+        with patch("eneo_module_bff.auth.time.time", return_value=past_its_end):
+            self.assertTrue(store.delete_if_token(session_id, "old"))
+
+        self.assertIsNone(store._sessions.get(session_id))
+        self.assertNotIn(session_id, store._signed_urls, "its bearer URLs go with it")
+
 
 class _Arriving(httpx2.AsyncByteStream):
     """A body that arrives as a real one does: nothing of it is read until someone reads it."""
