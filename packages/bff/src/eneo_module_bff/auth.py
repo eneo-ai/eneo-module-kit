@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import secrets
@@ -42,6 +43,9 @@ CALLBACK_PATH = "/api/auth/callback"
 # After Eneo fails to answer a token refresh, wait this long before asking
 # again; the current, still valid token stays in use meanwhile.
 REFRESH_RETRY_SECONDS = 10
+# How long the whole check of a refused token at Eneo's session route may take (ModuleAuth.login_refused), the answer
+# included; past it nothing is confirmed and the session stays.
+SESSION_CHECK_SECONDS = 10.0
 # The methods that change nothing. A WebSocket handshake is a GET too, but the socket it opens acts for the user, so it
 # is checked like a write.
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -196,6 +200,20 @@ class ModuleSessionStore:
             if session_id in self._sessions:
                 self._sessions[session_id] = session
 
+    def delete_if_token(self, session_id: str, access_token: str) -> bool:
+        """Delete the session, and its signed URLs, if it still holds ``access_token``, in one step.
+
+        True when the session is gone now, ended here or before (by a call beside this one, a logout, a new login or
+        its expiry); False when it holds another token, renewed meanwhile, and it stays.
+        """
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if session is not None and session.access_token != access_token:
+                return False
+            self._sessions.pop(session_id, None)
+            self._signed_urls.pop(session_id, None)
+            return True
+
     def delete(self, session_id: str | None) -> None:
         if session_id is None:
             return
@@ -258,6 +276,31 @@ def eneo_is_unavailable(status_code: int) -> bool:
     return status_code in {408, 429} or status_code >= 500
 
 
+def refuses_the_login(answer: httpx2.Response) -> bool:
+    """Eneo's answer says that the user's token is not valid any more: 401, and the code ``authentication_error`` at the
+    top of its JSON body, the string code Eneo documents for its clients to branch on.
+
+    It is a revoked token (a changed password, "log out everywhere"), an expired one, or one whose user is gone; but a
+    route of Eneo's that takes no module tokens answers the same for a valid one. So it is not proof that the login is
+    over: ``ModuleAuth.login_refused`` asks Eneo's session route first. Nothing else is this: not ``invalid_api_key``
+    (the module's key, not the user's), no 403, no other 401 code (a step-up asks for more of the same login), and no
+    body without the code at its top. The number ``eneo_error_code`` is not read: 9005 is ``invalid_api_key``'s too.
+    """
+    if answer.status_code != 401:
+        return False
+    try:
+        body = json.loads(answer.content)
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("code") == "authentication_error"
+
+
+def session_ended() -> HTTPException:
+    """The kit's answer when the browser's session is gone: 401 and ``X-Auth-Required: session``, which the page reads as
+    its login's end and answers with a new login in place. No body of Eneo's goes with it."""
+    return HTTPException(status_code=401, detail="Not authenticated", headers={"X-Auth-Required": "session"})
+
+
 def _refusal(connection: HTTPConnection, error: HTTPException) -> Exception:
     """``error`` for an HTTP request; a WebSocket handshake is closed unaccepted."""
     if connection.scope["type"] == "websocket":
@@ -293,6 +336,11 @@ class ModuleAuth:
     @property
     def callback_url(self) -> str:
         return f"{self.settings.module_public_url}{CALLBACK_PATH}"
+
+    @property
+    def _session_url(self) -> str:
+        """Eneo's session route: who a token is, with the module's key beside it, as every resource call checks both."""
+        return f"{self.settings.eneo_backend_url}/api/v1/module-auth/{quote(self.settings.module_key, safe='')}/session/"
 
     async def login(
         self,
@@ -367,9 +415,7 @@ class ModuleAuth:
         try:
             upstream = await self.http_client.post(
                 f"{self.settings.eneo_backend_url}/api/v1/module-auth/token/",
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key
-                },
+                headers=self._eneo_headers(),
                 json={"ticket": ticket},
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
@@ -408,14 +454,8 @@ class ModuleAuth:
 
         try:
             validation = await self.http_client.get(
-                (
-                    f"{self.settings.eneo_backend_url}/api/v1/module-auth/"
-                    f"{quote(self.settings.module_key, safe='')}/session/"
-                ),
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-                    "Authorization": f"Bearer {token.access_token}",
-                },
+                self._session_url,
+                headers=self._eneo_headers(token.access_token),
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
@@ -527,16 +567,75 @@ class ModuleAuth:
     ) -> ModuleSession:
         session = await self._live_session(session_id)
         if session is None:
-            raise _refusal(
-                connection,
-                HTTPException(
-                    status_code=401,
-                    detail="Not authenticated",
-                    headers={"X-Auth-Required": "session"},
-                ),
-            )
+            raise _refusal(connection, session_ended())
+        # What the request was admitted under: the token it sends to Eneo, and the session that a refusal of it may end.
         connection.state.module_session = session
+        connection.state.module_session_id = session_id
         return session
+
+    async def raise_if_session_ended(self, connection: HTTPConnection, answer: httpx2.Response) -> None:
+        """``session_ended()`` (a socket: closed with 1008) when Eneo's ``answer`` to a call made with this request's
+        token means that its login is over, the session then gone (``login_refused``); else nothing, and the caller
+        answers Eneo's ``answer`` as it would anyway.
+
+        The answer must have been read: a streamed one (``stream=True``) is a RuntimeError, whatever its status, so that
+        a call that would let a refusal pass unseen fails the first time it runs.
+        """
+        try:
+            answer.content
+        except httpx2.ResponseNotRead:
+            raise RuntimeError(
+                "raise_if_session_ended needs Eneo's answer read: call `await answer.aread()` first, "
+                "or make the call without stream=True"
+            ) from None
+        if await self.login_refused(connection, answer):
+            raise _refusal(connection, session_ended())
+
+    async def login_refused(self, connection: HTTPConnection, answer: httpx2.Response) -> bool:
+        """Whether Eneo's ``answer`` to a call made with this request's token means its login is over, the session
+        then gone. False: Eneo's answer goes on as it is.
+
+        The one rule for every call made with the user's token. A refusal that may end the login
+        (``refuses_the_login``) ends it only when the session still holds the token that was refused and Eneo's own
+        session route refuses that token too, asked once per refusal; anything else confirms nothing. A session that
+        is gone already gets the answer without a check, as ``require_session`` would; one renewed since the call went
+        out is not about this refusal, and the page counts a renewal as the same login, so Eneo's answer goes on. The
+        refresh keeps a rule of its own: it asks whether the session can go on, and ends it at any refusal.
+        """
+        if not refuses_the_login(answer):
+            return False
+        sent = self.session_from_request(connection)
+        session_id = connection.state.module_session_id
+        held = self.sessions.get(session_id)
+        if held is None:
+            return True
+        if held.access_token != sent.access_token:
+            return False
+        if not await self._eneo_confirms_the_end(sent):
+            # A refusal of the same token at the same time may have ended the session while this check waited.
+            if self.sessions.get(session_id) is None:
+                return True
+            logger.warning("Eneo refused a session's token, and its session route did not confirm it: the session stays")
+            return False
+        ended = self.sessions.delete_if_token(session_id, sent.access_token)
+        if ended:
+            logger.info("Eneo refused a session's token, and its session route confirmed it: the session has ended")
+        return ended
+
+    async def _eneo_confirms_the_end(self, session: ModuleSession) -> bool:
+        """Eneo's session route refuses ``session``'s token as the call was refused. Bounded in time, the answer
+        included, and in size; an answer of any other kind, none in time or none at all, confirms nothing."""
+        try:
+            async with asyncio.timeout(SESSION_CHECK_SECONDS):
+                answer = await self.http_client.get(
+                    self._session_url,
+                    headers=self._eneo_headers(session.access_token),
+                    timeout=httpx2.Timeout(SESSION_CHECK_SECONDS),
+                    extensions=SMALL_ANSWER,
+                )
+        except (httpx2.RequestError, TimeoutError):
+            return False
+        return refuses_the_login(answer)
 
     async def _live_session(self, session_id: str | None) -> ModuleSession | None:
         """The caller's session, with its module token refreshed once due."""
@@ -587,10 +686,7 @@ class ModuleAuth:
                     f"{self.settings.eneo_backend_url}/api/v1/module-auth/"
                     f"{quote(self.settings.module_key, safe='')}/token/refresh/"
                 ),
-                headers={
-                    self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-                    "Authorization": f"Bearer {session.access_token}",
-                },
+                headers=self._eneo_headers(session.access_token),
                 timeout=httpx2.Timeout(10.0),
                 extensions=SMALL_ANSWER,
             )
@@ -666,12 +762,15 @@ class ModuleAuth:
             raise RuntimeError("Module session dependency did not run")
         return session
 
+    def _eneo_headers(self, access_token: str | None = None) -> dict[str, str]:
+        """Eneo's credentials: the module's key, and a user's token once there is one."""
+        headers = {self.settings.eneo_api_key_header_name: self.settings.eneo_api_key}
+        if access_token is not None:
+            headers["Authorization"] = f"Bearer {access_token}"
+        return headers
+
     def upstream_auth_headers(self, connection: HTTPConnection) -> dict[str, str]:
-        session = self.session_from_request(connection)
-        return {
-            self.settings.eneo_api_key_header_name: self.settings.eneo_api_key,
-            "Authorization": f"Bearer {session.access_token}",
-        }
+        return self._eneo_headers(self.session_from_request(connection).access_token)
 
     def _set_session_cookie(
         self,

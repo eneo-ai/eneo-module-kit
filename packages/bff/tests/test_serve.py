@@ -18,6 +18,7 @@ PUBLIC_NAMES = {
     "rule",
     "RESOURCE_ID",
     "require_session",
+    "raise_if_session_ended",
     "require_same_origin",
     "require_expected_user",
     "upstream_auth_headers",

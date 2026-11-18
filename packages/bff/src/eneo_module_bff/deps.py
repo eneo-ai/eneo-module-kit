@@ -1,4 +1,6 @@
 from typing import Annotated
+
+import httpx2
 from fastapi import Cookie, Depends
 from fastapi.requests import HTTPConnection
 from .auth import SESSION_COOKIE, ModuleAuth, ModuleSession
@@ -33,3 +35,11 @@ async def require_expected_user(
 def upstream_auth_headers(connection: HTTPConnection) -> dict[str, str]:
     """The service key and the caller's module-user token, for a call to Eneo."""
     return _auth(connection).upstream_auth_headers(connection)
+
+
+async def raise_if_session_ended(connection: HTTPConnection, answer: httpx2.Response) -> None:
+    """Call it with Eneo's ``answer`` to a call made with ``upstream_auth_headers``: when Eneo confirms that the user's
+    login is over, the session ends and the caller gets the kit's answer for an ended session (401 with
+    ``X-Auth-Required: session``; a socket, accepted or not, is closed with 1008). Otherwise it returns, and the route
+    handles ``answer`` as before. The answer must have been read (not ``stream=True``), or it is a RuntimeError."""
+    await _auth(connection).raise_if_session_ended(connection, answer)

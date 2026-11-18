@@ -96,7 +96,22 @@ async def add_note() -> dict[str, bool]:
 
 `require_session` answers 401 with `X-Auth-Required: session`; `require_same_origin` answers 403; `require_expected_user` answers 409 `user_changed` when a write does not name the session's user in `X-Expected-User` (the page's `fetchWithSession` does), or a request names another: a login in another tab put someone else's session under the page. The proxy applies all three. A route you leave public on purpose still gets the request body cap, because the cap looks at no session.
 
-To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run.
+To call Eneo from your own route, use `upstream_auth_headers(request)`: it returns the service key header and `Authorization: Bearer <module-user token>` for the signed-in user, and works only after `require_session` has run. Then hand Eneo's answer to `raise_if_session_ended`, so that a login Eneo has ended ends your module's session too:
+
+```python
+from fastapi import Depends, Request
+from eneo_module_bff import raise_if_session_ended, require_session, upstream_auth_headers
+
+@router.get("/api/summary", dependencies=[Depends(require_session)])
+async def summary(request: Request) -> dict:
+    eneo = request.app.state.settings.eneo_backend_url
+    answer = await request.app.state.http.get(f"{eneo}/api/v1/things/", headers=upstream_auth_headers(request))
+    await raise_if_session_ended(request, answer)
+    answer.raise_for_status()
+    return answer.json()
+```
+
+When Eneo confirms that the login is over it raises the 401 the page answers with a new login; otherwise it returns and your route goes on. It needs the answer read: one made with `stream=True` is a `RuntimeError` that tells you to `await answer.aread()` first. In a WebSocket route it closes the socket with 1008, before or after `accept()`. The rule, and what does not end a session, is in the [BFF package's README](../../packages/bff/README.md#when-eneo-ends-the-login).
 
 Add a test that fails when someone forgets a guard: copy `unguarded_routes` from `packages/bff/tests/test_deps.py` (the template already has it: `backend/tests/guards.py` and `test_routes.py`), call it with your router(s) and assert it returns `[]`. It walks `router.routes`, finds a guard however deep it sits (route `dependencies=`, a parameter, or a dependency of your own that depends on `require_session`), and reports a route without `require_session`, a write or WebSocket without `require_same_origin`, a write without `require_expected_user`, and a route it cannot check (a mount, a nested include) instead of passing it.
 
