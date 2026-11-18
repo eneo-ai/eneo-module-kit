@@ -19,6 +19,7 @@ from eneo_module_bff.auth import (
     ModuleAuth,
     ModuleSession,
     ModuleSessionStore,
+    MAX_STATE_COOKIE_BYTES,
     ModuleUser,
     SESSION_COOKIE,
     SignedUrl,
@@ -490,6 +491,40 @@ class ModuleAuthTests(unittest.TestCase):
                 callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
 
                 self.assertEqual(callback.headers["location"], long_next if lands_on_next else "/flows")
+
+    def test_six_waiting_logins_stay_under_a_proxy_s_8_kb_header_whatever_their_next(self) -> None:
+        # Every waiting login's cookie goes with every /api/auth request, the status calls too: a long next in each could
+        # push the Cookie header past a proxy's limit (ingress-nginx: 8 KB) and lock the browser out of signing in until
+        # they expire. Six, as two starts at once can leave. The bound is the signed cookie's bytes, not next's
+        # characters. Varied characters: the signed payload is compressed, and a repeated one would hide the size.
+        varied = lambda first, count: "/" + "".join(chr(first + i) for i in range(count))
+        for kind, next_path in (("ascii", "/" + secrets.token_urlsafe(600)[:511]), ("cjk", varied(0x4E00, 511)), ("emoji", varied(0x1F300, 511))):
+            with self.subTest(kind=kind):
+                waiting: dict[str, str] = {}
+                for _ in range(4):
+                    waiting |= pending_logins(self.client.get("/api/auth/login", params={"next": next_path}, headers=cookie_header(waiting)).cookies)
+                four = cookie_header(waiting)
+                for _ in range(2):
+                    waiting |= pending_logins(self.client.get("/api/auth/login", params={"next": next_path}, headers=four).cookies)
+                self.assertEqual(len(waiting), 6)
+                self.assertTrue(all(len(value.encode()) <= MAX_STATE_COOKIE_BYTES for value in waiting.values()))
+                self.assertLessEqual(len(cookie_header(waiting)["Cookie"].encode()), 8 * 1024)
+                self.client.cookies.clear()
+
+        response = self.client.get("/api/auth/login", params={"next": "/flows/a?run=r1"})
+        state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+        callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+        self.assertEqual(callback.headers["location"], "/flows/a?run=r1", "an ordinary next is kept")
+
+    def test_a_next_whose_signed_state_passes_the_byte_bound_lands_on_the_home_path(self) -> None:
+        # 511 characters pass MAX_NEXT_LENGTH, but as CJK they sign to more than MAX_STATE_COOKIE_BYTES.
+        long_next = "/" + "".join(chr(0x4E00 + i) for i in range(510))
+        login = self.client.get("/api/auth/login", params={"next": long_next})
+        state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+
+        callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/flows")
 
     def test_the_signal_for_the_page_goes_before_a_fragment(self) -> None:
         self.assertEqual(with_query("/page", "fel=x"), "/page?fel=x")

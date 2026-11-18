@@ -144,6 +144,10 @@ _STATE_COOKIE_NAME = re.compile(rf"{STATE_COOKIE}_[0-9a-f]{{24}}")
 
 # The state cookie carries ``next``; a long one makes a cookie that browsers drop, and the login fails.
 MAX_NEXT_LENGTH = 512
+# The largest signed state a login keeps, in bytes; a next that would make it larger is the home path. Up to five waiting
+# logins (six for a moment) go with every /api/auth request, and this keeps their Cookie header under a proxy's limit
+# (ingress-nginx: 8 KB) whatever their next: past it, the proxy would refuse every login until they expire.
+MAX_STATE_COOKIE_BYTES = 1024
 
 
 def module_path(value: str | None, home_path: str) -> str:
@@ -379,14 +383,15 @@ class ModuleAuth:
             )
             refused.headers["Cache-Control"] = "no-store"
             return refused
-        pending = self.state_serializer.dumps(
-            PendingLogin(
-                state=state,
-                next=module_path(next_path, self.settings.home_path),
-                renew_user_id=current.user.id if current is not None else None,
-                renew_tenant_id=current.tenant_id if current is not None else None,
-            ).model_dump()
+        login = PendingLogin(
+            state=state,
+            next=module_path(next_path, self.settings.home_path),
+            renew_user_id=current.user.id if current is not None else None,
+            renew_tenant_id=current.tenant_id if current is not None else None,
         )
+        pending = self.state_serializer.dumps(login.model_dump())
+        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
+            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.settings.home_path}).model_dump())
         query = urlencode(
             {
                 "module_key": self.settings.module_key,

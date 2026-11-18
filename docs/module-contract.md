@@ -18,7 +18,7 @@ Location: {ENEO_PUBLIC_URL}/module-login?module_key=MODULE_KEY&redirect_uri={MOD
 Set-Cookie: eneo_module_login_state_<24 hex digits>=...; HttpOnly; SameSite=Lax; Max-Age=1800; Path=/api/auth
 ```
 
-Each login has a state cookie of its own, named after the first 24 hex digits of the SHA-256 of its `state`, so a second login (another tab, the session cover's sign-in) does not end the first. Its path is `/api/auth`, so the cookies of waiting logins also go with every status call. A new login deletes the oldest past five waiting; five is a cleanup target, not a limit: two logins started at once can leave six until the next start.
+Each login has a state cookie of its own, named after the first 24 hex digits of the SHA-256 of its `state`, so a second login (another tab, the session cover's sign-in) does not end the first. Its path is `/api/auth`, so the cookies of waiting logins also go with every status call. A `next` whose signed state would pass 1024 bytes is replaced by the module's home path, so that six waiting cookies stay under a proxy's 8 KB header limit. A new login deletes the oldest past five waiting; five is a cleanup target, not a limit: two logins started at once can leave six until the next start.
 
 `state` is 32 random bytes, URL-safe. `redirect_uri` is the callback registered in Eneo with the module key.
 

@@ -128,7 +128,7 @@ sequenceDiagram
 |---|---|---|
 | Session cookie | `eneo_module_session`, random id, HttpOnly, SameSite=Lax, `Secure` unless `COOKIE_SECURE=false`, path `/`, ends with the session | `auth.py` |
 | State cookie | One per login, `eneo_module_login_state_` and 24 hex digits of its state's SHA-256, signed with `SESSION_SECRET`, `LOGIN_TIMEOUT_MINUTES` (30 by default), path `/api/auth`, deleted by its callback; a new login deletes the oldest past five waiting (a cleanup target, not a limit) | `auth.py` |
-| Where login returns | `next` if it is a path of this module of at most 512 characters with no backslash and no control character (a tab, CR or LF would make `/<tab>/host` read as `//host`), else `Settings.home_path` (default `/`) | `auth.py` (`module_path`) |
+| Where login returns | `next` if it is a path of this module of at most 512 characters with no backslash and no control character (a tab, CR or LF would make `/<tab>/host` read as `//host`), else `Settings.home_path` (default `/`). Also the home path when the signed state would pass 1024 bytes (`MAX_STATE_COOKIE_BYTES`): the cookies of waiting logins go with every `/api/auth` request, the status calls too, and six of them stay under a proxy's 8 KB header limit whatever their `next` | `auth.py` (`module_path`) |
 | Callback failure | 303 to `/?auth_error=<code>`: `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid` | `auth.py` |
 | Session end | `min(SESSION_MAX_AGE_MINUTES, Eneo's session_expires_at)` | `auth.py` |
 | A new login | Ends the session the browser held | `auth.py` (`callback`) |
