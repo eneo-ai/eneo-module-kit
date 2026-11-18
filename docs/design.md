@@ -24,7 +24,7 @@ What a module must do:
 
 | Step | Module side |
 |---|---|
-| Start login | Create an unpredictable one-time `state`, bind it to the browser in an HttpOnly, SameSite=Lax cookie scoped to the callback path, redirect to `{ENEO_PUBLIC_URL}/module-login?module_key&redirect_uri&state`. |
+| Start login | Create an unpredictable one-time `state`, bind it to the browser in an HttpOnly, SameSite=Lax signed cookie of that login's own, on `/api/auth`, redirect to `{ENEO_PUBLIC_URL}/module-login?module_key&redirect_uri&state`. |
 | Callback | Reject a missing or mismatched `state` before anything else. The state is bound to the browser by a signed cookie of that login's own, on `/api/auth`, that lives `LOGIN_TIMEOUT_MINUTES` (30 by default) and that its callback deletes; the module keeps no list of used states, because a ticket works once and Eneo enforces that. Exchange the ticket server-side: `POST {ENEO_BACKEND_URL}/api/v1/module-auth/token/` with the service key. Check the returned `module_key`, expiry and identity, then confirm them with `GET /api/v1/module-auth/{module_key}/session/` using both credentials. Redirect to a clean URL with `Referrer-Policy: no-referrer`. |
 | Session | Keep the module-user token in a server-side session. The browser holds only an opaque HttpOnly cookie. The session ends at `min(module maximum, Eneo's session_expires_at)`. A new login ends the session the browser held. |
 | Refresh | At half the token's lifetime: `POST /api/v1/module-auth/{module_key}/token/refresh/` with both credentials, one refresh in flight per session. On any refusal other than 408, 429 or 5xx, end the session. When Eneo cannot answer (408, 429, 5xx, network, or an unexpected error here), keep the valid token and ask again shortly. |

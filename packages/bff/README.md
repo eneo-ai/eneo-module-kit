@@ -90,6 +90,7 @@ Eneo can end a login before the module's session ends: a changed password, "log 
 - A 403, a 401 with another code (`invalid_api_key` is the module's key, not the user's), and a body that cannot be read never start a check.
 - A token refreshed before or during the check keeps its session. A session ended meanwhile gets the answer of an ended session.
 - The ended session's signed URLs go with it.
+- A confirmed end is logged at INFO by the `eneo_module_auth` logger, which shows only when the module sets up logging for it (`serve` does not).
 
 The kit applies it to every call it makes with the user's token: the proxy, `forward_upload` and the minting of a signed URL in `stream_signed`. Fetching the file with its signed URL carries no user token, so a refusal there ends nothing.
 

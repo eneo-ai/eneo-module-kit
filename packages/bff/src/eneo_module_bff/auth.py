@@ -141,7 +141,8 @@ def state_cookie_name(state: str) -> str:
 # Only a name of the form state_cookie_name gives counts as a waiting login: a cookie under the prefix with any other
 # name, which the kit never sets, is neither read nor deleted, and its name may be one the response could not even
 # delete. This stops no cookie by its origin: one that a site on a parent domain sets under a name of this form counts,
-# and may be the first a new login deletes, but admits no callback, whose state's signature is checked.
+# and may be picked first for deletion, but the delete carries no Domain attribute and does not reach it; it admits no
+# callback, whose state's signature is checked.
 _STATE_COOKIE_NAME = re.compile(rf"{STATE_COOKIE}_[0-9a-f]{{24}}")
 
 
