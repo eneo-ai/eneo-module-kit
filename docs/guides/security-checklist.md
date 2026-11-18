@@ -11,7 +11,7 @@ The BFF is the security boundary between a browser and Eneo. Its properties are 
 | Property | How | Source |
 |---|---|---|
 | The browser never holds a credential for Eneo | The session cookie is a random id; the module-user token stays in the module's memory; the service key is never sent to the browser | `auth.py` |
-| A login belongs to the browser that started it | A signed state cookie (`LOGIN_TIMEOUT_MINUTES`, 30 by default, path `/api/auth/callback`) must match the `state` on the callback, compared in constant time | `auth.py` |
+| A login belongs to the browser that started it | The login's own signed state cookie (named after its state, `LOGIN_TIMEOUT_MINUTES`, 30 by default, path `/api/auth`) must match the `state` on the callback, compared in constant time; another login's cookie never admits it | `auth.py` |
 | A ticket is checked, not trusted | Module key, expiry and identity are checked, then confirmed with a session call using both credentials | `auth.py` |
 | One session per browser, ending when Eneo says | A new login ends the old session; the session ends at the earlier of `SESSION_MAX_AGE_MINUTES` and Eneo's ceiling; a renewal may only renew the same user in the same tenant | `auth.py` |
 | A login Eneo has ended ends the session, and nothing else does | A 401 `authentication_error` from Eneo starts one bounded check at Eneo's session route with the refused token; only its refusal ends the session (and its signed URLs). A 403, another 401 code, an unreadable body, no answer or a token renewed meanwhile keep it ([K19](../decisions/k19-a-session-ends-on-enos-confirmation.md)) | `auth.py`, `deps.py` |
