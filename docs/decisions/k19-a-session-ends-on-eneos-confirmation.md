@@ -23,6 +23,6 @@ The alternatives are ending the session on the code alone (it signs people out f
 ## Consequences
 
 - A refused call costs at most one more small call to Eneo. Two refusals at once each ask once; the session ends once.
-- A token refreshed before or during the check keeps its session: the refusal is about the old token.
+- A token refreshed before or during the check keeps its session while that session is live: the refusal is about the old token. A renewed session past its end is ended.
 - A module that calls Eneo itself must pass the answer to `raise_if_session_ended`, read (not `stream=True`); a streamed answer is a `RuntimeError`, so the mistake shows at the first call.
 - Proof: `packages/bff/tests/test_login_end.py`.

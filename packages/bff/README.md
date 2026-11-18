@@ -88,7 +88,7 @@ Eneo can end a login before the module's session ends: a changed password, "log 
 
 - One check per refused call, bounded to 10 seconds with its answer and to the small-answer size. No answer, a slow one or any other answer confirms nothing: the session stays and Eneo's answer goes on unchanged.
 - A 403, a 401 with another code (`invalid_api_key` is the module's key, not the user's), and a body that cannot be read never start a check.
-- A token refreshed before or during the check keeps its session. A session ended meanwhile gets the answer of an ended session.
+- A token refreshed before or during the check keeps its session while that session is live; a renewed session past its end is ended. A session ended meanwhile gets the answer of an ended session.
 - The ended session's signed URLs go with it.
 - A confirmed end is logged at INFO by the `eneo_module_auth` logger, which shows only when the module sets up logging for it (`serve` does not).
 
