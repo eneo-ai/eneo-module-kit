@@ -27,7 +27,8 @@ from fastapi import (
 )
 from fastapi.requests import HTTPConnection
 from fastapi.responses import RedirectResponse
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from itsdangerous import BadSignature, Serializer, SignatureExpired, URLSafeTimedSerializer
+from itsdangerous.encoding import base64_encode
 from pydantic import BaseModel, ValidationError, field_validator
 
 from .settings import Settings, canonical_origin, has_control_character
@@ -443,14 +444,21 @@ class ModuleAuth:
 
     def _check_home_path_fits(self) -> None:
         """Refuse to start with a home path that a login's state cannot hold, in the largest state a login makes: a
-        renewal, whose user and tenant ids (UUIDs in Eneo) go in it too. Otherwise a renewed sign-in fails later."""
+        renewal, whose user and tenant ids (UUIDs in Eneo) go in it too. Otherwise a renewed sign-in fails later.
+
+        Here, not in a Settings validator: the state's size depends on how ModuleAuth signs it, and every Settings,
+        built by load_settings or directly, reaches create_app. The size is counted uncompressed (plus the one byte a
+        compressed state's mark may add): compression is used only when shorter, so this is the most the state can be,
+        whatever the random state and ids are, and the check gives the same answer at every start.
+        """
         largest = PendingLogin(
             state=secrets.token_urlsafe(32),
             next=self.settings.home_path,
             renew_user_id=str(uuid.uuid4()),
             renew_tenant_id=str(uuid.uuid4()),
         )
-        size = len(self.state_serializer.dumps(largest.model_dump()).encode())
+        uncompressed = Serializer.dump_payload(self.state_serializer, largest.model_dump())
+        size = len(self.state_serializer.make_signer().sign(base64_encode(uncompressed))) + 1
         if size > MAX_STATE_COOKIE_BYTES:
             raise RuntimeError(
                 f"home_path is too long for a login's state cookie: signed with a renewal's identity it is {size} bytes, "

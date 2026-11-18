@@ -1240,6 +1240,14 @@ class HomePathTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "home_path"):
             self.app_with(home)
 
+    def test_whether_a_home_path_fits_never_depends_on_how_a_random_state_compresses(self) -> None:
+        # The signed state is compressed when that is shorter, and how much depends on the random state and ids: a
+        # sample can pass at one start and fail at the next. The check counts the state as if nothing compressed.
+        with self.assertRaisesRegex(RuntimeError, "home_path"):
+            self.app_with("/" + "a" * 800)  # compresses to a few hundred bytes, but only by luck of its letters
+        for _ in range(200):
+            self.app_with("/" + "b" * 450)
+
     def test_an_ordinary_home_path_starts(self) -> None:
         for home in ("/", "/flows", "/" + secrets.token_urlsafe(300)):
             with self.subTest(home=home[:20]):
