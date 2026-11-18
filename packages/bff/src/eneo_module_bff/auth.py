@@ -313,7 +313,8 @@ def refuses_the_login(answer: httpx2.Response) -> bool:
         return False
     try:
         body = json.loads(answer.content)
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError: JSON nested deeper than the parser goes is a body that cannot be read, not a 500.
         return False
     return isinstance(body, dict) and body.get("code") == "authentication_error"
 

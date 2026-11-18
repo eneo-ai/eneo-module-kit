@@ -45,6 +45,8 @@ SESSION_ROUTE_ACCEPTS = httpx2.Response(
     200, json={"module_key": "eneo-module", "tenant_id": "tenant-id", "user": {"id": "user-id", "email": "user@example.test"}}
 )
 ORIGIN = "https://module.example.test"
+# JSON too deep for Python's parser: json.loads raises RecursionError, not ValueError.
+TOO_DEEP = b"[" * 100_000 + b"]" * 100_000
 
 
 def settings() -> Settings:
@@ -109,6 +111,7 @@ class RefusalTests(unittest.TestCase):
             "a code that is not a string": (httpx2.Response(401, json={"code": ["authentication_error"]}), False),
             "a JSON list": (httpx2.Response(401, json=[REVOKED]), False),
             "bytes that are not UTF-8": (httpx2.Response(401, content=b"\xff\xfe"), False),
+            "JSON nested too deep to parse": (httpx2.Response(401, content=TOO_DEEP), False),
         }
         for case, (answer, ends) in cases.items():
             with self.subTest(case):
@@ -180,6 +183,7 @@ class ConfirmationTests(LoginEndCase):
             "Eneo failing": httpx2.Response(503),
             "a 200 for someone else": httpx2.Response(200, json={"module_key": "eneo-module", "tenant_id": "t", "user": {"id": "other", "email": "o@x"}}),
             "a 200 that is not JSON": httpx2.Response(200, text="ok"),
+            "a 401 nested too deep to parse": httpx2.Response(401, content=TOO_DEEP),
             "unreachable": httpx2.ConnectError("unreachable"),
             "a read timeout": httpx2.ReadTimeout("slow"),
             "an answer past its bound": UnboundedAnswer("too long", request=httpx2.Request("GET", SESSION_ROUTE)),
@@ -213,9 +217,10 @@ class ConfirmationTests(LoginEndCase):
             httpx2.Response(401, json=STEP_UP),
             httpx2.Response(401, json={"detail": "no code"}),
             httpx2.Response(401, content=b"\xff\xfe"),
+            httpx2.Response(401, content=TOO_DEEP),
             httpx2.Response(200, json={"items": []}),
         ):
-            with self.subTest(status=answer.status_code, body=answer.content):
+            with self.subTest(status=answer.status_code, body=answer.content[:40]):
                 self.assertFalse(await self.auth.login_refused(request, answer))
         self.assertEqual(self.route.calls, [])
         self.assertEqual(self.held_token(), "module-user-token")
@@ -440,7 +445,7 @@ class PublicNameTests(unittest.TestCase):
             (httpx2.Response(403, json=INACTIVE), 0),
             (httpx2.Response(401, json=REVOKED), 1),  # the session route accepts the token
         ):
-            with self.subTest(status=answer.status_code, body=answer.content):
+            with self.subTest(status=answer.status_code, body=answer.content[:40]):
                 browser = self.module(answer)
 
                 self.assertEqual(browser.get("/api/own").json(), {"eneo": answer.status_code})
