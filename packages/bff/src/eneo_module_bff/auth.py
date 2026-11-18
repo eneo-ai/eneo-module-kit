@@ -9,6 +9,7 @@ import re
 import secrets
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Literal, NamedTuple
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
@@ -348,6 +349,7 @@ class ModuleAuth:
             settings.session_secret,
             salt="eneo-module-login-state",
         )
+        self._check_home_path_fits()
         self.sessions = ModuleSessionStore()
         # Token refreshes in flight, by session id; an entry lives only while
         # its refresh runs.
@@ -391,9 +393,7 @@ class ModuleAuth:
             renew_user_id=current.user.id if current is not None else None,
             renew_tenant_id=current.tenant_id if current is not None else None,
         )
-        pending = self.state_serializer.dumps(login.model_dump())
-        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
-            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.settings.home_path}).model_dump())
+        pending = self._signed_state(login)
         query = urlencode(
             {
                 "module_key": self.settings.module_key,
@@ -418,6 +418,41 @@ class ModuleAuth:
         )
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    def _signed_state(self, login: PendingLogin) -> str:
+        """The login's signed state: with its next, else with the home path; never over MAX_STATE_COOKIE_BYTES.
+
+        Start-up has checked that the home path fits with a renewal's identity as Eneo's ids are (two UUIDs); this
+        guard is for an identity longer than that, which no fallback can make fit, and fails rather than send a cookie
+        a proxy may refuse with every other waiting login.
+        """
+        pending = self.state_serializer.dumps(login.model_dump())
+        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
+            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.settings.home_path}).model_dump())
+        if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
+            raise RuntimeError(
+                f"The login's signed state is {len(pending.encode())} bytes even with the home path, over "
+                f"MAX_STATE_COOKIE_BYTES ({MAX_STATE_COOKIE_BYTES}): the renewal's user or tenant id is far longer than "
+                "Eneo's UUIDs"
+            )
+        return pending
+
+    def _check_home_path_fits(self) -> None:
+        """Refuse to start with a home path that a login's state cannot hold, in the largest state a login makes: a
+        renewal, whose user and tenant ids (UUIDs in Eneo) go in it too. Otherwise a renewed sign-in fails later."""
+        largest = PendingLogin(
+            state=secrets.token_urlsafe(32),
+            next=self.settings.home_path,
+            renew_user_id=str(uuid.uuid4()),
+            renew_tenant_id=str(uuid.uuid4()),
+        )
+        size = len(self.state_serializer.dumps(largest.model_dump()).encode())
+        if size > MAX_STATE_COOKIE_BYTES:
+            raise RuntimeError(
+                f"home_path is too long for a login's state cookie: signed with a renewal's identity it is {size} bytes, "
+                f"over MAX_STATE_COOKIE_BYTES ({MAX_STATE_COOKIE_BYTES}). Choose a shorter home_path "
+                "(load_settings(home_path=...) or Settings(home_path=...)); a few hundred characters fit."
+            )
 
     def _pending_logins(self, request: Request) -> list[str]:
         """The browser's waiting logins' cookie names, oldest first; one that cannot be read counts as the oldest."""

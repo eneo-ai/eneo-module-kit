@@ -6,6 +6,7 @@ import secrets
 import time
 import timeit
 import unittest
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -13,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx2
 from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
+from itsdangerous import URLSafeTimedSerializer
 
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import (
@@ -21,6 +23,7 @@ from eneo_module_bff.auth import (
     ModuleSessionStore,
     MAX_STATE_COOKIE_BYTES,
     ModuleUser,
+    PendingLogin,
     SESSION_COOKIE,
     SignedUrl,
     STATE_COOKIE,
@@ -540,6 +543,20 @@ class ModuleAuthTests(unittest.TestCase):
         callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
 
         self.assertEqual(callback.headers["location"], "/flows")
+
+    def test_a_renewal_whose_signed_state_would_pass_the_byte_bound_is_refused_not_sent(self) -> None:
+        # Eneo's ids are UUIDs, which start-up counts on; an id far longer than that cannot make a cookie over the bound.
+        session_id = self.auth.sessions.create(
+            ModuleSession(
+                access_token="t", expires_at=int(time.time()) + 600, refresh_at=int(time.time()) + 300,
+                session_expires_at=int(time.time()) + 3600, module_key="speech-to-text", tenant_id="tenant-id",
+                user=ModuleUser(id=secrets.token_urlsafe(1200), email="user@example.test"),
+            )
+        )
+        self.client.cookies.set(SESSION_COOKIE, session_id)
+
+        with self.assertRaisesRegex(RuntimeError, "MAX_STATE_COOKIE_BYTES"):
+            self.client.get("/api/auth/login", params={"renew": "1", "next": "/inloggad"})
 
     def test_the_signal_for_the_page_goes_before_a_fragment(self) -> None:
         self.assertEqual(with_query("/page", "fel=x"), "/page?fel=x")
@@ -1181,3 +1198,49 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HomePathTests(unittest.TestCase):
+    """The home path is where a login lands when its own next does not fit, so it must fit itself, renewal and all."""
+
+    @staticmethod
+    def app_with(home_path: str) -> FastAPI:
+        return create_app(
+            Settings(
+                eneo_backend_url="https://eneo.example.test",
+                eneo_public_url="https://eneo.example.test",
+                module_public_url="https://module.example.test",
+                module_key="speech-to-text",
+                eneo_api_key="test-key",
+                session_secret="x" * 48,
+                cookie_secure=False,
+                home_path=home_path,
+            ),
+            http_client=FakeExchangeClient(),
+        )
+
+    def test_a_home_path_too_long_for_the_login_state_stops_the_start_and_says_what_to_do(self) -> None:
+        # Random, because the signed state is compressed: a repeated character would hide the size.
+        with self.assertRaisesRegex(RuntimeError, r"home_path .* shorter"):
+            self.app_with("/" + secrets.token_urlsafe(900))
+
+    def test_a_home_path_that_fits_a_plain_login_but_not_a_renewal_stops_the_start(self) -> None:
+        # The renewal's identity (two UUIDs, as Eneo's ids are) goes in the same state: a check without it would pass
+        # here, and a renewed sign-in would fail later.
+        serializer = URLSafeTimedSerializer("x" * 48, salt="eneo-module-login-state")
+        signed = lambda home, renewal: len(serializer.dumps(PendingLogin(
+            state=secrets.token_urlsafe(32), next=home,
+            renew_user_id=str(uuid.uuid4()) if renewal else None, renew_tenant_id=str(uuid.uuid4()) if renewal else None,
+        ).model_dump()))
+        home = next(
+            home for home in ("/" + secrets.token_urlsafe(n) for n in range(500, 800))
+            if signed(home, False) < MAX_STATE_COOKIE_BYTES - 16 and signed(home, True) > MAX_STATE_COOKIE_BYTES + 16
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "home_path"):
+            self.app_with(home)
+
+    def test_an_ordinary_home_path_starts(self) -> None:
+        for home in ("/", "/flows", "/" + secrets.token_urlsafe(300)):
+            with self.subTest(home=home[:20]):
+                self.app_with(home)

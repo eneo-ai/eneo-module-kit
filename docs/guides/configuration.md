@@ -59,7 +59,7 @@ The release comes from the deployment because a release gives the tested image i
 
 | Argument of `load_settings` | Default | Meaning |
 |---|---|---|
-| `home_path` | `/` | Where the callback lands when login was started without a usable `next`. |
+| `home_path` | `/` | Where the callback lands when login was started without a usable `next`. It must fit a login's signed state of 1024 bytes with a renewal's identity in it (a few hundred characters do); `create_app` refuses to start otherwise and says so. |
 | `default_organization` | none | `Organization(name=..., logo=...)` when no `ORGANIZATION_*` is set. `logo` is `"default"` (the logo the module bundles in its own frontend: the kit serves no file for it, `/api/branding/logo/*` is a 404), `"custom"` (served by the kit, from `ORGANIZATION_LOGO`) or none (the name as text). |
 
 `create_app()` loads with the defaults of these two. A module that sets one builds the settings itself:
