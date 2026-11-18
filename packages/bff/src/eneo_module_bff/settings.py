@@ -101,6 +101,11 @@ class Settings(BaseModel):
     # Eneos sessionstak (module_auth_max_session_hours); modultoken förnyas
     # via Eneo fram till dess.
     session_max_age_seconds: int = 8 * 60 * 60
+    # How long a person may take to sign in at Eneo (LOGIN_TIMEOUT_MINUTES): the login state that binds the callback to
+    # their browser lives this long. Signed out of Eneo, they first sign in there, and Eneo's own sign-in state alone
+    # lives OIDC_STATE_TTL_SECONDS (600 by default, Eneo's backend/src/eneo/main/config.py), so this must be longer than
+    # that or a sign-in Eneo completed ends as invalid_state.
+    login_timeout_seconds: int = Field(default=30 * 60, gt=0)
     # Where the callback lands when no `next` is given.
     home_path: str = "/"
     # None shows the product name alone (no default organisation, or SHOW_ORGANIZATION=false).
@@ -369,6 +374,7 @@ def load_settings(*, default_organization: Organization | None = None, home_path
         max_response_bytes=_positive_int("MAX_RESPONSE_BYTES", 32 * 1024 * 1024),
         max_concurrent_streams=_positive_int("MAX_CONCURRENT_STREAMS", 64),
         session_max_age_seconds=session_minutes * 60,
+        login_timeout_seconds=_positive_int("LOGIN_TIMEOUT_MINUTES", 30) * 60,
         home_path=home_path,
         organization=organization,
         organization_logo=organization_logo,

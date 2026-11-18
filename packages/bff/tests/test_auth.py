@@ -230,6 +230,37 @@ class ModuleAuthTests(unittest.TestCase):
         self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
         self.assertEqual(self.exchange_client.calls, [])
 
+    def test_a_sign_in_that_takes_six_minutes_at_eneo_completes(self) -> None:
+        # Signed out of Eneo, a person first signs in there; that alone may take longer than five minutes.
+        state, _ = self.start_login()
+
+        with patch("time.time", return_value=time.time() + 6 * 60):
+            callback = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+
+        self.assertEqual(callback.headers["location"], "/flows")
+        self.assertIn(SESSION_COOKIE, callback.cookies)
+
+    def test_a_sign_in_past_the_login_timeout_is_invalid_state_and_exchanges_nothing(self) -> None:
+        # LOGIN_TIMEOUT_MINUTES sets the window; 10 minutes here, so the default is not what the test relies on.
+        with patch.object(self.auth.settings, "login_timeout_seconds", 10 * 60):
+            response = self.client.get("/api/auth/login")
+            state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+            self.assertIn(f"Max-Age={10 * 60}", response.headers["set-cookie"])
+            # A browser that kept the cookie past its Max-Age anyway: the signed age is checked on its own.
+            pending = response.cookies[STATE_COOKIE]
+            self.client.cookies.clear()
+
+            with patch("time.time", return_value=time.time() + 10 * 60 + 5):
+                callback = self.client.get(
+                    "/api/auth/callback",
+                    params={"ticket": "one-time-ticket", "state": state},
+                    headers={"Cookie": f"{STATE_COOKIE}={pending}"},
+                )
+
+        self.assertEqual(callback.headers["location"], "/?auth_error=invalid_state")
+        self.assertNotIn(SESSION_COOKIE, callback.cookies)
+        self.assertEqual(self.exchange_client.calls, [])
+
     def test_callback_state_is_consumed_after_success(self) -> None:
         state, _ = self.start_login()
         first = self.client.get(

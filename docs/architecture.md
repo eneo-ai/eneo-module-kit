@@ -102,7 +102,7 @@ Source: `packages/bff/src/eneo_module_bff/app.py` (`create_app`). Routes added t
 
 ## Login handoff
 
-Look at: the two cookies. The state cookie binds the login to this browser for five minutes; the session cookie is an opaque id, and the token it stands for stays in the module's memory.
+Look at: the two cookies. The state cookie binds the login to this browser for `LOGIN_TIMEOUT_MINUTES` (30 by default); the session cookie is an opaque id, and the token it stands for stays in the module's memory.
 
 ```mermaid
 sequenceDiagram
@@ -127,7 +127,7 @@ sequenceDiagram
 | Fact | Value | Where |
 |---|---|---|
 | Session cookie | `eneo_module_session`, random id, HttpOnly, SameSite=Lax, `Secure` unless `COOKIE_SECURE=false`, path `/`, ends with the session | `auth.py` |
-| State cookie | `eneo_module_login_state`, signed with `SESSION_SECRET`, five minutes, path `/api/auth/callback`, deleted by the callback | `auth.py` |
+| State cookie | `eneo_module_login_state`, signed with `SESSION_SECRET`, `LOGIN_TIMEOUT_MINUTES` (30 by default), path `/api/auth/callback`, deleted by the callback | `auth.py` |
 | Where login returns | `next` if it is a path of this module of at most 512 characters with no backslash and no control character (a tab, CR or LF would make `/<tab>/host` read as `//host`), else `Settings.home_path` (default `/`) | `auth.py` (`module_path`) |
 | Callback failure | 303 to `/?auth_error=<code>`: `invalid_state`, `exchange_unavailable`, `exchange_failed`, `exchange_invalid`, `validation_unavailable`, `validation_failed`, `validation_invalid` | `auth.py` |
 | Session end | `min(SESSION_MAX_AGE_MINUTES, Eneo's session_expires_at)` | `auth.py` |

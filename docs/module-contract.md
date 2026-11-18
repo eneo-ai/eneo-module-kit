@@ -15,7 +15,7 @@ GET {MODULE_PUBLIC_URL}/api/auth/login?next=/flows
 
 303 See Other
 Location: {ENEO_PUBLIC_URL}/module-login?module_key=MODULE_KEY&redirect_uri={MODULE_PUBLIC_URL}/api/auth/callback&state=STATE
-Set-Cookie: eneo_module_login_state=...; HttpOnly; SameSite=Lax; Max-Age=300; Path=/api/auth/callback
+Set-Cookie: eneo_module_login_state=...; HttpOnly; SameSite=Lax; Max-Age=1800; Path=/api/auth/callback
 ```
 
 `state` is 32 random bytes, URL-safe. `redirect_uri` is the callback registered in Eneo with the module key.

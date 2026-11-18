@@ -38,7 +38,6 @@ STATE_COOKIE = "eneo_module_login_state"
 # (SESSION_MAX_AGE_MINUTES). The session also ends at Eneo's
 # session ceiling (module_auth_max_session_hours); the shorter-lived module
 # token is refreshed through Eneo until then.
-STATE_MAX_AGE = 5 * 60
 CALLBACK_PATH = "/api/auth/callback"
 # After Eneo fails to answer a token refresh, wait this long before asking
 # again; the current, still valid token stays in use meanwhile.
@@ -384,7 +383,7 @@ class ModuleAuth:
             httponly=True,
             secure=self.settings.cookie_secure,
             samesite="lax",
-            max_age=STATE_MAX_AGE,
+            max_age=self.settings.login_timeout_seconds,
             path=CALLBACK_PATH,
         )
         response.headers["Cache-Control"] = "no-store"
@@ -794,7 +793,7 @@ class ModuleAuth:
         if cookie is None:
             return None
         try:
-            payload = self.state_serializer.loads(cookie, max_age=STATE_MAX_AGE)
+            payload = self.state_serializer.loads(cookie, max_age=self.settings.login_timeout_seconds)
             return PendingLogin.model_validate(payload)
         except (BadSignature, SignatureExpired, ValidationError):
             return None
