@@ -8,6 +8,7 @@ write them.
 """
 
 import asyncio
+import contextlib
 import time
 import unittest
 from unittest.mock import patch
@@ -47,6 +48,23 @@ SESSION_ROUTE_ACCEPTS = httpx2.Response(
 ORIGIN = "https://module.example.test"
 # JSON too deep for Python's parser: json.loads raises RecursionError, not ValueError.
 TOO_DEEP = b"[" * 100_000 + b"]" * 100_000
+# Seconds a step may take before the test fails rather than hang: only a broken run gets near it, however slow the machine.
+NEVER_HANGS = 30
+
+
+@contextlib.contextmanager
+def loop_clock():
+    """The running loop's clock, which every asyncio deadline reads, with a way to move it ahead: a deadline then passes
+    where the test says, not wherever a slow machine happens to be. Real time still runs, so NEVER_HANGS still ends a
+    broken run."""
+    loop = asyncio.get_running_loop()
+    real, ahead = loop.time, [0.0]
+
+    def advance(seconds: float) -> None:
+        ahead[0] += seconds
+
+    with patch.object(loop, "time", lambda: real() + ahead[0]):
+        yield advance
 
 
 def settings() -> Settings:
@@ -194,8 +212,9 @@ class ConfirmationTests(LoginEndCase):
                 self.route.answer, self.route.calls = answer, []
                 request = await self.admitted()
 
+                # Every answer but the last comes back without a pause, so the short deadline can only end "never".
                 with patch.object(auth, "SESSION_CHECK_SECONDS", 0.05):
-                    ended = await asyncio.wait_for(self.auth.login_refused(request, httpx2.Response(401, json=REVOKED)), 1)
+                    ended = await asyncio.wait_for(self.auth.login_refused(request, httpx2.Response(401, json=REVOKED)), NEVER_HANGS)
 
                 self.assertFalse(ended)
                 self.assertEqual(self.held_token(), "module-user-token")
@@ -236,7 +255,7 @@ class ConfirmationTests(LoginEndCase):
         request = await self.admitted()
         before = asyncio.all_tasks()
         check = asyncio.create_task(self.auth.login_refused(request, httpx2.Response(401, json=REVOKED)))
-        await asyncio.wait_for(asked.wait(), 1)
+        await asyncio.wait_for(asked.wait(), NEVER_HANGS)
 
         check.cancel()
         with self.assertRaises(asyncio.CancelledError):
@@ -280,7 +299,7 @@ class LateAndConcurrentRefusalTests(LoginEndCase):
         self.route.answer = confirms
         request = await self.admitted()
         refusal = asyncio.create_task(self.auth.login_refused(request, httpx2.Response(401, json=REVOKED)))
-        await asyncio.wait_for(asked.wait(), 1)
+        await asyncio.wait_for(asked.wait(), NEVER_HANGS)
         self.renew("renewed-token")
         answer.set()
 
@@ -304,7 +323,7 @@ class LateAndConcurrentRefusalTests(LoginEndCase):
             self.auth.login_refused(first, httpx2.Response(401, json=REVOKED)),
             self.auth.login_refused(second, httpx2.Response(401, json=REVOKED)),
         )
-        await asyncio.wait_for(asked.wait(), 1)
+        await asyncio.wait_for(asked.wait(), NEVER_HANGS)
         answer.set()
 
         self.assertEqual(await refusals, [True, True], "both get the session answer")
@@ -331,12 +350,14 @@ class LateAndConcurrentRefusalTests(LoginEndCase):
 
                 self.route.answer = answers
                 first, second = await self.admitted(), await self.admitted()
-                with patch.object(auth, "SESSION_CHECK_SECONDS", 0.2):
+                with loop_clock() as advance:
                     one = asyncio.create_task(self.auth.login_refused(first, httpx2.Response(401, json=REVOKED)))
                     two = asyncio.create_task(self.auth.login_refused(second, httpx2.Response(401, json=REVOKED)))
-                    self.assertTrue(await asyncio.wait_for(one, 1))
+                    self.assertTrue(await asyncio.wait_for(one, NEVER_HANGS))
                     first_ended.set()
-                    self.assertTrue(await asyncio.wait_for(two, 1), "the second gets the session answer too")
+                    if case == "no answer before the deadline":
+                        advance(auth.SESSION_CHECK_SECONDS)  # the second check's deadline passes, after the first ended it
+                    self.assertTrue(await asyncio.wait_for(two, NEVER_HANGS), "the second gets the session answer too")
 
                 self.assertIsNone(self.auth.sessions.get(self.session_id))
                 self.assertEqual(len(self.route.calls), 2, "at most one check per refusal")
@@ -370,14 +391,18 @@ class StoreTests(unittest.TestCase):
         store = auth.ModuleSessionStore()
         session_id = store.create(a_session("old"))
         store.remember_signed_url(session_id, "files/f1/signed-url/", SignedUrl("https://eneo/f1?sig", time.time() + 6000))
-        store.replace(session_id, a_session("new"))
-        past_its_end = time.time() + 3600 + 1
+        renewed = a_session("new")
+        store.replace(session_id, renewed)
+        # The session's end is expires_at, as the store's own lookups count it; the login's later end does not protect it.
+        self.assertLess(renewed.expires_at, renewed.session_expires_at)
 
-        with patch("eneo_module_bff.auth.time.time", return_value=past_its_end):
+        with patch("eneo_module_bff.auth.time.time", return_value=renewed.expires_at - 1):
+            self.assertFalse(store.delete_if_token(session_id, "old"), "still live: the renewal is protected")
+        with patch("eneo_module_bff.auth.time.time", return_value=renewed.expires_at + 1):
             self.assertTrue(store.delete_if_token(session_id, "old"))
 
-        self.assertIsNone(store._sessions.get(session_id))
-        self.assertNotIn(session_id, store._signed_urls, "its bearer URLs go with it")
+        self.assertIsNone(store.get(session_id))
+        self.assertIsNone(store.signed_url(session_id, "files/f1/signed-url/"), "its bearer URLs go with it")
 
 
 class _Arriving(httpx2.AsyncByteStream):
@@ -641,8 +666,11 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
                     return httpx2.Response(401, headers={"content-type": "application/json"}, stream=body)
 
                 self.module(httpx2.Response(401, json=REVOKED), stalls)
-                with patch.object(auth, "SESSION_CHECK_SECONDS", 0.2):
-                    response = await asyncio.wait_for(self.send(site), 5)
+                with loop_clock() as advance:
+                    request = asyncio.create_task(self.send(site))
+                    await asyncio.wait_for(body.reached.wait(), NEVER_HANGS)
+                    advance(auth.SESSION_CHECK_SECONDS)  # the deadline passes, with part of the body in
+                    response = await asyncio.wait_for(request, NEVER_HANGS)
 
                 self.assertTrue(body.reached.is_set(), "part of the body arrived")
                 self.assertNotIn("x-auth-required", response.headers)
@@ -663,7 +691,7 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
 
                 self.module(httpx2.Response(401, json=REVOKED), stalls)
                 request = asyncio.create_task(self.send(site))
-                await asyncio.wait_for(body.reached.wait(), 2)
+                await asyncio.wait_for(body.reached.wait(), NEVER_HANGS)
 
                 request.cancel()
                 with self.assertRaises(asyncio.CancelledError):
@@ -686,7 +714,7 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
                 self.module(httpx2.Response(401, json=REVOKED), never)
                 streams = self.app.state.stream_slots._value
                 request = asyncio.create_task(self.send(site))
-                await asyncio.wait_for(asked.wait(), 1)
+                await asyncio.wait_for(asked.wait(), NEVER_HANGS)
 
                 request.cancel()
                 with self.assertRaises(asyncio.CancelledError):

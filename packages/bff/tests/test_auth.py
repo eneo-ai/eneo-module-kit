@@ -1196,10 +1196,6 @@ class ConcurrentTokenRefreshTests(TokenRefreshFixture, unittest.IsolatedAsyncioT
         self.assertEqual(self.auth._refreshes, {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class HomePathTests(unittest.TestCase):
     """The home path is where a login lands when its own next does not fit, so it must fit itself, renewal and all."""
 
@@ -1252,3 +1248,7 @@ class HomePathTests(unittest.TestCase):
         for home in ("/", "/flows", "/" + secrets.token_urlsafe(300)):
             with self.subTest(home=home[:20]):
                 self.app_with(home)
+
+
+if __name__ == "__main__":
+    unittest.main()
