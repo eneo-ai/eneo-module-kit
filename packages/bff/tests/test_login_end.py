@@ -21,7 +21,7 @@ from eneo_module_bff import auth, forward_upload, raise_if_session_ended, requir
 from eneo_module_bff.app import create_app
 from eneo_module_bff.auth import SESSION_COOKIE, ModuleAuth, ModuleSession, ModuleUser, SignedUrl, refuses_the_login
 from eneo_module_bff.settings import Settings
-from eneo_module_bff.upstream import SMALL_ANSWER, UnboundedAnswer
+from eneo_module_bff.upstream import SMALL_ANSWER, UnboundedAnswer, make_client
 
 # A token Eneo no longer takes (revoked, expired, its user gone): the handler of AuthenticationException.
 REVOKED = {"message": "Unauthenticated", "eneo_error_code": 9005, "code": "authentication_error", "request_id": "request-1"}
@@ -390,6 +390,22 @@ class _Arriving(httpx2.AsyncByteStream):
         yield self._body
 
 
+class _Stalling(httpx2.AsyncByteStream):
+    """A body whose first bytes arrive with the headers, and whose rest never does."""
+
+    def __init__(self) -> None:
+        self.reached = asyncio.Event()
+        self.closed = False
+
+    async def __aiter__(self):
+        yield b'{"code": "authentication_'
+        self.reached.set()
+        await asyncio.Event().wait()
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
 def eneo_refusing(resource_answer: httpx2.Response, session_answer: httpx2.Response = SESSION_ROUTE_ACCEPTS):
     """Eneo behind a mock transport: the session route answers ``session_answer``, every other call ``resource_answer``.
     The calls to the session route are counted in the returned list."""
@@ -517,15 +533,18 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
     }
 
     def module(self, resource_answer, session_answer=SESSION_ROUTE_ACCEPTS, *, file_answer=None):
-        """A module on the kit with the three sites; Eneo answers ``resource_answer`` to each, and the session route
-        ``session_answer`` (a response, or an async function that answers)."""
+        """A module on the kit with the three sites, on the kit's own bounded client; Eneo answers ``resource_answer``
+        to each, and the session route ``session_answer`` (a response, or an async function whose answer goes as it
+        is, its stream included)."""
         self.checks: list[httpx2.Request] = []
 
         async def eneo(request: httpx2.Request) -> httpx2.Response:
             url = str(request.url)
             if url == SESSION_ROUTE:
                 self.checks.append(request)
-                answer = await session_answer() if callable(session_answer) else session_answer
+                if callable(session_answer):
+                    return await session_answer()
+                answer = session_answer
             elif url == FILE_URL:
                 answer = file_answer
             else:
@@ -542,7 +561,7 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
         async def file(request: Request):
             return await stream_signed(request, "f1", mint_path="files/f1/signed-url/", unavailable="The file is not available")
 
-        client = httpx2.AsyncClient(transport=httpx2.MockTransport(eneo))
+        client = make_client(settings(), transport=httpx2.MockTransport(eneo))
         self.app = create_app(settings(), http_client=client, routers=[router], proxy_rules=[rule({"GET", "POST"}, r"things/$")])
         self.sessions = self.app.state.module_auth.sessions
         self.session_id = self.sessions.create(a_session())
@@ -605,6 +624,55 @@ class KitCallSiteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("x-auth-required", response.headers)
         self.assertEqual(self.checks, [])
         self.assertIsNotNone(self.sessions.get(self.session_id))
+
+    def slots_free(self) -> None:
+        self.assertEqual(self.app.state.upload_slots.borrowed_tokens, 0)
+        self.assertEqual(self.app.state.heavy_io_slots.borrowed_tokens, 0)
+        self.assertEqual(self.app.state.stream_slots._value, self.app.state.settings.max_concurrent_streams)
+
+    async def test_a_check_whose_answer_stalls_after_its_headers_ends_at_the_deadline_and_confirms_nothing(self) -> None:
+        # The deadline covers the answer's body, not only its headers: the session route answers at once and then
+        # sends no more of its body.
+        for site in self.SITES:
+            with self.subTest(site):
+                body = _Stalling()
+
+                async def stalls():
+                    return httpx2.Response(401, headers={"content-type": "application/json"}, stream=body)
+
+                self.module(httpx2.Response(401, json=REVOKED), stalls)
+                with patch.object(auth, "SESSION_CHECK_SECONDS", 0.2):
+                    response = await asyncio.wait_for(self.send(site), 5)
+
+                self.assertTrue(body.reached.is_set(), "part of the body arrived")
+                self.assertNotIn("x-auth-required", response.headers)
+                expected = {"detail": REVOKED} if site == "the minting of a signed URL" else REVOKED
+                self.assertEqual((response.status_code, response.json()), (401, expected), "Eneo's own refusal goes on")
+                self.assertEqual(self.sessions.get(self.session_id).access_token, "module-user-token")
+                self.assertEqual(len(self.checks), 1)
+                self.assertTrue(body.closed, "the stalled answer is closed")
+                self.slots_free()
+
+    async def test_a_request_cancelled_while_the_check_s_answer_stalls_closes_it_and_frees_its_slots(self) -> None:
+        for site in self.SITES:
+            with self.subTest(site):
+                body = _Stalling()
+
+                async def stalls():
+                    return httpx2.Response(401, headers={"content-type": "application/json"}, stream=body)
+
+                self.module(httpx2.Response(401, json=REVOKED), stalls)
+                request = asyncio.create_task(self.send(site))
+                await asyncio.wait_for(body.reached.wait(), 2)
+
+                request.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await request
+
+                self.assertTrue(body.closed)
+                self.assertEqual(len(self.checks), 1)
+                self.assertEqual(self.sessions.get(self.session_id).access_token, "module-user-token")
+                self.slots_free()
 
     async def test_a_request_cancelled_during_the_check_frees_its_slots(self) -> None:
         for site in self.SITES:
