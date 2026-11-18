@@ -185,7 +185,7 @@ flowchart TB
   up -->|"any other status"| resp["Same status and body. Set-Cookie, Location and Eneo's security and caching headers dropped; the module's added, Cache-Control no-store"]
 ```
 
-Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`), `auth.py` (`ModuleAuth.login_refused`) and `limits.py`. A forwarded upload and the minting of a signed URL check a 401 `authentication_error` the same way; fetching the file with its signed URL does not ([K19](decisions/k19-a-session-ends-on-enos-confirmation.md)). A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
+Source: `proxy.py` (`proxy_router`, `leaves_route`, `FORWARDED_REQUEST_HEADERS`), `auth.py` (`ModuleAuth.login_refused`) and `limits.py`. A forwarded upload and the minting of a signed URL check a 401 `authentication_error` the same way; fetching the file with its signed URL does not ([K19](decisions/k19-a-session-ends-on-eneos-confirmation.md)). A path that could reach another Eneo route (a `.` or `..` segment written or percent-encoded, `?`, `#`, a control character, a backslash) is a 403 before any rule is tried.
 
 ## Uploads
 

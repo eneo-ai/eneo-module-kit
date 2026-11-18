@@ -144,7 +144,7 @@ Stable for the UI package and for any other frontend:
 | `GET\|POST\|PATCH /api/eneo/{path}` | The allowlisted proxy; a JSON answer of 1 KiB or more gzipped for a browser that accepts it |
 | anything else (`GET`, `HEAD`) | The static app: its files under `/assets` kept for a year, the page and the rest asked for again (an ETag, 304), a precompressed `.br` or `.gz` to a browser that accepts it; unknown assets, `/api`, unknown `/api/*`, dotfiles, and a path with a control character, a backslash or a dot segment are 404 |
 
-A request without a session gets 401 with `X-Auth-Required: session`, and so does a request whose call to Eneo was refused for a login that Eneo's session route confirms is over ([K19](decisions/k19-a-session-ends-on-enos-confirmation.md)). A write from another origin gets 403. A write through the proxy that does not name the session's user in `X-Expected-User` gets 409 `user_changed`. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
+A request without a session gets 401 with `X-Auth-Required: session`, and so does a request whose call to Eneo was refused for a login that Eneo's session route confirms is over ([K19](decisions/k19-a-session-ends-on-eneos-confirmation.md)). A write from another origin gets 403. A write through the proxy that does not name the session's user in `X-Expected-User` gets 409 `user_changed`. There is no `/docs`, `/redoc` or `/openapi.json`, and the slash twin of a route is a 404, never a redirect.
 
 The UI package's session client depends on four things in this surface:
 
