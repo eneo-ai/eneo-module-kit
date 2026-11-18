@@ -1,6 +1,7 @@
 import asyncio
 import itertools
 import os
+import random
 import re
 import secrets
 import time
@@ -21,6 +22,7 @@ from eneo_module_bff.auth import (
     ModuleAuth,
     ModuleSession,
     ModuleSessionStore,
+    MAX_HOME_PATH_BYTES,
     MAX_STATE_COOKIE_BYTES,
     ModuleUser,
     PendingLogin,
@@ -1215,37 +1217,45 @@ class HomePathTests(unittest.TestCase):
             http_client=FakeExchangeClient(),
         )
 
-    def test_a_home_path_too_long_for_the_login_state_stops_the_start_and_says_what_to_do(self) -> None:
-        # Random, because the signed state is compressed: a repeated character would hide the size.
-        with self.assertRaisesRegex(RuntimeError, r"home_path .* shorter"):
-            self.app_with("/" + secrets.token_urlsafe(900))
+    def test_the_longest_home_path_allowed_fits_a_renewals_signed_state(self) -> None:
+        # The proof of the limit: it fails if PendingLogin grows. Counted as if nothing compressed (compression is
+        # used only when shorter), and with characters that JSON writes as two, the most a home path can take.
+        doubled = "".join(random.Random(7).choice('"\\') for _ in range(MAX_HOME_PATH_BYTES - 1))
+        for kind, home in {
+            "random ASCII": "/" + secrets.token_urlsafe(MAX_HOME_PATH_BYTES)[: MAX_HOME_PATH_BYTES - 1],
+            "characters JSON doubles": "/" + doubled,
+        }.items():
+            with self.subTest(kind):
+                self.assertEqual(len(home.encode()), MAX_HOME_PATH_BYTES)
+                module_auth = self.app_with(home).state.module_auth
+                renewal = PendingLogin(
+                    state=secrets.token_urlsafe(32), next=home, renew_user_id=str(uuid.uuid4()), renew_tenant_id=str(uuid.uuid4())
+                )
 
-    def test_a_home_path_that_fits_a_plain_login_but_not_a_renewal_stops_the_start(self) -> None:
-        # The renewal's identity (two UUIDs, as Eneo's ids are) goes in the same state: a check without it would pass
-        # here, and a renewed sign-in would fail later.
-        serializer = URLSafeTimedSerializer("x" * 48, salt="eneo-module-login-state")
-        signed = lambda home, renewal: len(serializer.dumps(PendingLogin(
-            state=secrets.token_urlsafe(32), next=home,
-            renew_user_id=str(uuid.uuid4()) if renewal else None, renew_tenant_id=str(uuid.uuid4()) if renewal else None,
-        ).model_dump()))
-        home = next(
-            home for home in ("/" + secrets.token_urlsafe(n) for n in range(500, 800))
-            if signed(home, False) < MAX_STATE_COOKIE_BYTES - 16 and signed(home, True) > MAX_STATE_COOKIE_BYTES + 16
-        )
+                with patch("itsdangerous.url_safe.zlib.compress", lambda data, *args, **kwargs: data + b"never shorter"):
+                    signed = module_auth._signed_state(renewal)
 
-        with self.assertRaisesRegex(RuntimeError, "home_path"):
-            self.app_with(home)
+                self.assertLessEqual(len(signed.encode()), MAX_STATE_COOKIE_BYTES)
+                self.assertEqual(module_auth.state_serializer.loads(signed)["next"], home)
 
-    def test_whether_a_home_path_fits_never_depends_on_how_a_random_state_compresses(self) -> None:
-        # The signed state is compressed when that is shorter, and how much depends on the random state and ids: a
-        # sample can pass at one start and fail at the next. The check counts the state as if nothing compressed.
-        with self.assertRaisesRegex(RuntimeError, "home_path"):
-            self.app_with("/" + "a" * 800)  # compresses to a few hundred bytes, but only by luck of its letters
-        for _ in range(200):
-            self.app_with("/" + "b" * 450)
+    def test_a_home_path_over_the_limit_stops_the_start_and_says_what_to_do(self) -> None:
+        for home, size in (("/" + "a" * MAX_HOME_PATH_BYTES, MAX_HOME_PATH_BYTES + 1), ("/" + "\u754c" * 86, 259)):
+            with self.subTest(size=size):
+                with self.assertRaises(RuntimeError) as refused:
+                    self.app_with(home)
+                self.assertEqual(
+                    str(refused.exception),
+                    f"home_path is {size} bytes of UTF-8; at most {MAX_HOME_PATH_BYTES} fit a login's state cookie. "
+                    "Choose a shorter one (load_settings(home_path=...) or Settings(home_path=...)).",
+                )
+
+    def test_a_home_path_with_a_control_character_stops_the_start(self) -> None:
+        for home in ("/a\nb", "/a\tb", "/a\u2028b"):
+            with self.subTest(home=home), self.assertRaisesRegex(RuntimeError, "^home_path holds a control character"):
+                self.app_with(home)
 
     def test_an_ordinary_home_path_starts(self) -> None:
-        for home in ("/", "/flows", "/" + secrets.token_urlsafe(300)):
+        for home in ("/", "/flows", "/" + "a" * (MAX_HOME_PATH_BYTES - 1)):
             with self.subTest(home=home[:20]):
                 self.app_with(home)
 

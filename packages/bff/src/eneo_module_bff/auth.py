@@ -9,7 +9,6 @@ import re
 import secrets
 import threading
 import time
-import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Literal, NamedTuple
 from urllib.parse import quote, urlencode, urlsplit, urlunsplit
@@ -27,8 +26,7 @@ from fastapi import (
 )
 from fastapi.requests import HTTPConnection
 from fastapi.responses import RedirectResponse
-from itsdangerous import BadSignature, Serializer, SignatureExpired, URLSafeTimedSerializer
-from itsdangerous.encoding import base64_encode
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from pydantic import BaseModel, ValidationError, field_validator
 
 from .settings import Settings, canonical_origin, has_control_character
@@ -154,6 +152,10 @@ MAX_NEXT_LENGTH = 512
 # case), stay under a proxy's limit (ingress-nginx: 8 KB) whatever their next. More simultaneous starts than that are
 # not bounded, and past the limit the proxy would refuse every login until the cookies expire.
 MAX_STATE_COOKIE_BYTES = 1024
+# The most a home path may take, in bytes of UTF-8: a rule a module's author can know in advance. A login's state holds
+# it with a renewal's identity under MAX_STATE_COOKIE_BYTES, even when JSON writes every character as two (a quote or a
+# backslash) and nothing compresses; test_auth proves it.
+MAX_HOME_PATH_BYTES = 256
 
 
 def module_path(value: str | None, home_path: str) -> str:
@@ -443,27 +445,24 @@ class ModuleAuth:
         return pending
 
     def _check_home_path_fits(self) -> None:
-        """Refuse to start with a home path that a login's state cannot hold, in the largest state a login makes: a
-        renewal, whose user and tenant ids (UUIDs in Eneo) go in it too. Otherwise a renewed sign-in fails later.
+        """Refuse to start with a home path a login's state cannot hold: at most MAX_HOME_PATH_BYTES of UTF-8, and no
+        control character, which a browser can read as part of another address (a tab in `/<tab>/host` reads as
+        `//host`). Otherwise a sign-in fails later, or lands elsewhere.
 
-        Here, not in a Settings validator: the state's size depends on how ModuleAuth signs it, and every Settings,
-        built by load_settings or directly, reaches create_app. The size is counted uncompressed (plus the one byte a
-        compressed state's mark may add): compression is used only when shorter, so this is the most the state can be,
-        whatever the random state and ids are, and the check gives the same answer at every start.
+        Here, not in a Settings validator: every Settings, built by load_settings, directly or by model_copy (which
+        runs no validators), reaches create_app.
         """
-        largest = PendingLogin(
-            state=secrets.token_urlsafe(32),
-            next=self.settings.home_path,
-            renew_user_id=str(uuid.uuid4()),
-            renew_tenant_id=str(uuid.uuid4()),
-        )
-        uncompressed = Serializer.dump_payload(self.state_serializer, largest.model_dump())
-        size = len(self.state_serializer.make_signer().sign(base64_encode(uncompressed))) + 1
-        if size > MAX_STATE_COOKIE_BYTES:
+        home_path = self.settings.home_path
+        size = len(home_path.encode())
+        if size > MAX_HOME_PATH_BYTES:
             raise RuntimeError(
-                f"home_path is too long for a login's state cookie: signed with a renewal's identity it is {size} bytes, "
-                f"over MAX_STATE_COOKIE_BYTES ({MAX_STATE_COOKIE_BYTES}). Choose a shorter home_path "
-                "(load_settings(home_path=...) or Settings(home_path=...)); a few hundred characters fit."
+                f"home_path is {size} bytes of UTF-8; at most {MAX_HOME_PATH_BYTES} fit a login's state cookie. "
+                "Choose a shorter one (load_settings(home_path=...) or Settings(home_path=...))."
+            )
+        if has_control_character(home_path):
+            raise RuntimeError(
+                "home_path holds a control character, which a browser can read as part of another address. "
+                "Choose another one (load_settings(home_path=...) or Settings(home_path=...))."
             )
 
     def _pending_logins(self, request: Request) -> list[str]:
