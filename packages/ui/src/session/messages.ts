@@ -15,6 +15,9 @@ export const messages = {
   signedInAgainTitle: "Du är inloggad igen",
   signedInAgainHint: "Du kan stänga det här fönstret och fortsätta där du var.",
   wrongUserTitle: "Du loggade in som en annan användare",
+  windowFailedTitle: "Inloggningen kunde inte slutföras",
+  windowFailedHint: "Stäng fönstret och försök igen från sidan.",
+  signInLate: "Inloggningen tog för lång tid eller avbröts.",
   endedAlreadyTitle: "Inloggningen har redan gått ut",
   endedAlreadyHint:
     "Stäng fönstret. Om det finns osparat arbete i den andra fliken: spara det innan du loggar in igen. Uppgifter och ändringar som inte är sparade behöver fyllas i igen.",

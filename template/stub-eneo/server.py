@@ -33,6 +33,12 @@ cookie (curl, a browser by hand) the scope is the one of everyone else without i
   POST /__stub/login-as?user=erik|sara                who the scope's logins made after this call are (default erik: Erik Lund), to show
                                                       a renewal that signs in someone else
   POST /__stub/flows?mode=normal|empty|error          what the flow list answers the scope's tokens (two flows, none, or a 500)
+  POST /__stub/module-login?ticket=normal|refused&opener_policy=none|same-origin
+                                                      for the scope's logins after this call: refused gives a ticket the exchange
+                                                      refuses (the module's callback ends as exchange_failed); same-origin answers
+                                                      the login with a page that sets Cross-Origin-Opener-Policy: same-origin and
+                                                      moves on to the callback, as a sign-in page of Eneo's may (the browser then
+                                                      drops a login window's name and opener). Either parameter may be left out
   POST /__stub/resources?answer=normal|refused        refused: every /api/v1/ route but module-auth refuses the scope's valid tokens
                                                       with authentication_error, while the session route and the refresh take them,
                                                       as a route of Eneo's that takes no module tokens does: the module's session stays
@@ -40,6 +46,7 @@ cookie (curl, a browser by hand) the scope is the one of everyone else without i
                                                       refresh: {"session_route": n, "refresh": n}
 """
 
+import html
 import json
 import os
 import secrets
@@ -80,6 +87,8 @@ class Controls:
         self.session_seconds = SESSION_SECONDS
         self.token_seconds = TOKEN_SECONDS
         self.resources = "normal"
+        self.ticket = "normal"
+        self.opener_policy = "none"
         self.calls = {"session_route": 0, "refresh": 0}
 
 
@@ -199,10 +208,26 @@ class Handler(BaseHTTPRequestHandler):
             query = {key: values[0] for key, values in parse_qs(url.query).items()}
             if query.get("module_key") != MODULE_KEY or not query.get("redirect_uri") or not query.get("state"):
                 return self.send_json(400, {"detail": "module_key, redirect_uri and state are required, and the module key must be this module's"})
+            controls = STATE.scopes[self.scope()]
             ticket = secrets.token_urlsafe(24)
-            STATE.tickets[ticket] = (time.time() + 60, self.scope())
+            if controls.ticket == "normal":
+                # A refused one is never kept: the exchange answers it as Eneo answers a used or expired ticket.
+                STATE.tickets[ticket] = (time.time() + 60, self.scope())
+            back = f"{query['redirect_uri']}?{urlencode({'ticket': ticket, 'state': query['state']})}"
+            if controls.opener_policy == "same-origin":
+                page = (
+                    '<!doctype html><meta charset="utf-8"><link rel="icon" href="data:,"><title>Eneo</title>'
+                    f'<meta http-equiv="refresh" content="0;url={html.escape(back)}">'
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+                self.send_header("Content-Length", str(len(page)))
+                self.end_headers()
+                self.wfile.write(page)
+                return
             self.send_response(303)
-            self.send_header("Location", f"{query['redirect_uri']}?{urlencode({'ticket': ticket, 'state': query['state']})}")
+            self.send_header("Location", back)
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -281,6 +306,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(400, {"detail": "answer is normal or refused"})
             controls.resources = answer
             return self.send_json(200, {"ok": True, "resources": answer})
+        if path == "/__stub/module-login":
+            query = parse_qs(url.query)
+            ticket = query.get("ticket", [controls.ticket])[0]
+            opener_policy = query.get("opener_policy", [controls.opener_policy])[0]
+            if ticket not in {"normal", "refused"} or opener_policy not in {"none", "same-origin"}:
+                return self.send_json(400, {"detail": "ticket is normal or refused, opener_policy is none or same-origin"})
+            controls.ticket, controls.opener_policy = ticket, opener_policy
+            return self.send_json(200, {"ok": True, "ticket": ticket, "opener_policy": opener_policy})
         if path == "/__stub/flows":
             mode = parse_qs(url.query).get("mode", ["normal"])[0]
             if mode not in {"normal", "empty", "error"}:

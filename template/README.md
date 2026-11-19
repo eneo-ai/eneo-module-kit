@@ -72,9 +72,11 @@ A module built from this template is AGPL-3.0-only, like Eneo (see `LICENSE`).
   `end-session` take seconds, `ends_in=200` opens the five-minute warning at once; `reset` restores 28800 and 900);
   `/__stub/login-as?user=erik|sara` (who the next logins are, to see a renewal that signs in someone else);
   `/__stub/flows?mode=normal|empty|error`; `/__stub/resources?answer=normal|refused` (Eneo's routes refuse a token its session
-  route still takes: the session stays); and `GET /__stub/calls` (how often the session route and the refresh were asked). Each holds for the logins of the caller's `stub_scope` cookie, which every browser
+  route still takes: the session stays); `/__stub/module-login?ticket=normal|refused&opener_policy=none|same-origin` (the next
+  logins' tickets are refused by the exchange, and Eneo's login answers with a `Cross-Origin-Opener-Policy` page on the way
+  back); and `GET /__stub/calls` (how often the session route and the refresh were asked). Each holds for the logins of the caller's `stub_scope` cookie, which every browser
   test has its own of (`web/tests/e2e/fixtures.ts`), so that tests running at once do not meet; a `curl` without it changes
-  what everyone else without one gets. `web/tests/e2e/session-cover.spec.ts` uses them.
+  what everyone else without one gets. `web/tests/e2e/session-cover.spec.ts` and `login-window.spec.ts` use them.
 - **Sessions:** `RequireSession` (from `@eneo-ai/module-kit/session`) shows the sign-in screen, keeps the login, warns five
   minutes before its end and, when it has ended, covers the page with a dialog that asks for a new login in a window of its
   own (`/inloggad`, route in `App.tsx`). Call the backend with `fetchWithSession`; close a dialog of the page while

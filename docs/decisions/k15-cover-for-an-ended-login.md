@@ -12,7 +12,7 @@ A login ends at a fixed time that only a new login can move, and a page can be o
 
 ## Decision
 
-The page stays mounted, `inert` and hidden (`packages/ui/src/base.css`), under a native modal dialog with an opaque backdrop. Only the new login of the page's own user closes it: not Escape, not a click beside it. If something closes the dialog anyway, it is opened as a modal again. The dialog is mounted only while it is shown. The login is made in a window of its own (`/inloggad` is where it ends), so the page itself never navigates. Someone else's login keeps the page covered and says whom to sign in as.
+The page stays mounted, `inert` and hidden (`packages/ui/src/base.css`), under a native modal dialog with an opaque backdrop. Only the new login of the page's own user closes it: not Escape, not a click beside it. If something closes the dialog anyway, it is opened as a modal again. The dialog is mounted only while it is shown. The login is made in a window of its own (`/inloggad` is where it ends; a sign-in that fails there is [K20](k20-the-login-window-knows-itself.md)), so the page itself never navigates. Someone else's login keeps the page covered and says whom to sign in as.
 
 The alternative was to unmount the page and navigate to a sign-in page. A recording in the browser would be lost, and so would typed work and open dialogs. The page must go on.
 

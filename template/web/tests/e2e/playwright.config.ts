@@ -33,7 +33,8 @@ const firefox: Use = { browserName: "firefox", launchOptions: { firefoxUserPrefs
 // finger does by the project's `hasTouch`.
 const specs = (...names: string[]) => new RegExp(`(${names.join("|")})\\.spec\\.ts`);
 // The module as a person uses it, in each browser it supports; the sentinel's own tests in Chromium's (the other engines'
-// words for a failure are proved by the specs that run there).
+// words for a failure are proved by the specs that run there). The login window's failures (login-window.spec.ts) are
+// shown in Chromium and WebKit, not in Firefox.
 const flow = specs("flow", "session-cover");
 // Every state at every width and theme, the keyboard on the real screens, and the checks that each name their own project.
 const gate = ["a11y", "header-fit", "keyboard", "still", "theme"];
@@ -95,8 +96,8 @@ export default defineConfig({
   },
   projects: [
     // The module in the browsers it supports: sign in, the page, the proxied route, sign out, under the sentinel.
-    { name: "chromium", testMatch: specs("flow", "session-cover", "sentinel"), use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
-    { name: "webkit", testMatch: flow, use: { ...devices["Desktop Safari"], ...webkit, colorScheme: "light" } },
+    { name: "chromium", testMatch: specs("flow", "session-cover", "login-window", "sentinel"), use: { ...devices["Desktop Chrome"], colorScheme: "light" } },
+    { name: "webkit", testMatch: specs("flow", "session-cover", "login-window"), use: { ...devices["Desktop Safari"], ...webkit, colorScheme: "light" } },
     { name: "firefox", testMatch: flow, use: { ...devices["Desktop Firefox"], ...firefox, colorScheme: "light" } },
     // The accessibility gate: every state at every width and theme, and the keyboard on the real screens. The press on
     // every control (controls.spec.ts, the gate's longest part) and the snapshots (aria.spec.ts) on a phone and a laptop.

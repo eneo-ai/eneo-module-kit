@@ -83,8 +83,9 @@ The login of a page that can outlive its login. SSO only: it talks to the BFF's 
   productName="Min modul"
   signInTitle="Logga in i modulen"
 >
-  <Outlet />   {/* the pages that need a session; and a route at /inloggad that renders <SignedInAgain productName="Min modul" /> */}
+  <Outlet />   {/* the pages that need a session */}
 </RequireSession>
+// Outside the gate: a route at /inloggad that renders <SignedInAgain productName="Min modul" />.
 
 const response = await fetchWithSession("/api/eneo/flows/");
 ```
@@ -103,7 +104,8 @@ The module owns which state to keep or remove when the identity changes.
 | `uploadWithProgress(path, body, options)` | An upload that says how far it has come (`onProgress({ loaded, total })`; XMLHttpRequest, as `fetch` cannot tell), under `fetchWithSession`'s rules and with its errors. Signed out it fails with `SessionExpiredError` and nothing leaves the page: an upload is never sent twice. It names the page's user in `X-Expected-User`; a 401 with `X-Auth-Required: session` and a 409 `user_changed` end the login. Nothing going up for `idleTimeoutMs`, or no answer begun within `answerTimeoutMs` of the last byte (90 s each unless said; the backend is told the second, `X-Upload-Timeout-Seconds`, so it waits for Eneo no longer), fails with `RequestTimeoutError`; not reaching the module, with a `TypeError`. `method` (`POST`), `headers` and `signal` as for `fetch`. The answer is a `Response`. |
 | `errorAdvice(error)` | What a failed request says to the person: `{ message, retry }`, a Swedish sentence and whether "Försök igen" can help, for `SessionExpiredError`, `RequestTimeoutError`, a dropped connection and an error that carries the backend's `status`. No English reaches the page. |
 | `SessionExpiredError`, `isSessionEndedAnswer(status, header)` | What a request the login's end refused fails with (`status` 401); whether an answer is the backend's mark that the login ended (a 401 with `X-Auth-Required: session`), not Eneo's own 401. |
-| `SignInScreen`, `SignedInAgain`, `refusalOf`, `SESSION_CHANNEL` | The sign-in screen; the page the login window lands on (it tells the module's tabs through `SESSION_CHANNEL` and closes itself, or says why a renewal was refused: `?fel=annan-anvandare`, `?fel=utgangen`); route it at `signedInAgainPath` (default `/inloggad`). |
+| `SignInScreen`, `SignedInAgain`, `refusalOf`, `SESSION_CHANNEL` | The sign-in screen; the page the login window lands on (it tells the module's tabs through `SESSION_CHANNEL` and closes itself, or says why a renewal was refused: `?fel=annan-anvandare`, `?fel=utgangen`, the last one recognised); route it at `signedInAgainPath` (default `/inloggad`), outside `RequireSession`. |
+| `isLoginWindow()`, `LoginWindowFailed` | Whether this tab is the sign-in dialog's login window (marked as the dialog opens it); the window's failure view (close the window, try again from the page), which tells the page nothing, offers no sign-in and stays. A failure in the window lands on `/?auth_error=<code>`. The kit's sign-in screen shows it there, and in that window the gate shows only it, whatever the path (so `SignedInAgain` is routed outside the gate); a page of the module's own on `/` outside the gate (a public home page or a sign-in screen) must show `<LoginWindowFailed productName=… />` while `isLoginWindow()` is true (add the check; [K20](../../docs/decisions/k20-the-login-window-knows-itself.md)). |
 | `sessionUser`, `userDisplayName`, `userInitial` | The identity of a status; the name and the initial an account menu shows. |
 
 What the cover promises, proved in a browser (Chromium and Firefox; WebKit with the exception below): while the login has

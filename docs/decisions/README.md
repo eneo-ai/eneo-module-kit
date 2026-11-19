@@ -27,6 +27,7 @@ One decision per page: status, context, decision, consequences. The numbers K1 t
 | [K17](k17-module-development-skill.md) | A local skill for module setup and feature work | Built |
 | [K18](k18-a-release-promotes-the-tested-image.md) | A release gives the tested image its version; the deployment names the release | Built |
 | [K19](k19-a-session-ends-on-eneos-confirmation.md) | A session ends when Eneo confirms that the login is over, not on a refusal alone | Built |
+| [K20](k20-the-login-window-knows-itself.md) | The login window knows itself by a mark in its own tab, and a sign-in that fails in it says so and stays | Built |
 
 "Built" means the implementation is in the repository and verified. It does not imply that a package version is published.
 

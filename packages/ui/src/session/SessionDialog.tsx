@@ -5,6 +5,7 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { messages, sessionDialogText } from "./messages.js";
+import { openLoginWindow } from "./SignedInAgain.js";
 import type { SessionUser } from "./types.js";
 import { userDisplayName } from "./user.js";
 
@@ -72,13 +73,21 @@ export function SessionDialog({
     return () => clearTimeout(timer);
   }, [endsAt, renewal]);
 
+  // The login window this dialog opened last.
+  const loginWindow = useRef<Window | null>(null);
+
   function renewInWindow() {
     // Before the end, `renew` binds the new login to the user signed in now. After it the backend has nobody to bind
     // to and refuses a renewal: a new login instead, and the gate unlocks the page only for its own user.
     const next = encodeURIComponent(signedInAgainPath);
     const url = signedOut ? `/api/auth/login?next=${next}` : `/api/auth/login?renew=1&next=${next}`;
-    const login = window.open(url, "eneo-module-login", "popup,width=520,height=700");
+    const login = openLoginWindow(url);
     setProblem(login === null ? messages.popupBlocked : null);
+    if (login === null) return;
+    // A new window for every press, marked as it opens; the one before is closed. A page on the way with an opener policy
+    // cuts the handle: closing it then does nothing, and that window stays.
+    loginWindow.current?.close();
+    loginWindow.current = login;
   }
 
   const time = endsAt === null ? "" : new Date(endsAt).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });

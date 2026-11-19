@@ -302,8 +302,30 @@ export async function stubControl(page: Page, route: string) {
   expect(response.ok(), `stub ${route}`).toBe(true);
 }
 
-/** This test's logins made from now on are the stub's defaults again: a long session, Erik Lund. */
+/** This test's logins made from now on are the stub's defaults again: a long session, Erik Lund, a login that succeeds at once. */
 export async function stubDefaults(page: Page) {
   await stubControl(page, "session?ends_in=reset&token_seconds=reset");
   await stubControl(page, "login-as?user=erik");
+  await stubControl(page, "module-login?ticket=normal&opener_policy=none");
+}
+
+/** Signs in with tokens that live four seconds, so that ending the login takes seconds, not minutes. */
+export async function signInShortLived(page: Page) {
+  await stubControl(page, "session?token_seconds=4");
+  await signIn(page);
+}
+
+/** Eneo ends the login; the page learns at its next keepalive, or when it is looked at again, and is covered. */
+export async function endLogin(page: Page) {
+  await stubControl(page, "end-session");
+  const dialog = page.getByRole("alertdialog", { name: "Du behöver logga in igen" });
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        return dialog.isVisible();
+      },
+      { timeout: 20_000, intervals: [500] },
+    )
+    .toBe(true);
 }

@@ -217,7 +217,7 @@ python -m unittest discover -s tests
 
 ## 10. Sessions and dialogs
 
-The UI side of a login that can end while a page is open. Wrap every page that needs a login in `RequireSession` (from `@eneo-ai/module-kit/session`) and call the backend with `fetchWithSession` instead of `fetch`. Route `/inloggad` to `<SignedInAgain productName=... />`: it is where a login in a window of its own ends.
+The UI side of a login that can end while a page is open. Wrap every page that needs a login in `RequireSession` (from `@eneo-ai/module-kit/session`) and call the backend with `fetchWithSession` instead of `fetch`. Route `/inloggad` to `<SignedInAgain productName=... />`, outside `RequireSession`: it is where a login in a window of its own ends, and in that window the gate shows only the failure view. A failure in that window lands on `/?auth_error=<code>`: a page of the module's own on `/` outside the gate (a public home page or a sign-in screen) must show `LoginWindowFailed` while `isLoginWindow()` is true (add the check; [K20](../decisions/k20-the-login-window-knows-itself.md)).
 
 - Signed out, `RequireSession` shows the sign-in screen.
 - Signed in, it keeps the login: it asks the backend when the page is seen, when a login window says it is done, and when the backend wants Eneo's token renewed. It warns five minutes before the end.

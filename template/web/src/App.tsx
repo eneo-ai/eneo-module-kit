@@ -73,7 +73,9 @@ function page(load: () => Promise<ComponentType>) {
 
 /**
  * The module's pages. Add yours as routes, with a title (`handle`); a page that needs a session goes under `Private`.
- * `/inloggad` is where a login in a window of its own ends: it tells this module's tabs and closes itself.
+ * `/inloggad` is where a login in a window of its own ends: it tells this module's tabs and closes itself. The route stays
+ * outside the gate (`Private`): in the login window the gate shows only the failure view, so a completed sign-in on a page
+ * inside it would tell the tabs nothing.
  */
 export const router = createBrowserRouter([
   {
