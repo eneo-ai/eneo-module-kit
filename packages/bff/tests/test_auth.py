@@ -653,6 +653,9 @@ class ModuleAuthTests(unittest.TestCase):
 
         callback = self.older_login_callback("//elsewhere.example", renew=True, ticket="other-user")
 
+        sent = callback.request.headers["cookie"]
+        self.assertIn(f"{SESSION_COOKIE}={first}", sent, "the browser's session went with the callback")
+        self.assertIn(f"{STATE_COOKIE}_", sent, "and so did the login's state")
         self.assertEqual(callback.headers["location"], "/flows?fel=annan-anvandare")
         self.assertNotIn(SESSION_COOKIE, callback.cookies)
         self.assertEqual(self.client.cookies.get(SESSION_COOKIE), first)
