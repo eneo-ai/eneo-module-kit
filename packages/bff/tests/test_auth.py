@@ -1,7 +1,6 @@
 import asyncio
 import itertools
 import os
-import random
 import re
 import secrets
 import time
@@ -29,6 +28,7 @@ from eneo_module_bff.auth import (
     SESSION_COOKIE,
     SignedUrl,
     STATE_COOKIE,
+    module_path,
     state_cookie_name,
     with_query,
 )
@@ -612,6 +612,87 @@ class ModuleAuthTests(unittest.TestCase):
         self.assertNotIn(SESSION_COOKIE, callback.cookies)
         self.assertEqual(self.client.cookies.get(SESSION_COOKIE), first)
         self.assertEqual(self.client.get("/api/auth/status").json()["user"]["id"], "user-id")
+
+    def older_login_callback(self, stored_next: str, *, renew: bool = False, ticket: str = "one-time-ticket"):
+        """The callback of a login started before an upgrade: its state, signed with the same secret, holds the
+        destination the earlier build accepted (its home path, when the login came with no usable next). The state
+        cookie goes in the client's jar, beside the browser's session, as a browser sends it."""
+        state = secrets.token_urlsafe(32)
+        login = PendingLogin(
+            state=state,
+            next=stored_next,
+            renew_user_id="user-id" if renew else None,
+            renew_tenant_id="tenant-id" if renew else None,
+        )
+        self.client.cookies.set(state_cookie_name(state), self.auth.state_serializer.dumps(login.model_dump()))
+        return self.client.get("/api/auth/callback", params={"ticket": ticket, "state": state})
+
+    def test_a_login_started_under_a_home_path_this_release_refuses_still_signs_in_to_the_current_home_path(self) -> None:
+        # A build with a login state cookie per login, restarted with a corrected home path and the same secret: the
+        # sign-in under way still arrives, inside the module. A valid signature says who wrote the destination, not that
+        # it is still a path of the module.
+        for stored in ("//elsewhere.example", "/\\elsewhere.example", "flows", ""):
+            with self.subTest(stored=stored):
+                exchanges = len([call for call in self.exchange_client.calls if call["method"] == "POST"])
+
+                callback = self.older_login_callback(stored)
+
+                self.assertEqual(callback.status_code, 303)
+                self.assertEqual(callback.headers["location"], "/flows")
+                self.assertIn(SESSION_COOKIE, callback.cookies)
+                self.assertEqual(len([call for call in self.exchange_client.calls if call["method"] == "POST"]), exchanges + 1)
+                self.assertTrue(
+                    any(cookie.startswith(f"{STATE_COOKIE}_") and "Max-Age=0" in cookie for cookie in callback.headers.get_list("set-cookie")),
+                    "its state cookie is deleted",
+                )
+
+    def test_a_renewal_by_another_user_started_under_a_refused_home_path_is_refused_on_the_current_home_path(self) -> None:
+        first = self.sign_in()
+        self.exchange_client.response = FakeResponse(user_id="someone-else")
+        self.exchange_client.validation_response = FakeResponse(user_id="someone-else")
+
+        callback = self.older_login_callback("//elsewhere.example", renew=True, ticket="other-user")
+
+        sent = callback.request.headers["cookie"]
+        self.assertIn(f"{SESSION_COOKIE}={first}", sent, "the browser's session went with the callback")
+        self.assertIn(f"{STATE_COOKIE}_", sent, "and so did the login's state")
+        self.assertEqual(callback.headers["location"], "/flows?fel=annan-anvandare")
+        self.assertNotIn(SESSION_COOKIE, callback.cookies)
+        self.assertEqual(self.client.cookies.get(SESSION_COOKIE), first)
+        self.assertEqual(self.client.get("/api/auth/status").json()["user"]["id"], "user-id", "the session still works")
+
+    def test_a_valid_destination_of_a_login_started_before_an_upgrade_keeps_its_meaning(self) -> None:
+        for stored in ("/", "/reports?x=1#top"):
+            with self.subTest(stored=stored):
+                callback = self.older_login_callback(stored)
+
+                self.assertEqual(callback.headers["location"], stored)
+                self.assertIn(SESSION_COOKIE, callback.cookies)
+
+    def test_a_home_path_changed_after_the_start_never_reaches_a_redirect(self) -> None:
+        # The start checks the home path once and keeps that string: a Settings object changed afterwards (it is not
+        # frozen, and create_app shares it) leaves every redirect on the checked path. A value the rule refuses, and a
+        # valid other path: the callback's own check would hide a live read of the first at login, never of the second.
+        for changed in ("//outside.example", "/other-home"):
+            with self.subTest(changed=changed):
+                self.client.cookies.clear()  # no session from the case before: the renewal is refused
+                self.client.app.state.settings.home_path = changed
+
+                refused = self.client.get("/api/auth/login", params={"renew": "1"})
+                self.assertEqual(refused.headers["location"], "/flows?fel=utgangen", "a renewal with no session")
+
+                state = parse_qs(urlparse(self.client.get("/api/auth/login").headers["location"]).query)["state"][0]
+                plain = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+                self.assertEqual(plain.headers["location"], "/flows", "a login started with no next")
+
+                # 511 characters pass MAX_NEXT_LENGTH, but as CJK they sign to more than MAX_STATE_COOKIE_BYTES.
+                too_long = "/" + "".join(chr(0x4E00 + i) for i in range(510))
+                state = parse_qs(urlparse(self.client.get("/api/auth/login", params={"next": too_long}).headers["location"]).query)["state"][0]
+                oversized = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+                self.assertEqual(oversized.headers["location"], "/flows", "a next the signed state cannot hold")
+
+                fallback = self.older_login_callback("//elsewhere.example")
+                self.assertEqual(fallback.headers["location"], "/flows", "a stored destination the rule refuses")
 
     def test_a_renewal_without_a_live_session_is_refused_and_signs_no_one_in(self) -> None:
         self.sign_in()
@@ -1217,13 +1298,18 @@ class HomePathTests(unittest.TestCase):
             http_client=FakeExchangeClient(),
         )
 
+    def test_the_published_limit_is_256_bytes(self) -> None:
+        # The number the configuration guide and the changelog give an author.
+        self.assertEqual(MAX_HOME_PATH_BYTES, 256)
+
     def test_the_longest_home_path_allowed_fits_a_renewals_signed_state(self) -> None:
-        # The proof of the limit: it fails if PendingLogin grows. Counted as if nothing compressed (compression is
-        # used only when shorter), and with characters that JSON writes as two, the most a home path can take.
-        doubled = "".join(random.Random(7).choice('"\\') for _ in range(MAX_HOME_PATH_BYTES - 1))
+        # The proof of the limit, for the worst case: every field of the pending login filled (asserted below, so a
+        # field added to it must be filled here too), counted as if nothing compressed (compression is used only when
+        # shorter), and a home path of quotes, which JSON writes as two characters each (a backslash would too, but a
+        # home path holds none).
         for kind, home in {
             "random ASCII": "/" + secrets.token_urlsafe(MAX_HOME_PATH_BYTES)[: MAX_HOME_PATH_BYTES - 1],
-            "characters JSON doubles": "/" + doubled,
+            "characters JSON doubles": "/" + '"' * (MAX_HOME_PATH_BYTES - 1),
         }.items():
             with self.subTest(kind):
                 self.assertEqual(len(home.encode()), MAX_HOME_PATH_BYTES)
@@ -1231,6 +1317,8 @@ class HomePathTests(unittest.TestCase):
                 renewal = PendingLogin(
                     state=secrets.token_urlsafe(32), next=home, renew_user_id=str(uuid.uuid4()), renew_tenant_id=str(uuid.uuid4())
                 )
+                filled = {name for name, value in renewal.model_dump().items() if value}
+                self.assertEqual(filled, set(PendingLogin.model_fields), "every field filled")
 
                 with patch("itsdangerous.url_safe.zlib.compress", lambda data, *args, **kwargs: data + b"never shorter"):
                     signed = module_auth._signed_state(renewal)
@@ -1253,6 +1341,31 @@ class HomePathTests(unittest.TestCase):
         for home in ("/a\nb", "/a\tb", "/a\u2028b"):
             with self.subTest(home=home), self.assertRaisesRegex(RuntimeError, "^home_path holds a control character"):
                 self.app_with(home)
+
+    def test_a_home_path_that_is_no_path_of_the_module_stops_the_start_and_says_why(self) -> None:
+        # The same rule as a login's next (module_path): what it would not take as a destination, it does not take here.
+        for home, problem in (
+            ("//elsewhere.example", "starts with //"),
+            ("/a\\b", "holds a backslash"),
+            ("flows", "does not start with /"),
+            ("", "does not start with /"),
+        ):
+            with self.subTest(home=home):
+                self.assertEqual(module_path(home, "/home"), "/home", "module_path refuses it as a next too")
+                with self.assertRaises(RuntimeError) as refused:
+                    self.app_with(home)
+                said = str(refused.exception)
+                self.assertTrue(said.startswith(f"home_path {problem}"), said)
+                self.assertTrue(said.endswith("Choose another one (load_settings(home_path=...) or Settings(home_path=...))."), said)
+
+    def test_a_home_path_that_cannot_be_written_as_utf_8_stops_the_start_and_says_why(self) -> None:
+        with self.assertRaises(RuntimeError) as refused:
+            self.app_with("/a\ud800b")
+        self.assertEqual(
+            str(refused.exception),
+            "home_path cannot be written as UTF-8 (it holds a lone surrogate). "
+            "Choose another one (load_settings(home_path=...) or Settings(home_path=...)).",
+        )
 
     def test_an_ordinary_home_path_starts(self) -> None:
         for home in ("/", "/flows", "/" + "a" * (MAX_HOME_PATH_BYTES - 1)):

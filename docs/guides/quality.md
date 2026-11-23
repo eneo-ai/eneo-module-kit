@@ -22,6 +22,7 @@ Paths are in `template/`, which is the repository root of a module made from it.
 |---|---|---|
 | Sign-in, the page, the proxied route, sign-out, the strict Content Security Policy, colour mode, the organisation's logo | `flow.spec.ts` | `chromium`, `webkit`, `firefox` |
 | The login ending while a page is open: the cover, the sign-in dialog, the warning before the end | `session-cover.spec.ts` | `chromium`, `webkit`, `firefox` |
+| A sign-in that fails in the sign-in dialog's login window: the failure view, the page told nothing, a page with `Cross-Origin-Opener-Policy` on the way | `login-window.spec.ts` | `chromium`, `webkit`, `firefox` |
 | Every state of `screens.ts`: axe, named controls, placeholder contrast, target sizes, reflow, text spacing, motion | `a11y.spec.ts`, with the measurements in `checks.ts` | Every gate project |
 | The keyboard: focus is visible and not hidden, leaves the page at the end, follows the reading order; a menu and a dialog hold focus and give it back | `keyboard.spec.ts` | Every gate project but `landscape-844` |
 | Nothing on screen moves when an answer arrives ([below](#what-is-on-screen-stands-still)) | `still.spec.ts` | `phone-320-light`, `phone-390-light`, `tablet-portrait`, `laptop-1440-light` |

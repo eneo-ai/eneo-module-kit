@@ -4,7 +4,7 @@
  * The dialog marks the window as it opens it: the mark is in the page's sessionStorage for the moment of the call, and
  * the browser gives a window opened with an opener a copy. These cases are the proof of that copy; the unit tests show
  * each side alone. The mark outlasts a page on the way that sets Cross-Origin-Opener-Policy (the window's opener does
- * not). An ordinary tab is never marked. Shown in Chromium and WebKit (playwright.config.ts).
+ * not). An ordinary tab is never marked. Run in Chromium, WebKit and Firefox (playwright.config.ts).
  *
  * The stub Eneo fails a sign-in by giving a ticket its exchange refuses (`__stub/module-login?ticket=refused`): the
  * module's callback ends as `exchange_failed`, on `/?auth_error=exchange_failed`.
