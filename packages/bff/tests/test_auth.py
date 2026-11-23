@@ -685,6 +685,12 @@ class ModuleAuthTests(unittest.TestCase):
                 plain = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
                 self.assertEqual(plain.headers["location"], "/flows", "a login started with no next")
 
+                # 511 characters pass MAX_NEXT_LENGTH, but as CJK they sign to more than MAX_STATE_COOKIE_BYTES.
+                too_long = "/" + "".join(chr(0x4E00 + i) for i in range(510))
+                state = parse_qs(urlparse(self.client.get("/api/auth/login", params={"next": too_long}).headers["location"]).query)["state"][0]
+                oversized = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+                self.assertEqual(oversized.headers["location"], "/flows", "a next the signed state cannot hold")
+
                 fallback = self.older_login_callback("//elsewhere.example")
                 self.assertEqual(fallback.headers["location"], "/flows", "a stored destination the rule refuses")
 
