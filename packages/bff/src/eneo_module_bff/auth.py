@@ -895,7 +895,7 @@ class ModuleAuth:
     def _load_pending_login(self, cookie: str | None) -> PendingLogin | None:
         """The login a state cookie holds, with its ``next`` checked again (``module_path``), or None.
 
-        A login started under an earlier release can hold a destination that release accepted and this one refuses (a
+        A login started under an earlier build can hold a destination that build accepted and this one refuses (a
         home path such as ``//host``, signed into the state when the login came with no usable next): the signature
         says who wrote it, not that it is still a path of the module. Such a destination is the current home path, which
         start-up checked, so the sign-in still completes inside the module.
