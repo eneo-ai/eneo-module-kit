@@ -615,7 +615,8 @@ class ModuleAuthTests(unittest.TestCase):
 
     def older_login_callback(self, stored_next: str, *, renew: bool = False, ticket: str = "one-time-ticket"):
         """The callback of a login started before an upgrade: its state, signed with the same secret, holds the
-        destination the earlier release accepted (its home path, when the login came with no usable next)."""
+        destination the earlier build accepted (its home path, when the login came with no usable next). The state
+        cookie goes in the client's jar, beside the browser's session, as a browser sends it."""
         state = secrets.token_urlsafe(32)
         login = PendingLogin(
             state=state,
@@ -623,16 +624,13 @@ class ModuleAuthTests(unittest.TestCase):
             renew_user_id="user-id" if renew else None,
             renew_tenant_id="tenant-id" if renew else None,
         )
-        signed = self.auth.state_serializer.dumps(login.model_dump())
-        return self.client.get(
-            "/api/auth/callback",
-            params={"ticket": ticket, "state": state},
-            headers=cookie_header({state_cookie_name(state): signed}),
-        )
+        self.client.cookies.set(state_cookie_name(state), self.auth.state_serializer.dumps(login.model_dump()))
+        return self.client.get("/api/auth/callback", params={"ticket": ticket, "state": state})
 
     def test_a_login_started_under_a_home_path_this_release_refuses_still_signs_in_to_the_current_home_path(self) -> None:
-        # The operator corrects the home path and restarts with the same secret; the sign-in under way still arrives,
-        # inside the module: a valid signature says who wrote the destination, not that it is still a path of the module.
+        # A build with a login state cookie per login, restarted with a corrected home path and the same secret: the
+        # sign-in under way still arrives, inside the module. A valid signature says who wrote the destination, not that
+        # it is still a path of the module.
         for stored in ("//elsewhere.example", "/\\elsewhere.example", "flows", ""):
             with self.subTest(stored=stored):
                 exchanges = len([call for call in self.exchange_client.calls if call["method"] == "POST"])
@@ -658,6 +656,7 @@ class ModuleAuthTests(unittest.TestCase):
         self.assertEqual(callback.headers["location"], "/flows?fel=annan-anvandare")
         self.assertNotIn(SESSION_COOKIE, callback.cookies)
         self.assertEqual(self.client.cookies.get(SESSION_COOKIE), first)
+        self.assertEqual(self.client.get("/api/auth/status").json()["user"]["id"], "user-id", "the session still works")
 
     def test_a_valid_destination_of_a_login_started_before_an_upgrade_keeps_its_meaning(self) -> None:
         for stored in ("/", "/reports?x=1#top"):
