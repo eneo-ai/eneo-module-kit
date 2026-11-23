@@ -893,7 +893,7 @@ test("in a marked window the gate is only the failure view, also on the window's
 });
 
 test("in a marked window on `/` with the backend's failure, a gate given `/` as the window's page opens no warning over the failure view", async (t) => {
-  backend(t, () => json(signedIn(anna, 200)));
+  const calls = backend(t, () => json(signedIn(anna, 200)));
   const { SignedInAgain } = await import("../src/session/SignedInAgain.js");
   const { told, closed } = watchWindow(t);
   markedWindow(t);
@@ -904,6 +904,7 @@ test("in a marked window on `/` with the backend's failure, a gate given `/` as 
   assert.ok(!dialog(), "no warning: less than five minutes are left, and the gate does not run");
   assert.deepEqual(told, [], "nothing told");
   assert.equal(closed.length, 0, "nothing closed");
+  assert.equal(calls.length, 0, "the marked window reads no status");
 });
 
 test("in a marked window an ordinary page with a live session is the failure view: the page is not rendered and the status is never read", async (t) => {

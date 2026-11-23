@@ -89,7 +89,7 @@ While the login has ended the page is covered, not removed: it stays mounted, hi
 - [ ] A dialog left open is hidden by the sign-in dialog's opaque backdrop in every engine, but in WebKit it is still reachable by Tab, so the check above is the module's own.
 - [ ] `SignedInAgain` is routed at `signedInAgainPath`, outside `RequireSession`, on a path with nothing else on it: in the login window the gate shows only the failure view, so a completed sign-in inside it would tell the page nothing. The page at `/`, where a failure in the login window lands (`/?auth_error=<code>`), is the kit's `SignInScreen`, lies inside `RequireSession`, is the window's page (`SignedInAgain`, rendered directly, which tells the failure from a completed return itself), or is a page of the module's own outside the gate (a public home page or a sign-in screen) that shows `LoginWindowFailed` while `isLoginWindow()` is true. A login window never offers a sign-in of its own, which would end in the window and leave the page covered ([K20](../decisions/k20-the-login-window-knows-itself.md)).
 
-Proof, for the template: `template/web/tests/e2e/session-cover.spec.ts` (Chromium, WebKit and Firefox), `template/web/tests/e2e/login-window.spec.ts` (Chromium and WebKit) and `packages/ui/tests/session-gate.test.ts`.
+Proof, for the template: `template/web/tests/e2e/session-cover.spec.ts` (Chromium, WebKit and Firefox), `template/web/tests/e2e/login-window.spec.ts` (Chromium, WebKit and Firefox) and `packages/ui/tests/session-gate.test.ts`.
 
 ## What the kit does not protect against
 

@@ -33,9 +33,9 @@ const firefox: Use = { browserName: "firefox", launchOptions: { firefoxUserPrefs
 // finger does by the project's `hasTouch`.
 const specs = (...names: string[]) => new RegExp(`(${names.join("|")})\\.spec\\.ts`);
 // The module as a person uses it, in each browser it supports; the sentinel's own tests in Chromium's (the other engines'
-// words for a failure are proved by the specs that run there). The login window's failures (login-window.spec.ts) are
-// shown in Chromium and WebKit, not in Firefox.
-const flow = specs("flow", "session-cover");
+// words for a failure are proved by the specs that run there). The login window's failures (login-window.spec.ts) run
+// in all three.
+const flow = specs("flow", "session-cover", "login-window");
 // Every state at every width and theme, the keyboard on the real screens, and the checks that each name their own project.
 const gate = ["a11y", "header-fit", "keyboard", "still", "theme"];
 // What another engine can change: the scan, the keyboard walks, the press on every control and the snapshots. The checks'

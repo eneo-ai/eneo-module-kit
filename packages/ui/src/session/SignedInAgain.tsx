@@ -40,7 +40,7 @@ function removeMark(): void {
 /**
  * Opens the sign-in dialog's login window on `url`, marked. A window opened with an opener starts with a copy of the
  * opener's sessionStorage, so the mark is set here for the moment of the call and taken away after it, whatever the call
- * did; a page that was marked already (a login window that shows the dialog) stays marked. A window that gets no copy
+ * did; a page that was marked already stays marked. A window that gets no copy
  * (storage refused, an opener the browser drops) is unmarked, and a failed sign-in there meets the module's ordinary
  * handling at `/`. No window name: a name would let the browser reuse a window, which takes no new copy.
  */
