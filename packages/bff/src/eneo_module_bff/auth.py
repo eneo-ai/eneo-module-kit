@@ -154,25 +154,35 @@ MAX_NEXT_LENGTH = 512
 # not bounded, and past the limit the proxy would refuse every login until the cookies expire.
 MAX_STATE_COOKIE_BYTES = 1024
 # The most a home path may take, in bytes of UTF-8: a rule a module's author can know in advance. A login's state holds
-# it with a renewal's identity under MAX_STATE_COOKIE_BYTES, even when JSON writes every character as two (a quote or a
-# backslash) and nothing compresses; test_auth proves it.
+# it with a renewal's identity under MAX_STATE_COOKIE_BYTES, even when JSON writes every character as two (a quote) and
+# nothing compresses. test_auth proves it for the pending login with every field filled; a field added to it must be
+# filled there too, and the proof then fails only if the longest state no longer fits.
 MAX_HOME_PATH_BYTES = 256
 
 
-def module_path(value: str | None, home_path: str) -> str:
-    """``value`` when it is a short path on the module's own origin, else ``home_path`` (Settings.home_path).
+def path_problem(value: str) -> str | None:
+    """Why ``value`` is not a path on the module's own origin, or None when it is: the one rule for a login's ``next``
+    (``module_path``) and for the home path (checked when ``ModuleAuth`` is made).
 
-    No control character, whatever it is: a browser (and urlsplit) removes a tab, CR or LF from a URL before it reads
-    it, so ``/<tab>/host`` would be ``//host``, another origin, once a query is added to it.
+    No ``//`` and no backslash, which a browser reads as ``/``: either begins another host. No control character,
+    whatever it is: a browser (and urlsplit) removes a tab, CR or LF from a URL before it reads it, so ``/<tab>/host``
+    would be ``//host``, another origin, once a query is added to it.
     """
-    if (
-        value
-        and len(value) <= MAX_NEXT_LENGTH
-        and value.startswith("/")
-        and not value.startswith("//")
-        and "\\" not in value
-        and not has_control_character(value)
-    ):
+    if not value.startswith("/"):
+        return "does not start with /, so it is no path of the module"
+    if value.startswith("//"):
+        return "starts with //, which a browser reads as another host"
+    if "\\" in value:
+        return "holds a backslash, which a browser reads as /, so /\\host is another host"
+    if has_control_character(value):
+        return "holds a control character, which a browser can read as part of another address"
+    return None
+
+
+def module_path(value: str | None, home_path: str) -> str:
+    """``value`` when it is a short path on the module's own origin (``path_problem``), else ``home_path``
+    (Settings.home_path)."""
+    if value and len(value) <= MAX_NEXT_LENGTH and path_problem(value) is None:
         return value
     return home_path
 
@@ -446,25 +456,28 @@ class ModuleAuth:
         return pending
 
     def _check_home_path_fits(self) -> None:
-        """Refuse to start with a home path a login's state cannot hold: at most MAX_HOME_PATH_BYTES of UTF-8, and no
-        control character, which a browser can read as part of another address (a tab in `/<tab>/host` reads as
-        `//host`). Otherwise a sign-in fails later, or lands elsewhere.
+        """Refuse to start with a home path a login's state cannot hold or a login's ``next`` would not be: at most
+        MAX_HOME_PATH_BYTES of UTF-8, and a path on the module's own origin by the same rule (``path_problem``).
+        Otherwise a sign-in fails later, or lands elsewhere.
 
         Here, not in a Settings validator: every Settings, built by load_settings, directly or by model_copy (which
         runs no validators), reaches create_app.
         """
         home_path = self.settings.home_path
-        size = len(home_path.encode())
+        choose = "(load_settings(home_path=...) or Settings(home_path=...))."
+        try:
+            size = len(home_path.encode())
+        except UnicodeEncodeError:
+            raise RuntimeError(
+                f"home_path cannot be written as UTF-8 (it holds a lone surrogate). Choose another one {choose}"
+            ) from None
         if size > MAX_HOME_PATH_BYTES:
             raise RuntimeError(
                 f"home_path is {size} bytes of UTF-8; at most {MAX_HOME_PATH_BYTES} fit a login's state cookie. "
-                "Choose a shorter one (load_settings(home_path=...) or Settings(home_path=...))."
+                f"Choose a shorter one {choose}"
             )
-        if has_control_character(home_path):
-            raise RuntimeError(
-                "home_path holds a control character, which a browser can read as part of another address. "
-                "Choose another one (load_settings(home_path=...) or Settings(home_path=...))."
-            )
+        if problem := path_problem(home_path):
+            raise RuntimeError(f"home_path {problem}. Choose another one {choose}")
 
     def _pending_logins(self, request: Request) -> list[str]:
         """The browser's waiting logins' cookie names, oldest first; one that cannot be read counts as the oldest."""
@@ -877,13 +890,21 @@ class ModuleAuth:
         )
 
     def _load_pending_login(self, cookie: str | None) -> PendingLogin | None:
+        """The login a state cookie holds, with its ``next`` checked again (``module_path``), or None.
+
+        A login started under an earlier release can hold a destination that release accepted and this one refuses (a
+        home path such as ``//host``, signed into the state when the login came with no usable next): the signature
+        says who wrote it, not that it is still a path of the module. Such a destination is the current home path, which
+        start-up checked, so the sign-in still completes inside the module.
+        """
         if cookie is None:
             return None
         try:
             payload = self.state_serializer.loads(cookie, max_age=self.settings.login_timeout_seconds)
-            return PendingLogin.model_validate(payload)
+            pending = PendingLogin.model_validate(payload)
         except (BadSignature, SignatureExpired, ValidationError):
             return None
+        return pending.model_copy(update={"next": module_path(pending.next, self.settings.home_path)})
 
     def _auth_error(self, cookie_name: str | None, code: str) -> RedirectResponse:
         response = RedirectResponse(
