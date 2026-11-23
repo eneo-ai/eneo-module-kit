@@ -181,7 +181,7 @@ def path_problem(value: str) -> str | None:
 
 def module_path(value: str | None, home_path: str) -> str:
     """``value`` when it is a short path on the module's own origin (``path_problem``), else ``home_path``
-    (Settings.home_path)."""
+    (the one ``ModuleAuth`` checked at start)."""
     if value and len(value) <= MAX_NEXT_LENGTH and path_problem(value) is None:
         return value
     return home_path
@@ -367,7 +367,9 @@ class ModuleAuth:
             settings.session_secret,
             salt="eneo-module-login-state",
         )
-        self._check_home_path_fits()
+        # The home path as start-up checked it: every redirect reads this string, never Settings again, so a change to
+        # the shared Settings after create_app cannot reach a redirect.
+        self.home_path = self._check_home_path_fits()
         self.sessions = ModuleSessionStore()
         # Token refreshes in flight, by session id; an entry lives only while
         # its refresh runs.
@@ -401,13 +403,13 @@ class ModuleAuth:
         if renew and current is None:
             # Nobody left to bind to: refused, not an ordinary login that anyone could finish under this page.
             refused = RedirectResponse(
-                url=with_query(module_path(next_path, self.settings.home_path), "fel=utgangen"), status_code=303
+                url=with_query(module_path(next_path, self.home_path), "fel=utgangen"), status_code=303
             )
             refused.headers["Cache-Control"] = "no-store"
             return refused
         login = PendingLogin(
             state=state,
-            next=module_path(next_path, self.settings.home_path),
+            next=module_path(next_path, self.home_path),
             renew_user_id=current.user.id if current is not None else None,
             renew_tenant_id=current.tenant_id if current is not None else None,
         )
@@ -446,7 +448,7 @@ class ModuleAuth:
         """
         pending = self.state_serializer.dumps(login.model_dump())
         if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
-            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.settings.home_path}).model_dump())
+            pending = self.state_serializer.dumps(login.model_copy(update={"next": self.home_path}).model_dump())
         if len(pending.encode()) > MAX_STATE_COOKIE_BYTES:
             raise RuntimeError(
                 f"The login's signed state is {len(pending.encode())} bytes even with the home path, over "
@@ -455,10 +457,10 @@ class ModuleAuth:
             )
         return pending
 
-    def _check_home_path_fits(self) -> None:
-        """Refuse to start with a home path a login's state cannot hold or a login's ``next`` would not be: at most
-        MAX_HOME_PATH_BYTES of UTF-8, and a path on the module's own origin by the same rule (``path_problem``).
-        Otherwise a sign-in fails later, or lands elsewhere.
+    def _check_home_path_fits(self) -> str:
+        """The home path, checked: refuse to start with one a login's state cannot hold or a login's ``next`` would not
+        be: at most MAX_HOME_PATH_BYTES of UTF-8, and a path on the module's own origin by the same rule
+        (``path_problem``). Otherwise a sign-in fails later, or lands elsewhere.
 
         Here, not in a Settings validator: every Settings, built by load_settings, directly or by model_copy (which
         runs no validators), reaches create_app.
@@ -478,6 +480,7 @@ class ModuleAuth:
             )
         if problem := path_problem(home_path):
             raise RuntimeError(f"home_path {problem}. Choose another one {choose}")
+        return home_path
 
     def _pending_logins(self, request: Request) -> list[str]:
         """The browser's waiting logins' cookie names, oldest first; one that cannot be read counts as the oldest."""
@@ -904,7 +907,7 @@ class ModuleAuth:
             pending = PendingLogin.model_validate(payload)
         except (BadSignature, SignatureExpired, ValidationError):
             return None
-        return pending.model_copy(update={"next": module_path(pending.next, self.settings.home_path)})
+        return pending.model_copy(update={"next": module_path(pending.next, self.home_path)})
 
     def _auth_error(self, cookie_name: str | None, code: str) -> RedirectResponse:
         response = RedirectResponse(

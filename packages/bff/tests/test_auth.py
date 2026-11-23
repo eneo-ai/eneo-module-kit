@@ -666,6 +666,21 @@ class ModuleAuthTests(unittest.TestCase):
                 self.assertEqual(callback.headers["location"], stored)
                 self.assertIn(SESSION_COOKIE, callback.cookies)
 
+    def test_a_home_path_changed_after_the_start_never_reaches_a_redirect(self) -> None:
+        # The start checks the home path once and keeps that string: a Settings object changed afterwards (it is not
+        # frozen, and create_app shares it) leaves every redirect on the checked path.
+        self.client.app.state.settings.home_path = "//outside.example"
+
+        refused = self.client.get("/api/auth/login", params={"renew": "1"})
+        self.assertEqual(refused.headers["location"], "/flows?fel=utgangen", "a renewal with no session")
+
+        state = parse_qs(urlparse(self.client.get("/api/auth/login").headers["location"]).query)["state"][0]
+        plain = self.client.get("/api/auth/callback", params={"ticket": "one-time-ticket", "state": state})
+        self.assertEqual(plain.headers["location"], "/flows", "a login started with no next")
+
+        fallback = self.older_login_callback("//elsewhere.example")
+        self.assertEqual(fallback.headers["location"], "/flows", "a stored destination the rule refuses")
+
     def test_a_renewal_without_a_live_session_is_refused_and_signs_no_one_in(self) -> None:
         self.sign_in()
         ended = time.time() + ENEO_SESSION_SECONDS + 60
